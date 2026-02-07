@@ -1,0 +1,252 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap');
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   DESIGN SYSTEM — Light-mode adaptation of Linear's design language
+   Reference: DESIGN.md
+   
+   Philosophy:
+   - Inter Variable with OpenType features 'cv01', 'ss03' (geometric alternates)
+   - Weight 510 as signature emphasis (between regular 400 and medium 500)
+   - Brand indigo #5e6ad2 used sparingly for CTAs and interactive accents only
+   - Light neutrals with subtle shadows for depth (not dark-on-dark like Linear)
+   - 8px base spacing grid with optical micro-adjustments (7px, 11px)
+═══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ── Backgrounds (Light Mode) ────────────────────────────────────────── */
+  --bg-marketing:  #f7f8f8;   /* Page canvas — lightest neutral */
+  --bg-panel:      #f3f4f5;   /* Sidebar, toolbar — subtle tint */
+  --bg-surface:    #ffffff;   /* Cards, panels — pure white */
+  --bg-elevated:   #fafafa;   /* Slightly elevated surfaces within cards */
+
+  /* ── Text Hierarchy (Light Mode) ─────────────────────────────────────── */
+  --text-primary:     #111827;  /* Headings, strong emphasis — near-black */
+  --text-secondary:   #374151;  /* Body text, standard content */
+  --text-tertiary:    #6b7280;  /* Muted labels, secondary info */
+  --text-quaternary:  #9ca3af;  /* Placeholders, timestamps, de-emphasized */
+
+  /* ── Brand & Accent (Chromatic — same in both modes) ────────────────── */
+  --brand-indigo:   #5e6ad2;  /* Primary brand — CTAs only */
+  --accent-violet:  #7170ff;  /* Interactive accent — links, active states */
+  --accent-hover:   #828fff;  /* Hover state — lighter, more saturated */
+
+  /* ── Status Colors ───────────────────────────────────────────────────── */
+  --status-success: #059669;  /* Emerald — completion, success */
+  --status-emerald: #10b981;  /* Secondary success — badges */
+  --status-warning: #d97706;  /* Amber — warnings, alerts */
+  --status-error:   #dc2626;  /* Red — errors, critical states */
+  
+  /* Additional status colors for specific use cases */
+  --status-orange:      #f97316;  /* Orange warnings */
+  --status-dark-orange: #c2410c;  /* Dark orange emphasis */
+  --status-dark-green:  #065f46;  /* Dark green success */
+
+  /* ── Borders (Light Mode — semi-transparent black per DESIGN.md) ────── */
+  --border-subtle:    rgba(0, 0, 0, 0.05);  /* Ultra-subtle — default */
+  --border-primary:   rgba(0, 0, 0, 0.08);  /* Standard — cards, inputs, dividers */
+  --border-secondary: rgba(0, 0, 0, 0.10);  /* Slightly darker — hover states */
+  --border-input:     rgba(0, 0, 0, 0.08);  /* Input field borders */
+
+  /* ── Shadows (Light Mode — reduced opacity) ─────────────────────────── */
+  --shadow-surface:  0 1px 2px rgba(0,0,0,0.05), 0 1px 4px rgba(0,0,0,0.03);
+  --shadow-card:     0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-elevated: 0 4px 12px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.04);
+  --shadow-dialog:   0 20px 60px rgba(0,0,0,0.12), 0 8px 20px rgba(0,0,0,0.06);
+  --shadow-focus:    0 0 0 3px rgba(94,106,210,0.16);
+
+  /* ── Border Radius Scale ─────────────────────────────────────────────── */
+  --radius-micro:       2px;    /* Inline badges, toolbar buttons */
+  --radius-standard:    4px;    /* Small containers, list items */
+  --radius-comfortable: 6px;    /* Buttons, inputs, functional elements */
+  --radius-card:        8px;    /* Cards, dropdowns, popovers */
+  --radius-panel:       12px;   /* Panels, featured cards, sections */
+  --radius-large:       22px;   /* Large panel elements */
+  --radius-pill:        9999px; /* Chips, filter pills, status tags, circles */
+
+  /* ── Spacing Scale (8px base grid + optical adjustments) ────────────── */
+  --space-1: 4px;   /* Micro spacing */
+  --space-2: 8px;   /* Base unit */
+  --space-3: 12px;  /* Comfortable */
+  --space-4: 16px;  /* Standard */
+  --space-5: 20px;  /* Generous */
+  --space-6: 24px;  /* Large */
+  --space-8: 32px;  /* Extra large */
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   RESET & BASE STYLES
+═══════════════════════════════════════════════════════════════════════════ */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  scroll-behavior: smooth;
+  overflow-x: hidden;
+  /* Prevent horizontal scroll on all devices */
+  max-width: 100vw;
+}
+
+body {
+  /* Typography — Inter Variable with OpenType features (DESIGN.md §3) */
+  font-family: 'Inter', 'SF Pro Display', -apple-system, system-ui, sans-serif;
+  font-feature-settings: 'cv01', 'ss03';  /* Geometric alternates — Linear's signature */
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.5;
+  letter-spacing: -0.13px;  /* Caption scale tracking */
+  
+  /* Colors */
+  color: var(--text-secondary);
+  background-color: var(--bg-marketing);
+  
+  /* Layout */
+  min-height: 100vh;
+  overflow-x: hidden;
+  max-width: 100vw;
+  
+  /* Mobile optimizations */
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* ── Typography Hierarchy (DESIGN.md §3) ─────────────────────────────────── */
+
+h1, h2, h3, h4, h5, h6 {
+  font-feature-settings: 'cv01', 'ss03';
+  color: var(--text-primary);
+  line-height: 1.2;
+  font-weight: 510;  /* Linear's signature weight */
+}
+
+/* Display sizes use aggressive negative letter-spacing */
+h1 {
+  font-size: 2rem;      /* 32px — Heading 1 */
+  font-weight: 400;
+  letter-spacing: -0.704px;
+}
+
+h2 {
+  font-size: 1.5rem;    /* 24px — Heading 2 */
+  font-weight: 400;
+  letter-spacing: -0.288px;
+}
+
+h3 {
+  font-size: 1.25rem;   /* 20px — Heading 3 */
+  font-weight: 590;     /* Strong emphasis */
+  letter-spacing: -0.24px;
+}
+
+p {
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+a {
+  color: var(--brand-indigo);
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+
+a:hover {
+  color: var(--accent-hover);
+}
+
+/* ── Scrollbar Styling ───────────────────────────────────────────────────── */
+
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-panel);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-secondary);
+  border-radius: var(--radius-pill);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-quaternary);
+}
+
+/* ── Focus States ────────────────────────────────────────────────────────── */
+
+:focus-visible {
+  outline: 2px solid var(--brand-indigo);
+  outline-offset: 2px;
+}
+
+/* ── Input Fields Reset ──────────────────────────────────────────────────── */
+/* CRITICAL: Remove browser default min-width on date/time inputs */
+input[type="date"],
+input[type="time"],
+input[type="datetime-local"],
+input[type="month"],
+input[type="week"] {
+  min-width: 0 !important;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+/* Remove default appearance that might add extra width */
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="time"]::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  opacity: 0.6;
+  transition: opacity 0.15s ease;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator:hover,
+input[type="time"]::-webkit-calendar-picker-indicator:hover {
+  opacity: 1;
+}
+
+/* Ensure all form inputs respect container width */
+input, select, textarea, button {
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+/* ── Selection ───────────────────────────────────────────────────────────── */
+
+::selection {
+  background: rgba(94, 106, 210, 0.2);
+  color: var(--text-primary);
+}
+
+/* ── Animations ──────────────────────────────────────────────────────────── */
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Refined spacing system */
+/* Refined spacing system */
+/* Enhanced design tokens */
+/* Updated spacing system */
+/* Refined spacing system */
+/* Updated color variables */
+/* Improved typography */
+
+/* Updated spacing system */
+
+/* Enhanced form input styles */
+
+/* Refined spacing */
+/* Improved form inputs */
+/* Refined global spacing and typography */

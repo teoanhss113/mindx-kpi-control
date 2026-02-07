@@ -1,0 +1,1819 @@
+/* ─── Dashboard Module CSS ─────────────────────────────────────────────────── */
+/* Design System: DESIGN.md (Linear-inspired, light-mode adaptation)           */
+/* Breakpoints per DESIGN.md §8:                                               */
+/*   Mobile Small <600px | Mobile 600-640px | Tablet 640-768px                 */
+/*   Desktop Small 768-1024px | Desktop 1024-1280px | Large Desktop >1280px    */
+
+/* ── Composite / modifier classes ──────────────────────────────────────── */
+/* .active — styles defined inline with .sidebarLink block */
+/* .sidebarMobileOpen — defined in sidebar block: transform: translateX(0) */
+.sidebarMobileOpen { transform: translateX(0) !important; }
+
+/* Table sort column active state */
+.activeSort { color: var(--brand-indigo); }
+
+/* Filter chip: active (orange accent) */
+.chipActive { background: rgba(251, 146, 60, 0.08); border-color: rgba(251, 146, 60, 0.25); color: var(--status-dark-orange); }
+
+/* Dropdown trigger: active (brand indigo) */
+.triggerActive { border-color: var(--brand-indigo); color: var(--brand-indigo); background: rgba(94, 106, 210, 0.08); }
+
+/* Status pill variants */
+.passed { background: rgba(5, 150, 105, 0.08); color: var(--status-success); border-color: rgba(5, 150, 105, 0.25); }
+.failed { background: rgba(220, 38, 38, 0.08); color: var(--status-error); border-color: rgba(220, 38, 38, 0.25); }
+.exempt { background: var(--bg-panel); color: var(--text-quaternary); border-color: var(--border-primary); }
+
+/* Toast variant */
+.info { border-left: 3px solid var(--brand-indigo); }
+
+/* Suggest pill variant */
+.suggestDone { background: rgba(5, 150, 105, 0.08); border-color: rgba(5, 150, 105, 0.25); color: var(--status-dark-green); }
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   ROOT LAYOUT
+══════════════════════════════════════════════════════════════════════════════ */
+.page {
+  min-height: 100vh;
+  display: flex;
+  background: var(--bg-marketing);
+  color: var(--text-secondary);
+  font-family: 'Inter', 'SF Pro Display', -apple-system, system-ui, sans-serif;
+  font-feature-settings: 'cv01', 'ss03';
+  font-size: 14px;
+  line-height: 1.5;
+  position: relative;
+  /* CRITICAL: prevent ANY child from overflowing horizontally */
+  overflow-x: clip;   /* clip (not hidden) to allow position:sticky to still work */
+  max-width: 100vw;
+  box-sizing: border-box;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   SIDEBAR
+   Desktop (≥768px): flex column, always visible, 220px wide
+   Mobile (<768px): position fixed, off-screen left, slides in as overlay
+══════════════════════════════════════════════════════════════════════════════ */
+.sidebar {
+  width: 220px;
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border-primary);
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-4) var(--space-3);
+  flex-shrink: 0;
+  /* Fixed so sidebar never scrolls with content */
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 100vh;
+  height: 100dvh;
+  overflow-y: auto;
+  gap: var(--space-2);
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 40;
+}
+
+/* Mobile: hide sidebar off-screen left, show as drawer */
+@media (max-width: 767px) {
+  .sidebar {
+    transform: translateX(-100%);
+    box-shadow: var(--shadow-elevated);
+  }
+  .sidebar.sidebarMobileOpen {
+    transform: translateX(0);
+  }
+}
+
+/* Mobile backdrop overlay */
+.sidebarOverlay {
+  display: none;
+}
+@media (max-width: 767px) {
+  .sidebarOverlay {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.3);
+    z-index: 39;
+    animation: fadeOverlay 0.2s ease;
+  }
+}
+@keyframes fadeOverlay { from { opacity: 0; } to { opacity: 1; } }
+
+/* ── Sidebar interior ── */
+.sidebarLogo {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-1) var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+.sidebarMenu {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  flex: 1;
+}
+
+.sidebarLink {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-comfortable);
+  font-size: 13px;
+  font-weight: 510;
+  color: var(--text-tertiary);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+  letter-spacing: -0.13px;
+  user-select: none;
+}
+.sidebarLink:hover { background: rgba(0,0,0,0.04); color: var(--text-secondary); }
+.sidebarLink.active {
+  background: rgba(0,0,0,0.02);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-surface);
+  border: 1px solid var(--border-primary);
+}
+
+/* Sidebar divider */
+.sidebarDivider {
+  height: 1px;
+  background: var(--border-primary);
+  margin: var(--space-2) 0;
+}
+
+/* Admin submenu */
+.adminSubmenu {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-left: var(--space-4);
+  padding-left: var(--space-2);
+  border-left: 1px solid var(--border-primary);
+}
+
+.sidebarSubmenuLink {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-comfortable);
+  font-size: 12px;
+  font-weight: 510;
+  color: var(--text-tertiary);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+  letter-spacing: -0.13px;
+  user-select: none;
+}
+.sidebarSubmenuLink:hover { 
+  background: rgba(0,0,0,0.03); 
+  color: var(--text-secondary); 
+}
+.sidebarSubmenuLink.active {
+  background: rgba(0,0,0,0.02);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-surface);
+  border: 1px solid var(--border-primary);
+}
+
+/* ── Sidebar user block (name shown HERE only) ── */
+.sidebarUser {
+  padding: var(--space-3) var(--space-2);
+  border-top: 1px solid var(--border-primary);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: auto;
+}
+
+.sidebarUserAvatar {
+  width: 28px; height: 28px;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(135deg, var(--brand-indigo), var(--accent-violet));
+  color: var(--bg-surface);
+  font-size: 11px; font-weight: 590;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; letter-spacing: 0.3px;
+}
+
+.sidebarUserInfo {
+  display: flex; flex-direction: column; gap: var(--space-1); min-width: 0;
+}
+
+.sidebarUserName {
+  font-size: 12px; font-weight: 590; color: var(--text-primary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  letter-spacing: -0.13px;
+}
+
+.sidebarUserEmail {
+  font-size: 10px; font-weight: 400; color: var(--text-quaternary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  letter-spacing: -0.13px; line-height: 1.4;
+}
+
+.sidebarLogout {
+  background: none; border: none;
+  color: var(--text-quaternary);
+  font-size: 11px; font-weight: 510;
+  cursor: pointer; font-family: inherit; padding: 0;
+  text-align: left; letter-spacing: -0.13px;
+  transition: color 0.15s ease;
+}
+.sidebarLogout:hover { color: var(--status-error); }
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   MAIN WRAPPER
+══════════════════════════════════════════════════════════════════════════════ */
+.mainWrapper {
+  flex: 1;
+  /* Offset for fixed sidebar (220px) so content isn't hidden behind it */
+  margin-left: 220px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow-y: auto;
+  overflow-x: clip; /* Fix for sticky header */
+}
+
+/* Mobile: sidebar is overlay drawer, so no offset needed */
+@media (max-width: 767px) {
+  .mainWrapper { margin-left: 0; }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   HEADER — sticky top bar
+══════════════════════════════════════════════════════════════════════════════ */
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 var(--space-6);
+  background: rgba(247, 248, 248, 0.92);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border-primary);
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  gap: var(--space-3);
+  min-height: 52px;
+}
+
+@media (max-width: 640px) {
+  .header { padding: 0 var(--space-3); }
+}
+
+.hamburger {
+  display: none;
+  background: rgba(0, 0, 0, 0.02);
+  border: none;
+  color: var(--text-tertiary);
+  padding: var(--space-2);
+  border-radius: var(--radius-comfortable);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s ease, color 0.15s ease;
+  line-height: 0;
+}
+.hamburger:hover { background: rgba(0, 0, 0, 0.04); color: var(--text-primary); }
+
+@media (max-width: 767px) {
+  .hamburger { display: flex; align-items: center; justify-content: center; }
+}
+
+.headerLeft {
+  display: flex; align-items: center; gap: var(--space-4); min-width: 0; flex: 1;
+}
+
+/* Caption Large 14px weight 510 -0.182px */
+.pageTitle {
+  font-size: 14px; font-weight: 510;
+  letter-spacing: -0.182px; color: var(--text-primary);
+  margin: 0; white-space: nowrap;
+  font-feature-settings: 'cv01', 'ss03';
+}
+
+/* headerRight: reserved for future (notifications, etc.) — empty now */
+.headerRight {
+  display: flex; align-items: center; gap: var(--space-2); flex-shrink: 0;
+  min-width: 32px; /* reserve space so layout doesn't shift when populated */
+}
+
+.headerUserBadge {
+  display: flex; align-items: center; gap: var(--space-2);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-pill);
+  padding: var(--space-1) var(--space-3) var(--space-1) var(--space-1);
+  box-shadow: var(--shadow-surface);
+}
+.headerAvatar {
+  width: 24px; height: 24px; border-radius: var(--radius-pill);
+  background: linear-gradient(135deg, var(--brand-indigo), var(--accent-violet));
+  color: var(--bg-surface); font-size: 9px; font-weight: 590;
+  display: flex; align-items: center; justify-content: center;
+  letter-spacing: 0.3px; flex-shrink: 0;
+}
+.headerUserName {
+  font-size: 12px; font-weight: 510; color: var(--text-secondary);
+  white-space: nowrap; letter-spacing: -0.13px;
+}
+
+.logoutBtn {
+  background: rgba(0, 0, 0, 0.02);
+  border: 1px solid var(--border-secondary);
+  color: var(--text-tertiary);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-comfortable);
+  font-size: 13px; font-weight: 510;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+  font-family: inherit; white-space: nowrap; letter-spacing: -0.13px;
+  box-shadow: var(--shadow-surface);
+}
+.logoutBtn:hover { background: rgba(0, 0, 0, 0.04); color: var(--text-primary); }
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   MAIN CONTENT
+══════════════════════════════════════════════════════════════════════════════ */
+.main {
+  padding: var(--space-4) var(--space-6);
+  max-width: 1400px;
+  width: 100%;
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+
+@media (max-width: 768px) {
+  .main { padding: var(--space-3) var(--space-4); }
+}
+@media (max-width: 600px) {
+  .main { padding: var(--space-3); }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   TOOLBAR — fetch controls
+══════════════════════════════════════════════════════════════════════════════ */
+.toolbar {
+  background: rgba(0, 0, 0, 0.02);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-card);
+  padding: var(--space-3) var(--space-4);
+  box-shadow: var(--shadow-card);
+  margin-bottom: var(--space-4);
+}
+
+@media (max-width: 600px) {
+  .toolbar { padding: var(--space-3); }
+}
+
+.toolbarRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  row-gap: var(--space-2);
+}
+
+.dateControls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  /* Remove flex-wrap to keep items in one row */
+}
+
+/* Caption 13px weight 510 */
+.dateLabel {
+  font-size: 13px; color: var(--text-tertiary);
+  font-weight: 510; white-space: nowrap; letter-spacing: -0.13px;
+}
+
+.dateInput {
+  background: rgba(0, 0, 0, 0.02);
+  border: 1px solid var(--border-input);
+  color: var(--text-primary);
+  padding: var(--space-2);
+  border-radius: var(--radius-comfortable);
+  font-size: 13px; font-family: inherit; font-feature-settings: 'cv01','ss03';
+  letter-spacing: -0.13px; outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.dateInput:focus { border-color: var(--brand-indigo); box-shadow: var(--shadow-focus); }
+
+/* On very small screens, allow date inputs to shrink but keep them in one row */
+@media (max-width: 600px) { 
+  .dateInput { 
+    min-width: 0;
+    flex-shrink: 1;
+  } 
+}
+
+/* Primary Brand Button */
+.primaryBtn {
+  background: var(--brand-indigo);
+  color: var(--bg-surface); border: none;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-comfortable);
+  font-size: 13px; font-weight: 510;
+  cursor: pointer; display: flex; align-items: center; gap: var(--space-2);
+  box-shadow: 0 2px 6px rgba(94,106,210,0.25);
+  transition: background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+  font-family: inherit; white-space: nowrap; letter-spacing: -0.13px;
+  font-feature-settings: 'cv01','ss03';
+}
+.primaryBtn:hover { background: var(--accent-violet); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(94,106,210,0.3); }
+.primaryBtn:active { transform: translateY(0); }
+.primaryBtn:disabled { opacity: 0.55; cursor: not-allowed; transform: none; box-shadow: none; }
+
+@media (max-width: 600px) { .primaryBtn { flex: 1; justify-content: center; } }
+
+/* Ghost action button — for secondary actions like "Làm mới dữ liệu"
+   DESIGN.md ghost button: rgba(0,0,0,0.02) bg, semi-transparent border, 6px radius */
+.clearCacheBtn {
+  background: rgba(0, 0, 0, 0.02);
+  border: 1px solid var(--border-primary);
+  color: var(--text-tertiary);
+  font-size: 13px; font-family: inherit; cursor: pointer;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-comfortable);
+  display: flex; align-items: center; gap: var(--space-2);
+  letter-spacing: -0.13px; white-space: nowrap;
+  font-feature-settings: 'cv01','ss03';
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.clearCacheBtn:hover {
+  background: rgba(0, 0, 0, 0.04);
+  color: var(--status-error);
+  border-color: rgba(220,38,38,0.3);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   DASHBOARD LAYOUT
+══════════════════════════════════════════════════════════════════════════════ */
+.dashboardLayout {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-4);
+  align-items: start;
+  /* CRITICAL: Reset min-width on the grid container itself */
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+/* CRITICAL: Grid items default to min-width:auto = min-content.
+   With table rows having min-width:560px, the grid cell would expand to 560px.
+   Setting min-width:0 on grid items overrides this and allows the 1fr track
+   to actually constrain the grid item to the available width. */
+.dashboardLayout > * { min-width: 0; }
+@media (min-width: 1100px) {
+  .dashboardLayout { grid-template-columns: 1fr 260px; }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   STAT CARDS
+   Desktop: 3 col | Tablet: 2 col | Mobile: 1 col
+══════════════════════════════════════════════════════════════════════════════ */
+.statsGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+@media (max-width: 767px) { .statsGrid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 480px)  { .statsGrid { grid-template-columns: 1fr; } }
+
+.statCard {
+  background: rgba(0, 0, 0, 0.02);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-card);
+  padding: var(--space-4) var(--space-5);
+  box-shadow: var(--shadow-card);
+}
+
+@media (max-width: 480px) {
+  .statCard { padding: var(--space-3) var(--space-4); }
+}
+
+/* Micro ALL-CAPS label */
+.statLabel {
+  font-size: 11px; font-weight: 510;
+  color: var(--text-quaternary);
+  margin-bottom: var(--space-1);
+  letter-spacing: 0.04em; text-transform: uppercase;
+  font-feature-settings: 'cv01','ss03';
+}
+
+/* Heading 1 scale: 28px weight 510 -0.704px */
+.statValue {
+  font-size: 28px; font-weight: 510;
+  color: var(--text-primary);
+  letter-spacing: -0.704px; line-height: 1.1;
+  margin-bottom: 3px;
+  font-feature-settings: 'cv01','ss03';
+}
+
+@media (max-width: 640px) { .statValue { font-size: 22px; } }
+
+.statDesc { font-size: 12px; color: var(--text-quaternary); letter-spacing: -0.13px; }
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   SUGGESTIONS BAR
+══════════════════════════════════════════════════════════════════════════════ */
+.suggestionsBar {
+  display: flex; align-items: center; gap: var(--space-2);
+  margin-bottom: var(--space-4); padding: var(--space-3);
+  background: rgba(94, 106, 210, 0.08); border: 1px solid rgba(94, 106, 210, 0.25);
+  border-radius: var(--radius-card); flex-wrap: wrap;
+}
+.suggestLabel { font-size: 12px; font-weight: 590; color: rgba(55, 48, 163, 1); white-space: nowrap; }
+.suggestPill {
+  display: flex; align-items: center; gap: var(--space-1);
+  background: var(--bg-surface); border: 1px solid rgba(94, 106, 210, 0.25);
+  padding: var(--space-1) var(--space-2); border-radius: var(--radius-pill);
+  font-size: 12px; color: var(--text-secondary);
+}
+.suggestPill.suggestDone { background: rgba(5, 150, 105, 0.08); border-color: rgba(5, 150, 105, 0.25); color: var(--status-dark-green); }
+.suggestTarget { font-weight: 590; color: rgba(67, 56, 202, 1); }
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   CHARTS SECTION
+   Standardized chart layout across all dashboard pages
+   - Outer container: .chartsSection (card with border, shadow, overflow:hidden)
+   - Header: ChartSectionHeader component (title + optional toggle)
+   - Grid: .chartsGrid (2-col responsive grid, 1-col on mobile)
+   - Individual charts: .chartCard (elevated background, padding, flex column)
+   - Chart title: .chartTitle (13px, weight 600, inside each card)
+   - Chart area: flex:1 wrapper with ResponsiveContainer
+   - Optional legend: .chartLegend (at bottom of card)
+══════════════════════════════════════════════════════════════════════════════ */
+.chartsSection {
+  background: rgba(0, 0, 0, 0.02);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-card);
+  overflow: hidden; /* CRITICAL: Clips content to rounded corners */
+  margin-bottom: var(--space-4);
+  box-shadow: var(--shadow-card);
+}
+
+.chartsSectionHeader {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.chartsSectionTitle {
+  font-size: 13px; font-weight: 590;
+  color: var(--text-primary);
+  display: flex; align-items: center; gap: var(--space-2);
+  letter-spacing: -0.13px;
+}
+
+/* Small Toolbar Button */
+.chartToggle {
+  background: rgba(0, 0, 0, 0.02);
+  border: 1px solid var(--border-secondary);
+  color: var(--text-tertiary);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-standard);
+  font-size: 12px; font-weight: 510;
+  cursor: pointer; font-family: inherit;
+  transition: background 0.15s ease, color 0.15s ease;
+  letter-spacing: -0.13px;
+  box-shadow: 0 1px 1px rgba(0,0,0,0.04);
+}
+.chartToggle:hover { background: rgba(0, 0, 0, 0.04); color: var(--text-primary); }
+
+/* 2-col grid for charts — DESIGN.md §5: 2 columns ≥860px, 1 column mobile */
+.chartsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+  gap: var(--space-4);
+  padding: var(--space-4);
+  overflow: hidden; /* Clips content within grid */
+}
+@media (max-width: 860px) { 
+  .chartsGrid { 
+    grid-template-columns: 1fr;
+    /* Reduce minmax constraint on mobile so charts don't force horizontal scroll */
+  } 
+}
+@media (max-width: 480px) { 
+  .chartsGrid { 
+    padding: var(--space-3); 
+    gap: var(--space-3); 
+  } 
+}
+
+/* Individual chart card — elevated background, padding, flex column layout
+   STANDARD STRUCTURE:
+   <div className={styles.chartCard}>
+     <div className={styles.chartTitle}>Chart Title</div>
+     <div style={{ flex: 1, minHeight: 0 }}>
+       <ResponsiveContainer>...</ResponsiveContainer>
+     </div>
+     <div className={styles.chartLegend}>...</div> (optional)
+   </div>
+*/
+.chartCard {
+  padding: var(--space-3);
+  background: rgba(0, 0, 0, 0.02);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-comfortable);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-height: 240px; /* Ensure minimum chart height */
+  overflow: hidden; /* Clips content to rounded corners */
+}
+
+/* Chart title inside each card — Caption 13px weight 510 */
+.chartTitle {
+  font-size: 13px; 
+  font-weight: 510;
+  color: var(--text-primary);
+  margin: 0;
+  letter-spacing: -0.13px;
+  padding-bottom: var(--space-1);
+}
+
+/* Legacy chartWrapper — deprecated, use .chartCard instead
+   Kept for backward compatibility only */
+.chartWrapper {
+  min-width: 0; /* Prevent overflow */
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* Chart legend at bottom of card */
+.chartLegend {
+  display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-3);
+  margin-top: var(--space-2); padding-top: var(--space-2);
+  border-top: 1px solid var(--border-primary);
+}
+.legendItem {
+  display: flex; align-items: center; gap: var(--space-1);
+  font-size: 11px; color: var(--text-tertiary); letter-spacing: -0.13px;
+}
+.legendSwatch {
+  display: inline-block; width: 8px; height: 8px;
+  border-radius: var(--radius-pill); flex-shrink: 0;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   CHART DESIGN STANDARDS
+   
+   All charts across the dashboard follow these standards:
+   
+   1. LAYOUT:
+      - Container: .chartsSection (card with border, shadow)
+      - Grid: .chartsGrid (2-col desktop, 1-col mobile)
+      - Individual: .chartCard (elevated bg, padding, flex column)
+   
+   2. TYPOGRAPHY:
+      - Title: 13px, weight 600, -0.13px letter-spacing
+      - Axis labels: 11px, #9ca3af (tertiary) for values, #374151 (primary) for categories
+      - Tooltips: 12px, elevated bg, primary border
+   
+   3. COLORS:
+      - Grid: rgba(0,0,0,0.06), horizontal={false}
+      - Axis: axisLine={false}, tickLine={false}
+      - Cursor: rgba(0,0,0,0.03)
+      - Bars: radius=[0, 4, 4, 0] for horizontal bars
+   
+   4. SPACING:
+      - Margins: { top: 4, right: 20, left: 8, bottom: 4 }
+      - Card padding: var(--space-3)
+      - Grid gap: var(--space-4)
+   
+   5. RESPONSIVE:
+      - Desktop (≥860px): 2 columns
+      - Mobile (<860px): 1 column
+      - Min height: 200px per chart
+      - Dynamic height: Math.max(200, data.length * 32)
+   
+   6. STRUCTURE:
+      <div className={styles.chartsSection}>
+        <ChartSectionHeader title="..." />
+        <div className={styles.chartsGrid}>
+          <div className={styles.chartCard}>
+            <div className={styles.chartTitle}>Theo Cơ sở</div>
+            <div style={{ flex: 1, minHeight: 0 }}>
+              <ResponsiveContainer width="100%" height={...}>
+                <BarChart layout="vertical" margin={{ top: 4, right: 20, left: 8, bottom: 4 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" horizontal={false} />
+                  <XAxis type="number" tick={{ fontSize: 11, fill: '#9ca3af' }} axisLine={false} tickLine={false} />
+                  <YAxis dataKey="name" type="category" width={80} tick={{ fontSize: 11, fill: '#374151' }} axisLine={false} tickLine={false} />
+                  <ReTooltip cursor={{ fill: 'rgba(0,0,0,0.03)' }} />
+                  <Bar dataKey="..." fill="..." radius={[0, 4, 4, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            <div className={styles.chartLegend}>...</div> (optional)
+          </div>
+        </div>
+      </div>
+══════════════════════════════════════════════════════════════════════════════ */
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   TABLE FILTER TOOLBAR
+══════════════════════════════════════════════════════════════════════════════ */
+.tableToolbar {
+  display: flex; gap: var(--space-2);
+  margin-bottom: var(--space-3);
+  flex-wrap: wrap; align-items: center;
+  row-gap: var(--space-2);
+}
+
+/* Thin vertical divider to group filters */
+.toolbarSeparator {
+  width: 1px; height: 24px;
+  background: var(--border-primary);
+  flex-shrink: 0; align-self: center;
+  margin: 0 var(--space-1);
+}
+
+@media (max-width: 600px) { .toolbarSeparator { display: none; } }
+
+.searchWrapper { position: relative; display: flex; align-items: center; }
+
+.filterInput {
+  background: rgba(0, 0, 0, 0.02);
+  border: 1px solid var(--border-input);
+  color: var(--text-primary);
+  padding: var(--space-2) var(--space-2) var(--space-2) 30px;
+  border-radius: var(--radius-comfortable);
+  font-size: 13px; outline: none;
+  font-family: inherit; letter-spacing: -0.13px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  width: 170px;
+}
+.filterInput:focus { border-color: var(--brand-indigo); box-shadow: var(--shadow-focus); }
+@media (max-width: 600px) { .filterInput { width: 100%; } }
+
+/* Pill filter chip */
+.filterChip {
+  background: rgba(0, 0, 0, 0.02);
+  border: 1px solid var(--border-input);
+  color: var(--text-tertiary);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-pill);
+  font-size: 12px; font-weight: 510;
+  cursor: pointer; display: flex; align-items: center; gap: var(--space-1);
+  font-family: inherit; letter-spacing: -0.13px;
+  transition: all 0.15s ease; white-space: nowrap;
+}
+.filterChip:hover { background: rgba(0, 0, 0, 0.04); border-color: var(--border-secondary); color: var(--text-secondary); }
+.filterChip.chipActive { background: rgba(251, 146, 60, 0.08); border-color: rgba(251, 146, 60, 0.25); color: var(--status-dark-orange); }
+
+.chipBadge {
+  background: var(--status-error); color: var(--bg-surface);
+  font-size: 10px; padding: 0 5px;
+  border-radius: var(--radius-pill); font-weight: 590;
+  min-width: 16px; text-align: center; line-height: 16px;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   MULTI-SELECT DROPDOWN
+══════════════════════════════════════════════════════════════════════════════ */
+.multiDropdown { 
+  position: relative;
+  /* Remove width: 100% to allow fit-content behavior */
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.multiDropdownTrigger {
+  display: flex; align-items: center; gap: var(--space-2);
+  background: rgba(0, 0, 0, 0.02); border: 1px solid var(--border-input);
+  color: var(--text-secondary); padding: var(--space-2);
+  border-radius: var(--radius-comfortable);
+  font-size: 13px; font-weight: 510;
+  cursor: pointer; font-family: inherit; letter-spacing: -0.13px;
+  transition: border-color 0.15s ease, background 0.15s ease;
+  white-space: nowrap;
+  /* Remove width: 100% to allow fit-content behavior */
+  box-sizing: border-box;
+  min-width: 0;
+  /* Set a reasonable min-width for usability */
+  min-width: 120px;
+}
+.multiDropdownTrigger:hover { background: rgba(0, 0, 0, 0.04); border-color: var(--border-secondary); }
+.multiDropdownTrigger.triggerActive { border-color: var(--brand-indigo); color: var(--brand-indigo); background: rgba(94, 106, 210, 0.08); }
+.triggerLabel { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+
+/* Level 4 elevated dropdown */
+.multiDropdownMenu {
+  position: absolute;
+  top: calc(100% + 4px); left: 0; z-index: 200;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-elevated);
+  min-width: 210px; max-width: 280px;
+  max-height: 300px; overflow-y: auto; padding: var(--space-1);
+}
+
+@media (max-width: 600px) {
+  .multiDropdownMenu { min-width: 200px; max-width: calc(100vw - 32px); }
+}
+
+.dropdownItem {
+  display: flex; align-items: center; gap: var(--space-2);
+  padding: var(--space-2); border-radius: var(--radius-comfortable);
+  cursor: pointer; transition: background 0.1s ease;
+}
+.dropdownItem:hover { background: rgba(0,0,0,0.04); }
+.dropdownItemSelected {
+  background: rgba(94, 106, 210, 0.08);
+}
+.dropdownItemSelected:hover {
+  background: rgba(94, 106, 210, 0.12);
+}
+.dropdownItemLabel {
+  font-size: 13px; color: var(--text-secondary); font-weight: 400;
+  letter-spacing: -0.13px; user-select: none;
+}
+.dropdownSectionLabel {
+  font-size: 11px; font-weight: 590; color: var(--text-tertiary);
+  text-transform: uppercase; letter-spacing: 0.5px;
+  padding: var(--space-2) var(--space-2) var(--space-1);
+  user-select: none;
+}
+
+.dropdownDivider { height: 1px; background: var(--border-primary); margin: var(--space-1) 0; }
+
+.dropdownSearch {
+  display: flex; align-items: center; gap: var(--space-2);
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--border-primary);
+  margin-bottom: var(--space-1);
+}
+.dropdownSearchInput {
+  flex: 1; border: none; outline: none;
+  font-size: 13px; font-family: inherit;
+  color: var(--text-primary); background: transparent;
+  letter-spacing: -0.13px; min-width: 0;
+}
+.dropdownSearchInput::placeholder { color: var(--text-quaternary); }
+.dropdownSearchClear {
+  background: none; border: none; color: var(--text-quaternary);
+  cursor: pointer; font-size: 11px; padding: 0 2px; line-height: 1; flex-shrink: 0;
+}
+.dropdownSearchClear:hover { color: var(--text-secondary); }
+.dropdownEmpty {
+  padding: var(--space-2); font-size: 12px;
+  color: var(--text-quaternary); text-align: center;
+}
+
+/* MultiSelect Chips */
+.triggerLabelWrapper {
+  flex: 1; min-width: 0; display: flex; align-items: center;
+}
+.triggerChips {
+  display: flex; flex-wrap: wrap; gap: var(--space-1); padding: var(--space-1) 0;
+}
+.selectChip {
+  display: inline-flex; align-items: center; gap: var(--space-1);
+  background: var(--bg-panel); border: 1px solid var(--border-secondary);
+  border-radius: var(--radius-standard); padding: var(--space-1) var(--space-2); font-size: 11px;
+  color: var(--text-secondary); white-space: nowrap;
+}
+.chipClose {
+  font-size: 9px; cursor: pointer; color: var(--text-quaternary);
+  display: flex; align-items: center; justify-content: center;
+  width: 12px; height: 12px; border-radius: 50%;
+}
+.chipClose:hover { background: var(--border-secondary); color: var(--text-primary); }
+.selectChipBadge {
+  font-size: 11px; font-weight: 590; color: var(--text-tertiary);
+  padding: 0 4px;
+}
+
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   TABLE
+   Horizontally scrollable on mobile
+══════════════════════════════════════════════════════════════════════════════ */
+.tableSection {
+  background: rgba(0, 0, 0, 0.02);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  /* Contain any overflow: the tableScrollWrapper inside handles scrolling.
+     overflow:hidden here ensures rounded corners AND clips any stray overflow. */
+  overflow: hidden;
+  /* Prevent this block from expanding beyond its grid cell */
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.tableHeader {
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border-primary);
+}
+
+@media (max-width: 480px) {
+  .tableHeader { padding: var(--space-3); }
+}
+
+.groupHeader {
+  font-size: 13px; font-weight: 590; color: var(--text-primary);
+  display: flex; gap: var(--space-2); align-items: center;
+  letter-spacing: -0.13px;
+}
+.groupBadge {
+  background: var(--bg-panel); color: var(--text-tertiary);
+  padding: var(--space-1) var(--space-2); border-radius: var(--radius-standard);
+  font-size: 11px; font-weight: 510; border: 1px solid var(--border-primary);
+}
+
+/* Table scroll wrapper for mobile */
+.tableScrollWrapper {
+  /* A defined width is REQUIRED for overflow-x:auto to create a scroll container.
+     Without width:100%, the element expands to fit content (min-content) 
+     instead of growing to parent width, so overflow never triggers. */
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  /* Also clip vertically so rounded corners of tableSection apply correctly */
+  overflow-y: visible;
+}
+
+.classItemHeader {
+  display: grid;
+  /* minmax(0, Xfr) overrides default minmax(auto, Xfr).
+     Without min=0, a wide reason tag's min-content forces that column wider
+     than its fr share, squeezing all other columns. */
+  grid-template-columns: minmax(0, 2.2fr) minmax(0, 1.2fr) minmax(0, 0.6fr) minmax(0, 1fr) minmax(0, 2fr);
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--border-primary);
+  font-size: 11px; font-weight: 590; color: var(--text-quaternary);
+  letter-spacing: 0.04em; text-transform: uppercase;
+  background: var(--bg-elevated);
+  min-width: 700px;
+}
+
+.classItem {
+  display: grid;
+  /* Same minmax(0, fr) fix — every row must use consistent column sizing */
+  grid-template-columns: minmax(0, 2.2fr) minmax(0, 1.2fr) minmax(0, 0.6fr) minmax(0, 1fr) minmax(0, 2fr);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-primary);
+  align-items: start; /* start not center: reasons column wraps and grows tall */
+  transition: background 0.1s ease;
+  cursor: pointer;
+  background: rgba(0,0,0,0.01);
+  min-width: 700px;
+}
+.classItem:hover { background: rgba(0,0,0,0.03); }
+.classItem:last-child { border-bottom: none; }
+
+.sortableCol {
+  cursor: pointer; display: flex; align-items: center; gap: var(--space-1);
+  user-select: none; transition: color 0.15s ease;
+}
+.sortableCol:hover { color: var(--text-tertiary); }
+.sortableCol.activeSort { color: var(--brand-indigo); }
+
+.sizeCol { font-size: 13px; display: flex; gap: var(--space-1); align-items: center; }
+.className {
+  font-size: 13px; font-weight: 510; color: var(--text-primary);
+  display: flex; flex-direction: column; gap: var(--space-1); letter-spacing: -0.13px;
+}
+.centreName { font-size: 11px; color: var(--text-quaternary); font-weight: 400; }
+.completionCol {
+  display: flex; align-items: center; gap: var(--space-2);
+  font-size: 13px; font-weight: 510;
+  /* Prevent this cell from overflowing its column */
+  min-width: 0; overflow: hidden;
+}
+.miniBarHolder { height: 3px; width: 48px; background: var(--bg-panel); border-radius: 2px; overflow: hidden; flex-shrink: 0; }
+.miniBarFill { height: 100%; border-radius: 2px; }
+.reasonsPreview {
+  font-size: 11px;
+  display: flex; gap: var(--space-1); flex-wrap: wrap;
+  /* CRITICAL: min-width:0 prevents grid cell from expanding to fit content.
+     Without this, the cell grows to fit all tags, squeezing other columns. */
+  min-width: 0;
+  overflow: hidden;
+  align-content: flex-start;
+  padding-top: var(--space-1); /* optical alignment with other cells (align-items:start) */
+}
+
+/* Inline badge tags */
+.reasonTag {
+  background: var(--bg-panel); padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-micro); border: 1px solid var(--border-primary);
+  color: var(--text-tertiary); font-size: 11px; font-weight: 510;
+  /* Allow text to wrap within a tag if extremely long, but don't stretch column */
+  white-space: normal;
+  word-break: keep-all;
+  max-width: 160px;
+  line-height: 1.4;
+}
+
+/* Chip variants for consistent styling across pages */
+.demoTag   { background: rgba(251, 146, 60, 0.08); border-color: rgba(251, 146, 60, 0.25); color: var(--status-dark-orange); }
+.exemptTag { background: var(--bg-panel); border-color: var(--border-primary); color: var(--text-quaternary); font-style: italic; }
+
+/* Teacher role chips */
+.teacherChipLEC { 
+  background: rgba(94,106,210,0.07); 
+  border-color: rgba(94,106,210,0.15); 
+  color: var(--brand-indigo); 
+}
+.teacherChipSUPPLY { 
+  background: rgba(245,158,11,0.08); 
+  border-color: rgba(245,158,11,0.2); 
+  color: var(--status-warning); 
+}
+
+/* Status change chips */
+.changeChip { 
+  background: rgba(220,38,38,0.08); 
+  border-color: rgba(220,38,38,0.2); 
+  color: var(--status-error); 
+}
+
+/* Multi teacher chip */
+.multiTeacherChip {
+  background: rgba(217,119,6,0.1);
+  border-color: rgba(217,119,6,0.2);
+  color: var(--status-warning);
+}
+
+/* Loading progress badge */
+.loadingBadge {
+  background: rgba(94,106,210,0.1);
+  border-color: rgba(94,106,210,0.2);
+  color: var(--brand-indigo);
+}
+
+/* Warning suggestion pill */
+.warningSuggestion {
+  background: var(--bg-surface);
+  border-color: rgba(220,38,38,0.3);
+  color: var(--status-error);
+}
+
+/* Class quality status chips */
+.briefStatusChip {
+  background: rgba(217,119,6,0.1);
+  border-color: rgba(217,119,6,0.2);
+  color: var(--status-warning);
+}
+
+.duplicateStatusChip {
+  background: rgba(249,115,22,0.1);
+  border-color: rgba(249,115,22,0.2);
+  color: var(--status-orange);
+}
+
+/* Substitute teacher status */
+.substituteStatus {
+  background: rgba(217,119,6,0.1);
+  border-color: rgba(217,119,6,0.2);
+  color: var(--status-warning);
+}
+
+/* No teacher status */
+.noTeacherStatus {
+  background: rgba(0,0,0,0.04);
+  border-color: rgba(0,0,0,0.08);
+  color: var(--text-quaternary);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   ANALYSIS SECTION — Summary analysis with insights
+══════════════════════════════════════════════════════════════════════════════ */
+
+/* Summary blocks */
+.summaryBlock {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-card);
+  padding: var(--space-5);
+  box-shadow: var(--shadow-card);
+}
+
+.summaryBlockHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-4);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.summaryBlockTitle {
+  font-size: 16px;
+  font-weight: 590;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  letter-spacing: -0.13px;
+}
+
+.summaryBlockContent {
+  font-size: 13px;
+  line-height: 1.8;
+  color: var(--text-secondary);
+}
+
+.summaryBlockContent > div {
+  margin-bottom: var(--space-1);
+}
+
+.summaryBlockContent > div:empty {
+  margin-bottom: var(--space-3);
+}
+
+/* Copy button */
+.copyBtn {
+  padding: var(--space-2) var(--space-4);
+  background: var(--brand-indigo);
+  color: white;
+  border: none;
+  border-radius: var(--radius-comfortable);
+  font-size: 12px;
+  font-weight: 510;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.copyBtn:hover {
+  background: var(--accent-violet);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(94, 106, 210, 0.3);
+}
+
+.copyBtn:active {
+  transform: translateY(0);
+}
+
+.analysisBlock {
+  padding: var(--space-5);
+  background: var(--bg-elevated);
+  border-radius: var(--radius-standard);
+  border: 1px solid var(--border-primary);
+}
+
+.analysisTitle {
+  font-size: 14px;
+  font-weight: 590;
+  color: var(--text-primary);
+  margin-bottom: var(--space-4);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  letter-spacing: -0.13px;
+}
+
+.analysisContent {
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text-secondary);
+}
+
+.analysisMetrics {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.metricRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.metricRow:last-child {
+  border-bottom: none;
+}
+
+.metricLabel {
+  font-size: 13px;
+  color: var(--text-tertiary);
+  font-weight: 400;
+}
+
+.metricValue {
+  font-size: 14px;
+  font-weight: 590;
+  color: var(--text-primary);
+  letter-spacing: -0.13px;
+}
+
+.analysisInsights {
+  padding: var(--space-4);
+  background: var(--bg-surface);
+  border-radius: var(--radius-standard);
+  border: 1px solid var(--border-primary);
+  margin-top: var(--space-4);
+}
+
+.insightNote {
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text-secondary);
+  margin-bottom: var(--space-2);
+}
+
+.insightNote:last-child {
+  margin-bottom: 0;
+}
+
+.indentedInsight {
+  padding-left: var(--space-5);
+  position: relative;
+}
+
+.indentedInsight::before {
+  content: '→';
+  position: absolute;
+  left: var(--space-3);
+  color: var(--text-quaternary);
+}
+
+.rankCards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.rankCard {
+  padding: var(--space-4);
+  border-radius: var(--radius-standard);
+  border: 1px solid;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.rankLabel {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.rankValue {
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.24px;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   SIDEBAR FILTER PANELS (right column on desktop)
+══════════════════════════════════════════════════════════════════════════════ */
+.filterPanel {
+  background: rgba(0, 0, 0, 0.02);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-card);
+  padding: var(--space-4);
+  box-shadow: var(--shadow-card);
+}
+@media (min-width: 1100px) { .filterPanel { position: sticky; top: 68px; } }
+@media (max-width: 480px)  { .filterPanel { padding: var(--space-3); } }
+
+.filterTitle {
+  font-size: 13px; font-weight: 590; color: var(--text-primary);
+  margin: 0 0 var(--space-1) 0; letter-spacing: -0.13px;
+}
+.filterDesc { font-size: 12px; color: var(--text-quaternary); margin-bottom: var(--space-3); line-height: 1.5; }
+
+.reasonList { display: flex; flex-direction: column; gap: var(--space-2); }
+.reasonItem { display: flex; align-items: flex-start; gap: var(--space-2); }
+
+/* Custom checkbox */
+.reasonCheckbox {
+  appearance: none; -webkit-appearance: none;
+  width: 14px; height: 14px;
+  border: 1.5px solid var(--border-secondary);
+  border-radius: var(--radius-standard);
+  background: transparent; cursor: pointer;
+  position: relative; flex-shrink: 0; margin-top: var(--space-1);
+  transition: all 0.15s ease;
+}
+.reasonCheckbox:checked { background: var(--brand-indigo); border-color: var(--brand-indigo); }
+.reasonCheckbox:checked::after {
+  content: ''; position: absolute; top: 45%; left: 50%;
+  transform: translate(-50%, -50%) rotate(45deg);
+  width: 3px; height: 5px;
+  border: solid var(--bg-surface); border-width: 0 1.5px 1.5px 0;
+}
+.reasonLabel {
+  font-size: 13px; color: var(--text-secondary); cursor: pointer;
+  line-height: 1.5; user-select: none;
+  display: flex; justify-content: space-between; align-items: center;
+  gap: var(--space-2); width: 100%; letter-spacing: -0.13px;
+}
+.reasonCount {
+  color: var(--text-quaternary); background: var(--bg-panel);
+  padding: 0 5px; border-radius: var(--radius-standard);
+  font-size: 11px; font-weight: 510; flex-shrink: 0;
+  border: 1px solid var(--border-primary);
+}
+
+/* ── Tooltip (i) ── */
+.tooltipWrap { position: relative; display: inline-flex; align-items: center; }
+.tooltipIcon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 14px; height: 14px; border-radius: var(--radius-pill);
+  border: 1px solid var(--border-secondary);
+  color: var(--text-quaternary); font-size: 9px; font-weight: 590;
+  cursor: default; flex-shrink: 0; font-style: normal;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+.tooltipIcon:hover { border-color: var(--brand-indigo); color: var(--brand-indigo); }
+.tooltipWrap:hover .tooltipBox {
+  opacity: 1; visibility: visible;
+  transform: translateX(-50%) translateY(0);
+}
+.tooltipBox {
+  position: absolute; bottom: calc(100% + var(--space-2)); left: 50%;
+  transform: translateX(-50%) translateY(var(--space-1));
+  background: var(--text-primary); color: var(--bg-surface);
+  font-size: 11px;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  padding: var(--space-1) var(--space-2); border-radius: var(--radius-comfortable);
+  white-space: nowrap; opacity: 0; visibility: hidden;
+  transition: opacity 0.15s ease, transform 0.15s ease, visibility 0.15s ease;
+  pointer-events: none; z-index: 300;
+  max-width: 280px;
+  /* BUG FIX: overflow:hidden clips the ::after arrow that sits at top:100%
+     (outside the box bounds). Use text-overflow on the text node instead. */
+  text-overflow: ellipsis;
+}
+.tooltipBox::after {
+  content: ''; position: absolute;
+  /* Arrow sits BELOW the box — top:100% = bottom edge of tooltipBox */
+  top: 100%; left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: var(--text-primary);
+  /* Must not be clipped — resolved by removing overflow:hidden above */
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   MODAL — Level 5 dialog elevation (DESIGN.md §6)
+   Overlay: rgba(0,0,0,0.85) per DESIGN.md §2 "Overlay Primary"
+   Dialog: always centered, max 960px, radius-panel (12px), shadow-dialog
+   Mobile: same center alignment, horizontal padding gives 16px breathing room
+══════════════════════════════════════════════════════════════════════════════ */
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  /* DESIGN.md §2: Overlay Primary = rgba(0,0,0,0.85) */
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  /* Uniform padding creates breathing room on all sizes.
+     The dialog itself then constrains to max-width inside this padded area. */
+  padding: var(--space-5);
+  box-sizing: border-box;
+  /* CRITICAL: Prevent horizontal scroll */
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+/* Mobile: reduce padding but keep dialog centered (no bottom-sheet) */
+@media (max-width: 640px) {
+  .modalOverlay {
+    padding: var(--space-4) var(--space-3);
+  }
+}
+@media (max-width: 480px) {
+  .modalOverlay {
+    padding: var(--space-3) var(--space-2);
+  }
+}
+
+.modalContent {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-panel); /* 12px per DESIGN.md §5 */
+  /* CRITICAL: Remove width:100% to prevent expansion beyond max-width */
+  max-width: min(1200px, calc(100vw - 40px)); /* Never exceed viewport */
+  /* max-height = 90% of viewport so dialog never touches screen edges */
+  max-height: 90vh;
+  max-height: 90dvh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--shadow-dialog);
+  box-sizing: border-box;
+  overflow: hidden; /* CRITICAL: Prevent children from expanding modal */
+  /* CRITICAL: Prevent flex items from expanding beyond max-width */
+  min-width: 0;
+  /* Ensure modal takes available space but respects max-width */
+  width: auto;
+}
+
+/* Mobile: Full width with better spacing */
+@media (max-width: 768px) {
+  .modalContent {
+    max-width: calc(100vw - 32px);
+    max-height: 95vh;
+    max-height: 95dvh;
+    border-radius: var(--radius-card); /* Smaller radius on mobile */
+  }
+}
+
+@media (max-width: 480px) {
+  .modalContent {
+    max-width: calc(100vw - 16px);
+  }
+}
+
+.modalHeader {
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--border-primary);
+  display: flex; justify-content: space-between; align-items: flex-start;
+  background: var(--bg-elevated);
+  border-radius: var(--radius-panel) var(--radius-panel) 0 0;
+  gap: var(--space-3);
+  /* CRITICAL: Prevent header from expanding modal */
+  width: 100%;
+  box-sizing: border-box;
+  min-width: 0;
+  flex-shrink: 0;
+}
+
+@media (max-width: 480px) {
+  .modalHeader { padding: var(--space-3) var(--space-4); }
+}
+
+.modalTitle { font-size: 17px; font-weight: 590; margin: 0 0 var(--space-1); color: var(--text-primary); letter-spacing: -0.24px; }
+.modalSubtitle { font-size: 13px; color: var(--text-tertiary); margin: 0; letter-spacing: -0.13px; }
+
+/* Icon Button (Circle) */
+.closeModalBtn {
+  background: rgba(0, 0, 0, 0.02); border: 1px solid var(--border-primary);
+  color: var(--text-tertiary); width: 28px; height: 28px;
+  border-radius: var(--radius-pill);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; flex-shrink: 0;
+  transition: background 0.15s ease, color 0.15s ease;
+  box-shadow: var(--shadow-surface);
+}
+.closeModalBtn:hover { background: rgba(0, 0, 0, 0.04); color: var(--text-primary); }
+
+.modalBody { 
+  flex: 1; 
+  overflow-y: auto; 
+  overflow-x: hidden; /* Prevent horizontal scroll on modal body itself */
+  -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+  /* CRITICAL: Constrain width */
+  width: 100%;
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+/* CRITICAL: Ensure all direct children of modalBody respect width */
+.modalBody > * {
+  max-width: 100%;
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+/* Mobile: Better padding and spacing */
+@media (max-width: 768px) {
+  .modalBody {
+    padding: 0; /* Remove default padding, let content control its own */
+  }
+}
+
+/* Horizontal scroll indicator for tables on mobile */
+.horizontalScrollHint {
+  position: relative;
+}
+
+.horizontalScrollHint::after {
+  content: '→';
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  background: linear-gradient(to right, transparent, var(--bg-surface) 20%);
+  padding: var(--space-2) var(--space-3) var(--space-2) var(--space-6);
+  color: var(--text-quaternary);
+  font-size: 16px;
+  pointer-events: none;
+  opacity: 0.7;
+  transition: opacity 0.3s ease;
+}
+
+@media (min-width: 769px) {
+  .horizontalScrollHint::after {
+    display: none;
+  }
+}
+
+.studentTable { 
+  width: 100%; 
+  border-collapse: collapse; 
+  min-width: 800px; /* Tăng từ 500px lên 800px */
+}
+.studentTable th, .studentTable td {
+  text-align: left; 
+  padding: var(--space-3); /* Consistent padding */
+  border-bottom: 1px solid var(--border-primary);
+  font-size: 13px; 
+  letter-spacing: -0.13px;
+  vertical-align: middle; /* Đồng bộ vertical alignment */
+}
+.studentTable th {
+  font-weight: 590; 
+  color: var(--text-quaternary);
+  font-size: 11px; 
+  text-transform: uppercase; 
+  letter-spacing: 0.04em;
+  background: var(--bg-elevated); 
+  position: sticky; 
+  top: 0;
+  z-index: 10; /* Đảm bảo sticky header luôn ở trên */
+}
+.studentTable td { 
+  color: var(--text-primary); 
+}
+.studentTable tbody tr {
+  transition: background-color 0.1s ease;
+}
+.studentTable tbody tr:hover {
+  background: rgba(0,0,0,0.02);
+}
+.studentTable tbody tr[style*="cursor: pointer"]:hover {
+  background: rgba(0,0,0,0.04);
+}
+.studentTable tr:last-child td { 
+  border-bottom: none; 
+}
+
+/* Status pills */
+.statusPill {
+  display: inline-block; padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-pill); font-size: 11px; font-weight: 510;
+  border: 1px solid var(--border-primary);
+  background: var(--bg-panel); color: var(--text-tertiary); white-space: nowrap;
+}
+.statusPill.passed { background: rgba(5, 150, 105, 0.08); color: var(--status-success); border-color: rgba(5, 150, 105, 0.25); }
+.statusPill.failed { background: rgba(220, 38, 38, 0.08); color: var(--status-error); border-color: rgba(220, 38, 38, 0.25); }
+.statusPill.exempt { background: var(--bg-panel); color: var(--text-quaternary); border-color: var(--border-primary); }
+
+.datesList { font-size: 12px; color: var(--text-tertiary); line-height: 1.5; display: flex; flex-direction: column; gap: var(--space-1); }
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   RANGE SLIDER
+══════════════════════════════════════════════════════════════════════════════ */
+.rangeSliderWrap {
+  display: flex; flex-direction: column; gap: var(--space-1);
+  min-width: 130px; max-width: 175px; user-select: none;
+}
+.rangeSliderLabel {
+  display: flex; align-items: center; gap: var(--space-1);
+  font-size: 12px; color: var(--text-tertiary); font-weight: 510;
+}
+.rangeValue { font-weight: 590; transition: color 0.15s ease; }
+.rangeTrack {
+  position: relative; height: 3px;
+  background: var(--bg-panel); border-radius: 2px; cursor: pointer;
+  border: 1px solid var(--border-primary);
+}
+.rangeTrackFill {
+  position: absolute; top: 0; height: 100%; border-radius: 2px;
+  transition: background 0.2s ease;
+}
+.rangeThumb {
+  position: absolute; top: 50%;
+  transform: translate(-50%, -50%);
+  width: 13px; height: 13px;
+  background: var(--bg-surface);
+  border: 2px solid var(--brand-indigo);
+  border-radius: var(--radius-pill);
+  cursor: grab; box-shadow: var(--shadow-surface);
+  transition: box-shadow 0.15s ease; z-index: 2;
+}
+.rangeThumb:hover, .rangeThumb:active {
+  box-shadow: 0 0 0 4px rgba(94,106,210,0.15); cursor: grabbing;
+}
+.rangeThumbLeft  { left: 0; }
+.rangeThumbRight { left: 100%; }
+.rangeThumbBubble {
+  position: absolute; bottom: calc(100% + var(--space-1)); left: 50%;
+  transform: translateX(-50%);
+  background: var(--text-primary); color: var(--bg-surface);
+  font-size: 10px; padding: var(--space-1); border-radius: var(--radius-standard);
+  white-space: nowrap; opacity: 0; pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+.rangeThumb:hover .rangeThumbBubble, .rangeThumb:active .rangeThumbBubble { opacity: 1; }
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   SPINNER & SKELETON
+══════════════════════════════════════════════════════════════════════════════ */
+.spinner {
+  width: 13px; height: 13px;
+  border: 2px solid rgba(255,255,255,0.3); border-top-color: var(--bg-surface);
+  border-radius: var(--radius-pill);
+  animation: spin 0.7s linear infinite; flex-shrink: 0;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.skeletonRow {
+  display: grid; grid-template-columns: 2.5fr 0.6fr 1fr 2fr;
+  padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border-primary);
+  gap: var(--space-4); align-items: center; min-width: 560px;
+}
+.skeletonBlock {
+  background: linear-gradient(90deg, var(--bg-panel) 25%, #ebebeb 50%, var(--bg-panel) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s infinite;
+  border-radius: var(--radius-standard); height: 12px;
+}
+@keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   TOAST — fixed, top-right (desktop), bottom (mobile)
+══════════════════════════════════════════════════════════════════════════════ */
+.toastContainer {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  z-index: 1000;
+  /* Constrain width so toasts never overflow viewport */
+  width: min(320px, calc(100vw - 40px));
+  pointer-events: none;
+  /* Don't let container itself overflow */
+  overflow: visible;
+}
+
+@media (max-width: 480px) {
+  .toastContainer {
+    /* Bottom-center on mobile for thumb reachability */
+    top: auto;
+    bottom: 20px;
+    right: var(--space-3);
+    left: var(--space-3);
+    /* Full width minus gutters; width:auto needed so left+right define it */
+    width: auto;
+  }
+}
+
+.toast {
+  background: var(--bg-surface); color: var(--text-primary);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-card);
+  border: 1px solid var(--border-primary);
+  box-shadow: var(--shadow-elevated);
+  font-size: 13px; font-weight: 510;
+  display: flex; align-items: center; gap: var(--space-3);
+  letter-spacing: -0.13px; pointer-events: auto;
+}
+.toast.success { border-left: 3px solid var(--status-emerald); }
+.toast.error   { border-left: 3px solid var(--status-error); }
+.toast.info    { border-left: 3px solid var(--brand-indigo); }
+.toast.loading .spinner { border-color: rgba(0,0,0,0.1); border-top-color: var(--brand-indigo); }
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   SUMMARY FILTERS & EXPORT
+   Filters row with status filter and export button for summary section
+══════════════════════════════════════════════════════════════════════════════ */
+
+/* Export dropdown container */
+.exportDropdown {
+  position: relative;
+  margin-left: auto;
+}
+
+/* Export button */
+.exportBtn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--brand-indigo);
+  color: white;
+  border: none;
+  border-radius: var(--radius-comfortable);
+  font-size: 13px;
+  font-weight: 510;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: 0 2px 6px rgba(94,106,210,0.25);
+  font-family: inherit;
+  letter-spacing: -0.13px;
+}
+
+.exportBtn:hover {
+  background: var(--accent-violet);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(94,106,210,0.3);
+}
+
+.exportBtn:active {
+  transform: translateY(0);
+}
+
+/* Export overlay to close menu */
+.exportOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 99;
+}
+
+/* Export dropdown menu */
+.exportMenu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-elevated);
+  padding: var(--space-2);
+  min-width: 240px;
+  z-index: 100;
+}
+
+/* Export menu checkbox labels */
+.exportMenu label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  cursor: pointer;
+  border-radius: var(--radius-standard);
+  font-size: 13px;
+  transition: background 0.15s ease;
+  user-select: none;
+  letter-spacing: -0.13px;
+  color: var(--text-secondary);
+}
+
+.exportMenu label:hover {
+  background: rgba(0,0,0,0.04);
+}
+
+/* Export menu checkboxes */
+.exportMenu input[type="checkbox"] {
+  cursor: pointer;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+/* Export menu divider */
+.exportMenuDivider {
+  height: 1px;
+  background: var(--border-primary);
+  margin: var(--space-2) 0;
+}
+
+/* Export action button */
+.exportMenuBtn {
+  width: 100%;
+  padding: var(--space-2);
+  background: var(--brand-indigo);
+  color: white;
+  border: none;
+  border-radius: var(--radius-comfortable);
+  font-size: 13px;
+  font-weight: 510;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  font-family: inherit;
+  letter-spacing: -0.13px;
+}
+
+.exportMenuBtn:hover:not(:disabled) {
+  background: var(--accent-violet);
+}
+
+.exportMenuBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
