@@ -1,0 +1,240 @@
+/* ─── Login Page ─────────────────────────────────────────────────────────────
+   Design: Light-mode adaptation of DESIGN.md (Linear-inspired)
+   All tokens from globals.css :root
+──────────────────────────────────────────────────────────────────────────── */
+
+.page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--bg-marketing);
+  position: relative;
+  overflow: hidden;
+  padding: var(--space-6);
+}
+
+/* Ambient glow — Apple Blue, very subtle on light bg */
+.bgGlow1 {
+  position: absolute; top: -240px; left: -200px;
+  width: 600px; height: 600px;
+  background: radial-gradient(circle, rgba(0, 113, 227, 0.06) 0%, transparent 70%);  /* Apple Blue */
+  pointer-events: none;
+}
+.bgGlow2 {
+  position: absolute; bottom: -240px; right: -200px;
+  width: 500px; height: 500px;
+  background: radial-gradient(circle, rgba(0, 113, 227, 0.05) 0%, transparent 70%);  /* Apple Blue */
+  pointer-events: none;
+}
+
+.container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-8);
+  width: 100%;
+  max-width: 400px;
+  position: relative;
+  z-index: 1;
+}
+
+/* ─── Brand mark ─────────────────────────────────────────────────────────── */
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.logoMark {
+  flex-shrink: 0;
+  /* Subtle drop glow matching Apple Blue */
+  filter: drop-shadow(0 2px 8px rgba(0, 113, 227, 0.28));
+}
+
+/* Caption: 14px weight 590 -0.182px */
+.brandName {
+  font-size: 14px;
+  font-weight: 590;
+  color: var(--text-primary);
+  font-feature-settings: 'cv01', 'ss03';
+  letter-spacing: -0.182px;
+  line-height: 1.2;
+}
+
+/* Caption 12px muted */
+.brandSub {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-quaternary);
+  font-feature-settings: 'cv01', 'ss03';
+  letter-spacing: -0.13px;
+  line-height: 1.4;
+}
+
+/* ─── Card — Level 2 Surface elevation ───────────────────────────────────── */
+.card {
+  width: 100%;
+  background: var(--bg-surface);       /* white surface */
+  border: 1px solid var(--border-primary);  /* --border-primary: #e6e6e6 */
+  border-radius: var(--radius-panel);   /* 12px panel radius */
+  padding: var(--space-8);             /* 32px */
+  box-shadow: var(--shadow-dialog);
+  animation: fadeInUp 0.3s ease;
+}
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ─── Card header ────────────────────────────────────────────────────────── */
+.cardHeader { margin-bottom: var(--space-6); }
+
+/* Heading 2: 24px weight 400 -0.288px */
+.title {
+  font-size: 1.5rem;         /* 24px */
+  font-weight: 400;
+  color: var(--text-primary);
+  letter-spacing: -0.288px;
+  line-height: 1.2;
+  margin-bottom: var(--space-1);
+  font-feature-settings: 'cv01', 'ss03';
+}
+
+/* Body: 14px weight 400 muted */
+.subtitle {
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--text-tertiary);
+  letter-spacing: -0.13px;
+  line-height: 1.5;
+}
+
+/* ─── Form ───────────────────────────────────────────────────────────────── */
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);         /* 20px between fields */
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);         /* 4px label → input */
+}
+
+/* Caption 13px weight 510 */
+.label {
+  font-size: 13px;
+  font-weight: 510;
+  color: var(--text-secondary);
+  letter-spacing: -0.13px;
+  font-feature-settings: 'cv01', 'ss03';
+}
+
+/* Text Area input spec from DESIGN.md (light-mode adaptation) */
+.input {
+  width: 100%;
+  background: var(--bg-elevated);         /* #fafafa */
+  border: 1px solid var(--border-input);   /* #d0d6e0 */
+  border-radius: var(--radius-comfortable); /* 6px */
+  padding: 9px 14px;
+  font-size: 14px;
+  font-weight: 400;
+  font-family: inherit;
+  font-feature-settings: 'cv01', 'ss03';
+  color: var(--text-primary);
+  letter-spacing: -0.13px;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.input::placeholder { color: var(--text-quaternary); }
+.input:focus {
+  border-color: var(--brand-indigo);  /* Linear Indigo focus */
+  box-shadow: var(--shadow-focus);  /* Brand indigo focus ring */
+}
+.input:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* ─── Password wrapper ───────────────────────────────────────────────────── */
+.passwordWrapper { position: relative; }
+.passwordWrapper .input { padding-right: 44px; }
+
+/* Icon Button (Circle) from DESIGN.md */
+.togglePassword {
+  position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+  background: transparent; border: none;
+  cursor: pointer; color: var(--text-quaternary);
+  display: flex; align-items: center; justify-content: center;
+  padding: 4px; border-radius: var(--radius-comfortable);
+  transition: color 0.15s ease;
+}
+.togglePassword:hover { color: var(--text-secondary); }
+
+/* ─── Error banner ───────────────────────────────────────────────────────── */
+.errorBanner {
+  display: flex; align-items: flex-start; gap: var(--space-2);
+  padding: 9px 12px;
+  background: rgba(220, 38, 38, 0.06);
+  border: 1px solid rgba(220, 38, 38, 0.18);
+  border-radius: var(--radius-comfortable);
+  color: var(--status-error);
+  font-size: 13px; line-height: 1.5;
+  font-feature-settings: 'cv01', 'ss03';
+  animation: fadeIn 0.2s ease;
+}
+.errorBanner svg { flex-shrink: 0; margin-top: 1px; }
+
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+/* ─── Submit button — Apple Primary Button ────────────────── */
+.submitButton {
+  width: 100%;
+  display: flex; align-items: center; justify-content: center; gap: var(--space-2);
+  background: var(--brand-indigo);    /* Linear Indigo - singular chromatic accent */
+  color: var(--bg-surface);
+  border: none;
+  border-radius: var(--radius-comfortable);  /* 6px */
+  padding: 9px 16px;
+  font-size: 14px;
+  font-weight: 510;
+  font-family: inherit;
+  font-feature-settings: 'cv01', 'ss03';
+  letter-spacing: -0.13px;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
+  box-shadow: 0 2px 6px rgba(0, 113, 227, 0.25);  /* Apple Blue shadow */
+  margin-top: var(--space-1);
+}
+.submitButton:hover:not(:disabled) {
+  background: var(--accent-hover);   /* Linear hover state */
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 113, 227, 0.3);  /* Apple Blue shadow */
+}
+.submitButton:active:not(:disabled) { transform: translateY(0); }
+.submitButton:disabled { opacity: 0.45; cursor: not-allowed; transform: none; box-shadow: none; }
+
+/* ─── Spinner ────────────────────────────────────────────────────────────── */
+.spinner {
+  width: 14px; height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: var(--bg-surface);
+  border-radius: 50%;
+  animation: spin 0.65s linear infinite;
+  flex-shrink: 0;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ─── Footer ─────────────────────────────────────────────────────────────── */
+.footer {
+  font-size: 12px; font-weight: 400;
+  color: var(--text-quaternary);
+  text-align: center;
+  letter-spacing: -0.13px;
+}
+
+/* ─── Responsive ─────────────────────────────────────────────────────────── */
+@media (max-width: 480px) {
+  .card { padding: var(--space-6); }
+  .container { gap: var(--space-6); }
+}
