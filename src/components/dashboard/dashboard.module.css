@@ -1,0 +1,253 @@
+/* ─── Dashboard Components Styles ─────────────────────────────────────────── */
+/* Design System: DESIGN.md (Linear-inspired, light-mode adaptation)           */
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   KPI CARD
+══════════════════════════════════════════════════════════════════════════════ */
+.kpiCard {
+  background: rgba(0, 0, 0, 0.02);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-card);
+  padding: var(--space-4);
+  box-shadow: var(--shadow-card);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.kpiCard:hover,
+.kpiCard:focus-visible {
+  background: rgba(0, 0, 0, 0.03);
+  box-shadow: var(--shadow-elevated);
+  transform: translateY(-1px);
+}
+
+.kpiCard:focus-visible {
+  outline: 2px solid var(--brand-indigo);
+  outline-offset: 2px;
+}
+
+.kpiHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.kpiIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-tertiary);
+}
+
+.kpiLabel {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  letter-spacing: -0.13px;
+}
+
+.kpiValue {
+  font-size: 32px;
+  font-weight: 590;
+  letter-spacing: -0.704px;
+  line-height: 1.1;
+  margin: var(--space-1) 0;
+}
+
+.kpiDescription {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--text-tertiary);
+  letter-spacing: -0.13px;
+}
+
+.kpiTimestamp {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-quaternary);
+  letter-spacing: -0.08px;
+  margin-top: var(--space-1);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   ALERT CARD
+══════════════════════════════════════════════════════════════════════════════ */
+.alertCard {
+  background: rgba(0, 0, 0, 0.02);
+  border: 1px solid var(--border-primary);
+  border-left: 3px solid;
+  border-radius: var(--radius-card);
+  padding: var(--space-4);
+  box-shadow: var(--shadow-card);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.alertCard:hover,
+.alertCard:focus-visible {
+  background: rgba(0, 0, 0, 0.03);
+  box-shadow: var(--shadow-elevated);
+  transform: translateY(-1px);
+}
+
+.alertCard:focus-visible {
+  outline: 2px solid var(--brand-indigo);
+  outline-offset: 2px;
+}
+
+.alertHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.alertIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.alertTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.13px;
+}
+
+.alertCount {
+  font-size: 28px;
+  font-weight: 590;
+  letter-spacing: -0.704px;
+  line-height: 1.1;
+  margin: var(--space-1) 0;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   ACTIONABLE INSIGHT CARD
+══════════════════════════════════════════════════════════════════════════════ */
+.insightCard {
+  background: rgba(0, 0, 0, 0.02);
+  border: 1px solid var(--border-primary);
+  border-left: 3px solid;
+  border-radius: var(--radius-card);
+  padding: var(--space-4);
+  box-shadow: var(--shadow-card);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.insightCard:hover,
+.insightCard:focus-visible {
+  background: rgba(0, 0, 0, 0.03);
+  box-shadow: var(--shadow-elevated);
+  transform: translateY(-1px);
+}
+
+.insightCard:focus-visible {
+  outline: 2px solid var(--brand-indigo);
+  outline-offset: 2px;
+}
+
+.insightHeader {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.insightIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.insightContent {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.insightTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.13px;
+  line-height: 1.4;
+}
+
+.insightDescription {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-tertiary);
+  letter-spacing: -0.13px;
+  line-height: 1.4;
+}
+
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   QUICK LINK
+══════════════════════════════════════════════════════════════════════════════ */
+.quickLink {
+  background: rgba(0, 0, 0, 0.02);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-card);
+  padding: var(--space-4);
+  box-shadow: var(--shadow-card);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.quickLink:hover,
+.quickLink:focus-visible {
+  background: rgba(0, 0, 0, 0.03);
+  box-shadow: var(--shadow-elevated);
+  transform: translateY(-1px);
+}
+
+.quickLink:focus-visible {
+  outline: 2px solid var(--brand-indigo);
+  outline-offset: 2px;
+}
+
+.quickLinkIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--brand-indigo);
+  flex-shrink: 0;
+}
+
+.quickLinkContent {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.quickLinkLabel {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.13px;
+}
+
+.quickLinkDescription {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-tertiary);
+  letter-spacing: -0.13px;
+}
