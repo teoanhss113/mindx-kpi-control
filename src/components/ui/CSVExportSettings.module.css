@@ -1,0 +1,204 @@
+/* CSV Export Settings Modal */
+
+.modalBody {
+  padding: var(--space-5);
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.quickActions {
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.quickActionBtn {
+  padding: var(--space-2) var(--space-3);
+  font-size: 12px;
+  font-weight: 510;
+  color: var(--text-secondary);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-comfortable);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: inherit;
+}
+
+.quickActionBtn:hover {
+  background: var(--bg-surface);
+  border-color: var(--border-secondary);
+  color: var(--text-primary);
+}
+
+.instructions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: rgba(94, 106, 210, 0.06);
+  border: 1px solid rgba(94, 106, 210, 0.15);
+  border-radius: var(--radius-comfortable);
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: var(--space-4);
+}
+
+.instructions svg {
+  flex-shrink: 0;
+  color: var(--brand-indigo);
+}
+
+.columnList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.columnItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-comfortable);
+  cursor: move;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.columnItem:hover {
+  background: var(--bg-elevated);
+  border-color: var(--border-secondary);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04);
+}
+
+.columnItem.dragging {
+  opacity: 0.5;
+  transform: scale(0.98);
+}
+
+.columnItem.disabled {
+  opacity: 0.5;
+}
+
+.dragHandle {
+  display: flex;
+  align-items: center;
+  color: var(--text-quaternary);
+  cursor: grab;
+  flex-shrink: 0;
+}
+
+.dragHandle:active {
+  cursor: grabbing;
+}
+
+.checkboxLabel {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 1;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.checkbox {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.checkboxCustom {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--border-secondary);
+  border-radius: var(--radius-standard);
+  background: var(--bg-surface);
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.checkbox:checked + .checkboxCustom {
+  background: var(--brand-indigo);
+  border-color: var(--brand-indigo);
+}
+
+.checkboxCustom svg {
+  color: white;
+}
+
+.columnLabel {
+  font-weight: 510;
+  letter-spacing: -0.01em;
+}
+
+.orderIndicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  font-size: 11px;
+  font-weight: 590;
+  color: var(--text-quaternary);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-standard);
+  flex-shrink: 0;
+}
+
+.modalFooter {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border-top: 1px solid var(--border-primary);
+  background: var(--bg-elevated);
+}
+
+.cancelBtn,
+.saveBtn {
+  padding: var(--space-2) var(--space-4);
+  font-size: 13px;
+  font-weight: 510;
+  border-radius: var(--radius-comfortable);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: inherit;
+  border: 1px solid transparent;
+}
+
+.cancelBtn {
+  color: var(--text-secondary);
+  background: transparent;
+  border-color: var(--border-primary);
+}
+
+.cancelBtn:hover {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+
+.saveBtn {
+  color: white;
+  background: var(--brand-indigo);
+  border-color: var(--brand-indigo);
+}
+
+.saveBtn:hover:not(:disabled) {
+  background: var(--accent-violet);
+  border-color: var(--accent-violet);
+}
+
+.saveBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
