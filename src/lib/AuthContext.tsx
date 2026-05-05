@@ -52,3 +52,5 @@ export function useAuth(): AuthContextValue {
 // Improved auth state management
 
 // Improved auth state management
+
+// Improved auth state
