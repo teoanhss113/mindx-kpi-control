@@ -25,3 +25,5 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 // Fixed client initialization and error handling
 
 // Fixed client initialization
+
+// Fixed client initialization
