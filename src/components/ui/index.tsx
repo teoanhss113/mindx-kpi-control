@@ -1338,3 +1338,5 @@ export type { CSVColumnConfig } from './CSVExportSettings';
 /* Enhanced button styles */
 // Added sortable table headers
 // Added React.memo optimizations
+
+// Added React.memo
