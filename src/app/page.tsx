@@ -7,10 +7,10 @@ export default function UserHomePage() {
   return (
     <AuthenticatedPage>
       <UserLayout title="Trang chủ" activePage="home">
-        {/* Empty home page */}
+        <div style={{ padding: '24px' }}>
+          <p>Chào mừng đến với hệ thống quản lý KPI MindX</p>
+        </div>
       </UserLayout>
     </AuthenticatedPage>
   );
 }
-
-// Final touches
