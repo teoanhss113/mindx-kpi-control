@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { AuthenticatedPage } from '@/components/AuthenticatedPage';
 import { UserLayout } from '@/components/UserLayout';
 import { useAuth } from '@/lib/AuthContext';
-import { useToast, ToastContainer, Toolbar, TableGroupHeader, EmptyState } from '@/components/ui';
+import { useToast, ToastContainer, Toolbar, TableGroupHeader, EmptyState, Modal, ModalHeader } from '@/components/ui';
 import { getTeacherConfirmations, confirmOfficeHour, rejectOfficeHour } from '@/lib/teacher-confirmation-actions';
 import { createShiftRequest, hasRequestedShift } from '@/lib/shift-request-actions';
 import { fetchOfficeHours, searchTeachers, type Teacher } from '@/services/officeHoursService';
@@ -37,6 +37,12 @@ export default function AvailableShiftsPage() {
   const [timeFrom, setTimeFrom] = useState('');
   const [timeTo, setTimeTo] = useState('');
   const [selectedCentres, setSelectedCentres] = useState<string[]>([]);
+  
+  // Modal states
+  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [selectedOfficeHour, setSelectedOfficeHour] = useState<OfficeHourWithConfirmation | null>(null);
+  const [rejectionReason, setRejectionReason] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   
   // Table visibility
   const [showTable, setShowTable] = useState(true);
@@ -334,15 +340,50 @@ export default function AvailableShiftsPage() {
     }
   }
 
+  function openRejectModal(item: OfficeHourWithConfirmation) {
+    setSelectedOfficeHour(item);
+    setRejectionReason('');
+    setShowRejectModal(true);
+  }
+
   async function handleConfirm(item: OfficeHourWithConfirmation) {
     if (!session?.email) return;
 
     try {
+      setSubmitting(true);
       await confirmOfficeHour(item.officeHour.id, session.email);
       addToast('Đã xác nhận ca trực', 'success');
       await handleFetch();
     } catch (error) {
       addToast('Không thể xác nhận ca trực', 'error');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleReject() {
+    if (!selectedOfficeHour || !session?.email) return;
+
+    try {
+      setSubmitting(true);
+      await rejectOfficeHour(
+        selectedOfficeHour.officeHour.id,
+        session.email,
+        rejectionReason
+      );
+      
+      addToast('Đã từ chối ca trực', 'success');
+      setShowRejectModal(false);
+      setSelectedOfficeHour(null);
+      setRejectionReason('');
+      
+      // Reload data
+      await handleFetch();
+    } catch (error) {
+      console.error('Error rejecting:', error);
+      addToast('Không thể từ chối ca trực', 'error');
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -615,21 +656,59 @@ export default function AvailableShiftsPage() {
                             {/* Actions */}
                             <div style={{ display: 'flex', gap: 'var(--space-2)', justifyContent: 'center' }}>
                               {item.isAssignedToMe ? (
-                                // Ca đã được gán cho mình
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleConfirm(item);
-                                  }}
-                                  className={styles.primaryBtn}
-                                  style={{
-                                    padding: '6px 12px',
-                                    fontSize: 12,
-                                    minWidth: 'auto',
-                                  }}
-                                >
-                                  Xác nhận
-                                </button>
+                                // Ca đã được gán cho mình - Show both Confirm and Reject buttons
+                                item.confirmation?.status === 'pending' || !item.confirmation ? (
+                                  <>
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleConfirm(item);
+                                      }}
+                                      disabled={submitting}
+                                      className={styles.primaryBtn}
+                                      style={{
+                                        padding: '6px 12px',
+                                        fontSize: 12,
+                                        minWidth: 'auto',
+                                      }}
+                                    >
+                                      {submitting ? 'Đang xử lý...' : 'Xác nhận'}
+                                    </button>
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        openRejectModal(item);
+                                      }}
+                                      disabled={submitting}
+                                      className={styles.clearCacheBtn}
+                                      style={{
+                                        padding: '6px 12px',
+                                        fontSize: 12,
+                                        minWidth: 'auto',
+                                      }}
+                                    >
+                                      Từ chối
+                                    </button>
+                                  </>
+                                ) : item.confirmation?.status === 'confirmed' ? (
+                                  <span style={{ color: 'var(--text-tertiary)', fontSize: 12 }}>
+                                    Đã xử lý
+                                  </span>
+                                ) : (
+                                  <span 
+                                    style={{ 
+                                      color: 'var(--text-tertiary)', 
+                                      fontSize: 12,
+                                      maxWidth: '150px',
+                                      overflow: 'hidden',
+                                      textOverflow: 'ellipsis',
+                                      whiteSpace: 'nowrap',
+                                    }}
+                                    title={item.confirmation?.rejection_reason || undefined}
+                                  >
+                                    {item.confirmation?.rejection_reason || 'Đã từ chối'}
+                                  </span>
+                                )
                               ) : hasConfirmedTeacher ? (
                                 // Ca đã có giáo viên khác và đã xác nhận
                                 <span style={{ color: 'var(--text-tertiary)', fontSize: 12 }}>
@@ -672,14 +751,51 @@ export default function AvailableShiftsPage() {
             </AnimatePresence>
           </div>
         )}
+
+        {/* Reject Modal */}
+        {showRejectModal && selectedOfficeHour && (
+          <Modal open={showRejectModal} onClose={() => setShowRejectModal(false)}>
+            <ModalHeader
+              title="Từ chối ca trực"
+              onClose={() => setShowRejectModal(false)}
+            />
+            <div style={{ padding: 'var(--space-5)' }}>
+              <p style={{ marginBottom: 'var(--space-4)', lineHeight: 1.6, color: 'var(--text-secondary)' }}>
+                Vui lòng cho biết lý do từ chối ca trực tại <strong>{selectedOfficeHour.officeHour.centre?.name}</strong>:
+              </p>
+              <textarea
+                value={rejectionReason}
+                onChange={(e) => setRejectionReason(e.target.value)}
+                placeholder="Nhập lý do từ chối..."
+                rows={4}
+                className={styles.textarea}
+                style={{ marginBottom: 'var(--space-4)' }}
+              />
+              <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
+                <button
+                  onClick={() => setShowRejectModal(false)}
+                  disabled={submitting}
+                  className={styles.clearCacheBtn}
+                  style={{ flex: 1 }}
+                >
+                  Huỷ
+                </button>
+                <button
+                  onClick={handleReject}
+                  disabled={submitting || !rejectionReason.trim()}
+                  className={styles.primaryBtn}
+                  style={{ 
+                    flex: 1,
+                    opacity: !rejectionReason.trim() ? 0.5 : 1,
+                  }}
+                >
+                  {submitting ? 'Đang xử lý...' : 'Xác nhận từ chối'}
+                </button>
+              </div>
+            </div>
+          </Modal>
+        )}
       </UserLayout>
     </AuthenticatedPage>
   );
 }
-
-// Fixed filter logic
-// Fixed filter logic
-// Fixed filter logic
-// Improved date handling
-
-// Fixed filters

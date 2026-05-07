@@ -68,36 +68,22 @@ async function signInWithEmail(email: string, password: string): Promise<AuthSes
 }
 
 /**
- * Sign in with username via LMS GraphQL API
+ * Sign in with username via LMS GraphQL API (through proxy to avoid CORS)
  * Gets customToken from LMS, then exchanges it for Firebase tokens
  */
 async function signInWithUsername(username: string, password: string): Promise<AuthSession> {
-  // Step 1: Get customToken from LMS
-  const lmsRes = await fetch(LMS_BASE_URL, {
+  // Step 1: Get customToken from LMS via proxy endpoint
+  const lmsRes = await fetch('/api/auth/login-username', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'accept': '*/*',
     },
-    body: JSON.stringify({
-      operationName: 'loginWithUsername',
-      variables: { username, password },
-      query: `mutation loginWithUsername($username: String!, $password: String!) {
-        users {
-          loginWithUsername(
-            loginWithUsernameInput: {username: $username, password: $password}
-          ) {
-            customToken
-            __typename
-          }
-          __typename
-        }
-      }`,
-    }),
+    body: JSON.stringify({ username, password }),
   });
 
   if (!lmsRes.ok) {
-    throw new Error('LMS authentication failed');
+    const errorData = await lmsRes.json().catch(() => ({}));
+    throw new Error(errorData.error || 'LMS authentication failed');
   }
 
   const lmsData = await lmsRes.json();
