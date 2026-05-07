@@ -1,20 +1,24 @@
 /**
  * /api/lms/route.ts
  * Server-side proxy for LMS GraphQL API.
- * Bypasses CORS: client calls this route, this route calls lms-api.mindx.edu.vn.
- * The Authorization token is forwarded from the client request.
+ * Verifies the Firebase token before forwarding so the proxy can't be
+ * abused by anyone holding any random bearer string.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import {
+  extractBearer,
+  verifyFirebaseIdToken,
+  authErrorResponse,
+  AuthError,
+} from '@/lib/auth/serverAuth';
 
 const LMS_BASE_URL = 'https://lms-api.mindx.edu.vn/';
 
 export async function POST(request: NextRequest) {
   try {
-    const authorization = request.headers.get('authorization');
-    if (!authorization) {
-      return NextResponse.json({ error: 'Missing authorization header' }, { status: 401 });
-    }
+    const idToken = extractBearer(request);
+    await verifyFirebaseIdToken(idToken);
 
     const body = await request.json();
 
@@ -22,7 +26,7 @@ export async function POST(request: NextRequest) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        authorization,
+        authorization: idToken,
         'content-language': 'en',
         Referer: 'https://lms.mindx.edu.vn/',
       },
@@ -30,21 +34,9 @@ export async function POST(request: NextRequest) {
     });
 
     const data = await lmsResponse.json();
-
-    if (!lmsResponse.ok) {
-      return NextResponse.json(data, { status: lmsResponse.status });
-    }
-
-    return NextResponse.json(data);
+    return NextResponse.json(data, { status: lmsResponse.ok ? 200 : lmsResponse.status });
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Proxy error';
-    return NextResponse.json({ error: message }, { status: 500 });
+    if (error instanceof AuthError) return authErrorResponse(error);
+    return NextResponse.json({ error: 'Proxy error' }, { status: 500 });
   }
 }
-
-// Added auth error handling
-// Added auth error handling
-// Added auth error handling
-
-// Added auth handling
-// Added comprehensive auth error handling

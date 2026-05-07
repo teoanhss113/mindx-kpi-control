@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { ProtectedPage } from '@/components/ProtectedPage';
 import { getUsers, createUser, updateUser, deleteUser, getUserRoles } from '@/lib/admin-actions';
+import { getAuthToken } from '@/lib/auth/clientAuth';
 import { findUser, createDebouncedUserLookup, type LMSUser } from '@/services/userLookupService';
 import { searchUsers } from '@/services/ticketService';
 import { AdminPageWrapper } from '@/components/AdminPageWrapper';
@@ -107,12 +108,13 @@ export default function UsersPage() {
   async function loadData() {
     setLoading(true);
     try {
+      const token = await getAuthToken();
       const [usersResult, rolesResult, regionsResult] = await Promise.all([
-        getUsers(),
-        getUserRoles(),
+        getUsers(token),
+        getUserRoles(token),
         (async () => {
           const { getRegions } = await import('@/lib/admin-actions');
-          return getRegions();
+          return getRegions(token);
         })()
       ]);
 
@@ -184,10 +186,10 @@ export default function UsersPage() {
 
   async function openEditModal(user: Profile) {
     setEditingUser(user);
-    
-    // Load user permissions
+
+    const token = await getAuthToken();
     const { getUserPermissionsByUserId } = await import('@/lib/admin-actions');
-    const permsResult = await getUserPermissionsByUserId(user.id);
+    const permsResult = await getUserPermissionsByUserId(token, user.id);
     
     const userPermissions = permsResult.success ? permsResult.data : [];
     
@@ -216,13 +218,14 @@ export default function UsersPage() {
 
     setSubmitting(true);
     const loadingToastId = addToast('Đang lưu...', 'loading');
-    
+
     try {
+      const token = await getAuthToken();
       let result;
       let userId: string;
-      
+
       if (editingUser) {
-        result = await updateUser({
+        result = await updateUser(token, {
           id: editingUser.id,
           email: formData.email,
           role_id: formData.role_id,
@@ -230,22 +233,20 @@ export default function UsersPage() {
         });
         userId = editingUser.id;
       } else {
-        // Create user first
-        const createResult = await createUser({
+        const createResult = await createUser(token, {
           email: formData.email,
           role_id: formData.role_id,
           is_active: formData.is_active,
         });
-        
+
         if (!createResult.success) {
           removeToast(loadingToastId);
           addToast('Lỗi: ' + createResult.error, 'error');
           setSubmitting(false);
           return;
         }
-        
-        // Get the created user ID
-        const usersResult = await getUsers();
+
+        const usersResult = await getUsers(token);
         const createdUser = usersResult.data.find((u: any) => u.email === formData.email);
         if (!createdUser) {
           removeToast(loadingToastId);
@@ -262,6 +263,7 @@ export default function UsersPage() {
         if (formData.selectedRegions.length > 0) {
           const { saveUserPermissions } = await import('@/lib/admin-actions');
           const permissionsResult = await saveUserPermissions(
+            token,
             userId,
             formData.selectedRegions.map(regionId => ({
               region_id: regionId,
@@ -306,9 +308,10 @@ export default function UsersPage() {
 
     setDeleting(true);
     const loadingToastId = addToast('Đang xóa...', 'loading');
-    
+
     try {
-      const result = await deleteUser(userToDelete.id);
+      const token = await getAuthToken();
+      const result = await deleteUser(token, userToDelete.id);
       removeToast(loadingToastId);
       
       if (result.success) {

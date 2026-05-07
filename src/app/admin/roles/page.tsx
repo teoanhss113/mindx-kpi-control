@@ -14,6 +14,7 @@ import {
   updateRole, 
   deleteRole 
 } from '@/lib/admin-actions';
+import { getAuthToken } from '@/lib/auth/clientAuth';
 import type { Role, Page, RolePermission } from '@/lib/supabase/types';
 import styles from '@/app/dashboard.module.css';
 
@@ -82,9 +83,10 @@ export default function RolesPage() {
   const loadData = async () => {
     setLoading(true);
     try {
+      const token = await getAuthToken();
       const [rolesResult, pagesResult] = await Promise.all([
-        getRoles(),
-        getPages()
+        getRoles(token),
+        getPages(token)
       ]);
 
       if (rolesResult.success) {
@@ -208,9 +210,10 @@ export default function RolesPage() {
         pagePermissions: selectedPages,
       };
 
+      const token = await getAuthToken();
       const result = editingRole
-        ? await updateRole({ ...payload, id: editingRole.id })
-        : await createRole(payload);
+        ? await updateRole(token, { ...payload, id: editingRole.id })
+        : await createRole(token, payload);
 
       removeToast(loadingToastId);
       
@@ -244,7 +247,8 @@ export default function RolesPage() {
     const loadingToastId = addToast('Đang xóa...', 'loading');
 
     try {
-      const result = await deleteRole(roleToDelete.id);
+      const token = await getAuthToken();
+      const result = await deleteRole(token, roleToDelete.id);
       removeToast(loadingToastId);
       
       if (result.success) {

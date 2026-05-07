@@ -34,27 +34,36 @@ export default function LoginPage() {
     try {
       const session = await signIn(emailOrUsername.trim(), password);
       persistSession(session);
-      
-      // ✅ Update AuthContext with new session
       updateSession(session);
 
-      // Check if user has role in database (for admin access)
-      const { supabase } = await import('@/lib/supabase/client');
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('role_id, is_active')
-        .eq('email', session.email)
-        .single();
+      // Sync profile (creates if missing) and learn the user's role.
+      let profile: { role_id?: string | null; is_active?: boolean } | null = null;
+      try {
+        const syncRes = await fetch('/api/auth/sync-profile', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${session.idToken}`,
+          },
+          body: JSON.stringify({
+            uid: session.uid,
+            email: session.email,
+            displayName: session.displayName,
+          }),
+        });
+        if (syncRes.ok) {
+          const json = await syncRes.json();
+          profile = json?.profile || null;
+        }
+      } catch {
+        // Sync failure → fall through to user view.
+      }
 
-      // Brief delay to show success state
       await new Promise((r) => setTimeout(r, 400));
 
-      // Redirect based on role
       if (profile?.role_id && profile.is_active) {
-        // User has role → Admin view
         router.replace('/admin');
       } else {
-        // No role → User view (default)
         router.replace('/');
       }
     } catch (err) {

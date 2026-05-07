@@ -1,15 +1,33 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import { requireAdmin, authErrorResponse, AuthError } from '@/lib/auth/serverAuth';
 
 /**
- * Setup initial admin account
- * Creates:
- * 1. Admin role with full permissions (all 11 pages)
- * 2. Admin user: anhpnh@mindx.com.vn
+ * Setup initial admin account.
+ * Bootstrap-only: allowed without auth ONLY when no Admin role+user exists yet.
+ * Once an admin exists, the endpoint requires admin authentication.
  */
-export async function POST() {
+async function adminAlreadyConfigured(): Promise<boolean> {
+  const { data: adminRole } = await supabaseAdmin
+    .from('roles')
+    .select('id')
+    .eq('name', 'Admin')
+    .maybeSingle();
+  if (!adminRole) return false;
+
+  const { count } = await supabaseAdmin
+    .from('profiles')
+    .select('id', { count: 'exact', head: true })
+    .eq('role_id', adminRole.id)
+    .eq('is_active', true);
+  return (count || 0) > 0;
+}
+
+export async function POST(request: NextRequest) {
   try {
-    console.log('[setup-initial-admin] Starting setup...');
+    if (await adminAlreadyConfigured()) {
+      await requireAdmin(request);
+    }
 
     // Step 1: Get all pages
     const { data: pages, error: pagesError } = await supabaseAdmin
@@ -144,24 +162,25 @@ export async function POST() {
         },
       },
     });
-  } catch (error: any) {
-    console.error('[setup-initial-admin] Error:', error);
+  } catch (error) {
+    if (error instanceof AuthError) return authErrorResponse(error);
+    console.error('[setup-initial-admin] Error');
     return NextResponse.json(
-      {
-        success: false,
-        error: error.message,
-        details: error,
-      },
+      { success: false, error: 'Setup failed' },
       { status: 500 }
     );
   }
 }
 
 /**
- * Get current admin setup status
+ * Get current admin setup status.
+ * Once an admin is configured, requires admin auth.
  */
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    if (await adminAlreadyConfigured()) {
+      await requireAdmin(request);
+    }
     // Check if Admin role exists
     const { data: adminRole } = await supabaseAdmin
       .from('roles')
@@ -192,14 +211,11 @@ export async function GET() {
         setup_complete: !!adminRole && !!adminUser,
       },
     });
-  } catch (error: any) {
+  } catch (error) {
+    if (error instanceof AuthError) return authErrorResponse(error);
     return NextResponse.json(
-      {
-        success: false,
-        error: error.message,
-      },
+      { success: false, error: 'Internal error' },
       { status: 500 }
     );
   }
 }
-// Improved error responses

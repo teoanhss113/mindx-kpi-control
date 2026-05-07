@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useAuth } from '@/lib/AuthContext';
-import { supabase } from '@/lib/supabase/client';
+import { authFetch } from '@/lib/auth/clientAuth';
 
 interface PagePermission {
   page_key: string;
@@ -27,68 +27,51 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!session?.email) {
+    if (!session?.uid) {
       setPermissions([]);
       setLoading(false);
       return;
     }
-
     loadPermissions();
-  }, [session?.email]);
+  }, [session?.uid]);
 
   async function loadPermissions() {
-    if (!session?.email) {
+    if (!session?.uid) {
       setPermissions([]);
       setLoading(false);
       return;
     }
 
     try {
-      // Get user profile by EMAIL
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('role_id, is_active')
-        .eq('email', session.email)
-        .single();
-
-      if (profileError || !profile || !profile.is_active || !profile.role_id) {
+      const res = await authFetch(
+        `/api/auth/sync-user?uid=${encodeURIComponent(session.uid)}`,
+      );
+      if (!res.ok) {
+        setPermissions([]);
+        setLoading(false);
+        return;
+      }
+      const json = await res.json();
+      const profile = json?.data?.profile;
+      if (!profile?.is_active || !profile?.role_id) {
         setPermissions([]);
         setLoading(false);
         return;
       }
 
-      // Get role permissions with page details
-      const { data: rolePermissions, error: permissionsError } = await supabase
-        .from('role_permissions')
-        .select(`
-          can_view,
-          can_edit,
-          pages (
-            key,
-            page_name
-          )
-        `)
-        .eq('role_id', profile.role_id);
-
-      if (permissionsError) {
-        console.error('[PermissionsContext] Error loading permissions:', permissionsError);
-        setPermissions([]);
-        setLoading(false);
-        return;
-      }
-
-      // Transform to flat structure
-      const perms: PagePermission[] = (rolePermissions || []).map((rp: any) => ({
-        page_key: rp.pages.key,
-        page_name: rp.pages.page_name,
-        can_view: rp.can_view,
-        can_edit: rp.can_edit,
-      }));
+      const rolePermissions = profile?.roles?.role_permissions || [];
+      const perms: PagePermission[] = rolePermissions
+        .filter((rp: any) => rp?.pages)
+        .map((rp: any) => ({
+          page_key: rp.pages.key,
+          page_name: rp.pages.page_name,
+          can_view: rp.can_view,
+          can_edit: rp.can_edit,
+        }));
 
       setPermissions(perms);
       setLoading(false);
-    } catch (error) {
-      console.error('[PermissionsContext] Error loading permissions:', error);
+    } catch {
       setPermissions([]);
       setLoading(false);
     }
@@ -105,12 +88,12 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <PermissionsContext.Provider value={{ 
-      permissions, 
-      loading, 
-      canView, 
+    <PermissionsContext.Provider value={{
+      permissions,
+      loading,
+      canView,
       canEdit,
-      reload: loadPermissions 
+      reload: loadPermissions,
     }}>
       {children}
     </PermissionsContext.Provider>
@@ -124,6 +107,3 @@ export function usePermissionsContext() {
   }
   return context;
 }
-// Improved context handling
-
-// Improved context

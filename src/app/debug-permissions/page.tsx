@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/AuthContext';
-import { supabase } from '@/lib/supabase/client';
+import { authFetch } from '@/lib/auth/clientAuth';
 
 export default function DebugPermissionsPage() {
   const { session } = useAuth();
@@ -24,20 +24,23 @@ export default function DebugPermissionsPage() {
     try {
       setLoading(true);
       setError(null);
-
-      // 1. Get profile by EMAIL
-      const { data: profileData, error: profileError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('email', session?.email)
-        .single();
-
-      if (profileError) {
-        setError(`Profile Error: ${profileError.message}`);
+      if (!session?.uid) {
+        setError('Not logged in');
         setLoading(false);
         return;
       }
 
+      const res = await authFetch(
+        `/api/auth/sync-user?uid=${encodeURIComponent(session.uid)}`,
+      );
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setError(`Profile Error: ${body?.error || res.statusText}`);
+        setLoading(false);
+        return;
+      }
+      const json = await res.json();
+      const profileData = json?.data?.profile;
       setProfile(profileData);
 
       if (!profileData?.is_active) {
@@ -45,41 +48,14 @@ export default function DebugPermissionsPage() {
         setLoading(false);
         return;
       }
-
       if (!profileData?.role_id) {
         setError('User has no role_id assigned');
         setLoading(false);
         return;
       }
 
-      // 2. Get role
-      const { data: roleData, error: roleError } = await supabase
-        .from('roles')
-        .select('*')
-        .eq('id', profileData.role_id)
-        .single();
-
-      if (roleError) {
-        setError(`Role Error: ${roleError.message}`);
-      } else {
-        setRole(roleData);
-      }
-
-      // 3. Get permissions
-      const { data: permsData, error: permsError } = await supabase
-        .from('role_permissions')
-        .select(`
-          *,
-          pages (*)
-        `)
-        .eq('role_id', profileData.role_id);
-
-      if (permsError) {
-        setError(`Permissions Error: ${permsError.message}`);
-      } else {
-        setPermissions(permsData || []);
-      }
-
+      setRole(profileData?.roles || null);
+      setPermissions(profileData?.roles?.role_permissions || []);
       setLoading(false);
     } catch (err: any) {
       setError(`Exception: ${err.message}`);
@@ -97,7 +73,7 @@ export default function DebugPermissionsPage() {
       setSyncing(true);
       setSyncResult(null);
 
-      const response = await fetch('/api/auth/sync-profile', {
+      const response = await authFetch('/api/auth/sync-profile', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

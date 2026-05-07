@@ -1,63 +1,61 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import { requireUser, authErrorResponse, AuthError } from '@/lib/auth/serverAuth';
 
+/**
+ * Debug endpoint: returns the caller's own profile + permissions.
+ * Admins may query other users by passing ?userId=<uid>.
+ */
 export async function GET(request: NextRequest) {
   try {
-    const userId = request.nextUrl.searchParams.get('userId');
-    
-    if (!userId) {
-      return NextResponse.json({ error: 'userId required' }, { status: 400 });
+    const caller = await requireUser(request);
+
+    const requestedUserId = request.nextUrl.searchParams.get('userId') || caller.uid;
+    if (requestedUserId !== caller.uid && !caller.isAdmin) {
+      throw new AuthError('Cannot read another user\'s permissions', 403);
     }
 
-    // 1. Check if user exists in profiles
     const { data: profile, error: profileError } = await supabaseAdmin
       .from('profiles')
       .select('*')
-      .eq('id', userId)
+      .eq('id', requestedUserId)
       .single();
 
     if (profileError) {
-      return NextResponse.json({
-        step: 'profile_lookup',
-        error: profileError.message,
-        userId,
-      }, { status: 404 });
+      return NextResponse.json(
+        { error: 'Profile not found', userId: requestedUserId },
+        { status: 404 }
+      );
     }
 
-    // 2. Get role details
-    const { data: role, error: roleError } = await supabaseAdmin
+    const { data: role } = await supabaseAdmin
       .from('roles')
       .select('*')
       .eq('id', profile.role_id)
       .single();
 
-    // 3. Get all permissions for this role
-    const { data: permissions, error: permissionsError } = await supabaseAdmin
+    const { data: permissions } = await supabaseAdmin
       .from('role_permissions')
-      .select(`
-        *,
-        pages (*)
-      `)
+      .select(`*, pages (*)`)
       .eq('role_id', profile.role_id);
 
     return NextResponse.json({
       success: true,
-      userId,
+      userId: requestedUserId,
       profile,
-      role: roleError ? null : role,
-      roleError: roleError?.message,
-      permissions: permissionsError ? [] : permissions,
-      permissionsError: permissionsError?.message,
+      role: role || null,
+      permissions: permissions || [],
       summary: {
         hasProfile: !!profile,
         hasRole: !!role,
         permissionCount: permissions?.length || 0,
-      }
+      },
     });
-  } catch (error: any) {
-    return NextResponse.json({
-      error: error.message,
-      stack: error.stack,
-    }, { status: 500 });
+  } catch (error) {
+    if (error instanceof AuthError) return authErrorResponse(error);
+    return NextResponse.json(
+      { error: 'Internal error' },
+      { status: 500 }
+    );
   }
 }

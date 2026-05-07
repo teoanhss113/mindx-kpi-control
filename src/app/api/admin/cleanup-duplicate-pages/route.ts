@@ -1,34 +1,31 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import { requireAdmin, authErrorResponse, AuthError } from '@/lib/auth/serverAuth';
 
-export async function POST() {
+export async function POST(request: NextRequest) {
   try {
-    console.log('[cleanup-duplicate-pages] Starting cleanup...');
+    await requireAdmin(request);
 
-    // Delete the old 'completion-rate' key (we use 'completion' now)
     const { error } = await supabaseAdmin
       .from('pages')
       .delete()
       .eq('key', 'completion-rate');
 
     if (error) {
-      console.error('[cleanup-duplicate-pages] Error:', error);
       return NextResponse.json(
-        { success: false, error: error.message },
+        { success: false, error: 'Operation failed' },
         { status: 500 }
       );
     }
-
-    console.log('[cleanup-duplicate-pages] ✅ Deleted duplicate page: completion-rate');
 
     return NextResponse.json({
       success: true,
       message: 'Duplicate page removed successfully',
     });
-  } catch (error: any) {
-    console.error('[cleanup-duplicate-pages] Error:', error);
+  } catch (error) {
+    if (error instanceof AuthError) return authErrorResponse(error);
     return NextResponse.json(
-      { success: false, error: error.message },
+      { success: false, error: 'Internal error' },
       { status: 500 }
     );
   }

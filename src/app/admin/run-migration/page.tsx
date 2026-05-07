@@ -2,8 +2,10 @@
 
 import { useState } from 'react';
 import { PageLayout } from '@/components/PageLayout';
+import { ProtectedPage } from '@/components/ProtectedPage';
+import { authFetch } from '@/lib/auth/clientAuth';
 
-export default function RunMigrationPage() {
+function RunMigrationPageInner() {
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<any>(null);
 
@@ -12,7 +14,7 @@ export default function RunMigrationPage() {
     setResult(null);
 
     try {
-      const response = await fetch('/api/run-migration');
+      const response = await authFetch('/api/run-migration');
       const data = await response.json();
       setResult(data);
     } catch (error: any) {
@@ -138,5 +140,13 @@ export default function RunMigrationPage() {
         </div>
       </div>
     </PageLayout>
+  );
+}
+
+export default function RunMigrationPage() {
+  return (
+    <ProtectedPage pageKey="admin-users">
+      <RunMigrationPageInner />
+    </ProtectedPage>
   );
 }
