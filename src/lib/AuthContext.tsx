@@ -25,7 +25,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   async function initializeAuth() {
     const stored = loadSession();
-    
+
     if (!stored) {
       setIsLoading(false);
       return;
@@ -43,7 +43,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Check if token needs refresh (within 5 minutes of expiry)
     const now = Date.now();
     const bufferTime = 5 * 60 * 1000; // 5 minutes
-    
+
     if (now >= stored.expiresAt - bufferTime) {
       console.log('[AuthProvider] Token expiring soon, refreshing...');
       try {
@@ -58,9 +58,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } else {
       setSession(stored);
     }
-    
+
     setIsLoading(false);
   }
+
+  // Proactive token refresh: schedule a refresh 5 minutes before the token expires.
+  // This keeps AuthContext.session always fresh and prevents the brief window where
+  // multiple page-mounts all race to refresh simultaneously.
+  useEffect(() => {
+    if (!session?.expiresAt) return;
+
+    const msUntilRefresh = session.expiresAt - Date.now() - 5 * 60 * 1000;
+    if (msUntilRefresh <= 0) return; // already within buffer, getValidToken handles it
+
+    const timer = setTimeout(async () => {
+      try {
+        const { refreshSession } = await import('@/services/authService');
+        const newSession = await refreshSession(session);
+        setSession(newSession);
+        console.log('[AuthProvider] Proactive token refresh succeeded');
+      } catch (error) {
+        console.error('[AuthProvider] Proactive token refresh failed:', error);
+        // Don't force logout here — let the next API call surface the error gracefully
+      }
+    }, msUntilRefresh);
+
+    return () => clearTimeout(timer);
+  }, [session?.expiresAt]);
 
   const logout = useCallback(() => {
     clearSession();

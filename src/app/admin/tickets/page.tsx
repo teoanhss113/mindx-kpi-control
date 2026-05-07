@@ -57,7 +57,7 @@ function getStatusColor(status: string) {
 export default function TicketsDashboard() {
   const router = useRouter();
   const { logout } = useAuth();
-  const { toasts, addToast } = useToast();
+  const { toasts, addToast, removeToast } = useToast();
   const { hasPreferences } = useQuickFilterChips();
 
   const [session, setSession] = useState<{ displayName?: string, email?: string } | null>(null);
@@ -141,11 +141,11 @@ export default function TicketsDashboard() {
 
     try {
       if (_centres.length === 0) {
-        const cachedCentres = await getCache('mindx_centres');
+        const cachedCentres = await getCache(CACHE_KEYS.CENTRES);
         if (cachedCentres?.centres) _centres = cachedCentres.centres;
         else _centres = await fetchAllCentres();
         setCentres(_centres);
-        await setCache('mindx_centres', { centres: _centres });
+        await setCache(CACHE_KEYS.CENTRES, { centres: _centres });
       }
       
       const dStart = new Date(start); dStart.setHours(0, 0, 0, 0);
@@ -529,10 +529,10 @@ export default function TicketsDashboard() {
   const baseFilteredTickets = useMemo(() => {
     return mappedTickets.filter(t => {
       // tableSelectedCentres filters client-side within loaded data (NOT the same as request-level selectedCentres)
-      if (tableSelectedCentres.length > 0 && !tableSelectedCentres.includes(t.ticketSource?.centreId || '')) return false;
-      if (selectedCourseLines.length > 0 && !selectedCourseLines.includes(t.courseCategory)) return false;
-      if (selectedStatuses.length > 0 && !selectedStatuses.includes(t.status || '')) return false;
-      if (selectedFeedbackTopics.length > 0 && !selectedFeedbackTopics.includes(t.feedbackTopic || '')) return false;
+      if (tableSelectedCentres.length > 0 && tableSelectedCentres.length !== tableCentreIds.length && !tableSelectedCentres.includes(t.ticketSource?.centreId || '')) return false;
+      if (selectedCourseLines.length > 0 && selectedCourseLines.length !== courseLineOptions.length && !selectedCourseLines.includes(t.courseCategory)) return false;
+      if (selectedStatuses.length > 0 && selectedStatuses.length !== statusOptions.length && !selectedStatuses.includes(t.status || '')) return false;
+      if (selectedFeedbackTopics.length > 0 && selectedFeedbackTopics.length !== feedbackTopicEnumOptions.length && !selectedFeedbackTopics.includes(t.feedbackTopic || '')) return false;
       return true;
     });
   }, [mappedTickets, tableSelectedCentres, selectedCourseLines, selectedStatuses, selectedFeedbackTopics]);
@@ -766,7 +766,7 @@ export default function TicketsDashboard() {
 
   return (
     <>
-      <ToastContainer toasts={toasts} />
+      <ToastContainer toasts={toasts} onRemove={removeToast} />
       <PageLayout
         title="Phiếu Đánh giá"
         activePage="tickets"

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { ProtectedPage } from '@/components/ProtectedPage';
-import { getUsers, createUser, updateUser, deleteUser, getUserRoles } from '@/lib/admin-actions';
+import { getUsers, getUnmanagedUsers, createUser, updateUser, deleteUser, getUserRoles } from '@/lib/admin-actions';
 import { getAuthToken } from '@/lib/auth/clientAuth';
 import { findUser, createDebouncedUserLookup, type LMSUser } from '@/services/userLookupService';
 import { searchUsers } from '@/services/ticketService';
@@ -29,6 +29,8 @@ interface Profile {
 
 export default function UsersPage() {
   const [users, setUsers] = useState<Profile[]>([]);
+  const [unmanagedUsers, setUnmanagedUsers] = useState<any[]>([]);
+  const [showUnmanagedTable, setShowUnmanagedTable] = useState(true);
   const [roles, setRoles] = useState<Role[]>([]);
   const [regions, setRegions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -109,8 +111,9 @@ export default function UsersPage() {
     setLoading(true);
     try {
       const token = await getAuthToken();
-      const [usersResult, rolesResult, regionsResult] = await Promise.all([
+      const [usersResult, unmanagedResult, rolesResult, regionsResult] = await Promise.all([
         getUsers(token),
+        getUnmanagedUsers(token),
         getUserRoles(token),
         (async () => {
           const { getRegions } = await import('@/lib/admin-actions');
@@ -140,6 +143,10 @@ export default function UsersPage() {
       } else {
         console.error('Failed to load users:', usersResult.error);
         setUsers([]);
+      }
+
+      if (unmanagedResult.success) {
+        setUnmanagedUsers(unmanagedResult.data);
       }
 
       if (rolesResult.success) {
@@ -503,6 +510,61 @@ export default function UsersPage() {
         />
       )}
 
+      {/* Unmanaged Users Table */}
+      {!loading && unmanagedUsers.length > 0 && (
+        <div style={{ marginTop: 'var(--space-6)' }}>
+        <AdminTableSection
+          title="Tài khoản chưa phân quyền"
+          count={unmanagedUsers.length}
+          loading={loading}
+          isExpanded={showUnmanagedTable}
+          onToggle={() => setShowUnmanagedTable(!showUnmanagedTable)}
+        >
+          <div className={styles.tableScrollWrapper}>
+            <table className={styles.studentTable}>
+              <thead>
+                <tr>
+                  <th>Email</th>
+                  <th>Trạng thái</th>
+                  <th>Đăng nhập lần cuối</th>
+                  <th>Ngày tạo</th>
+                  <th style={{ width: 80 }}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {unmanagedUsers.map((user) => (
+                  <tr key={user.id}>
+                    <td style={{ fontWeight: 510 }}>{user.email}</td>
+                    <td>
+                      <span className={`${styles.statusPill} ${user.is_active ? styles.passed : styles.failed}`}>
+                        {user.is_active ? 'Hoạt động' : 'Vô hiệu'}
+                      </span>
+                    </td>
+                    <td style={{ color: 'var(--text-tertiary)', fontSize: 13 }}>
+                      {user.last_login_at ? new Date(user.last_login_at).toLocaleDateString('vi-VN') : '—'}
+                    </td>
+                    <td style={{ color: 'var(--text-tertiary)', fontSize: 13 }}>
+                      {new Date(user.created_at).toLocaleDateString('vi-VN')}
+                    </td>
+                    <td>
+                      <button
+                        className={styles.clearCacheBtn}
+                        onClick={() => openEditModal(user as Profile)}
+                        title="Gán vai trò"
+                        style={{ padding: 'var(--space-2)', minWidth: 'auto', fontSize: 12 }}
+                      >
+                        <Icon.Edit size={16} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </AdminTableSection>
+        </div>
+      )}
+
       {/* Modal */}
       {showModal && (
         <Modal open={showModal} onClose={() => setShowModal(false)}>
@@ -783,7 +845,7 @@ export default function UsersPage() {
       />
 
       {/* Toast Notifications */}
-      <ToastContainer toasts={toasts} />
+      <ToastContainer toasts={toasts} onRemove={removeToast} />
     </AdminPageWrapper>
     </ProtectedPage>
   );

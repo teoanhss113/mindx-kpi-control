@@ -24,6 +24,7 @@ import { fetchAllCentres, Centre } from '@/services/centresService';
 import { fetchTickets } from '@/services/ticketService';
 import { fetchOfficeHours } from '@/services/officeHoursService';
 import { getTeachers } from '@/services/teacherService';
+import { fetchTeacherSchedules } from '@/services/teacherScheduleService';
 import styles from '../../dashboard.module.css';
 
 export default function DashboardPage() {
@@ -135,6 +136,7 @@ export default function DashboardPage() {
     const ticketsController = new AbortController();
     const officeHoursController = new AbortController();
     const teachersController = new AbortController();
+    const teacherSchedulesController = new AbortController();
     
     // Store all controllers so we can abort all
     abortControllerRef.current = {
@@ -143,6 +145,7 @@ export default function DashboardPage() {
         ticketsController.abort();
         officeHoursController.abort();
         teachersController.abort();
+        teacherSchedulesController.abort();
       }
     } as any;
 
@@ -162,7 +165,29 @@ export default function DashboardPage() {
         toDate,
       });
 
-      // Step 1: Fetch classes with progress
+      // Step 1: Fetch teacher schedules (includes classes data)
+      const teacherSchedulesToastId = addToast('Đang tải lịch giáo viên...', 'loading');
+      setProgress({ loaded: 0, total: 0 }); // Initialize progress immediately
+      
+      const dateFrom = new Date(fromDate);
+      const dateTo = new Date(toDate);
+      dateFrom.setHours(0, 0, 0, 0);
+      dateTo.setHours(23, 59, 59, 999);
+      
+      const teacherSchedulesResult = await fetchTeacherSchedules(
+        dateFrom,
+        dateTo,
+        centreIds,
+        undefined, // selectedTeachers - load all teachers
+        (loaded, total) => {
+          setProgress({ loaded, total: total || Math.max(loaded, 1) });
+        },
+        teacherSchedulesController.signal
+      );
+      
+      removeToast(teacherSchedulesToastId);
+
+      // Step 2: Fetch classes separately for KPI calculations
       const classesToastId = addToast(MESSAGES.LOADING.LOADING_CLASSES, 'loading');
       setProgress({ loaded: 0, total: 0 }); // Initialize progress immediately
       const classesResult = await fetchAllClasses(
@@ -262,6 +287,7 @@ export default function DashboardPage() {
       const ticketsCache = { tickets: ticketsResult.data, timestamp: Date.now() };
       const officeHoursCache = { officeHours: officeHoursResult.data, timestamp: Date.now() };
       const teachersCache = { teachers: allTeachers, timestamp: Date.now() };
+      const teacherSchedulesCache = { schedules: teacherSchedulesResult, timestamp: Date.now() };
 
       await Promise.all([
         setCache(CACHE_KEYS.COMPLETION, completionCache),
@@ -270,6 +296,7 @@ export default function DashboardPage() {
         setCache(CACHE_KEYS.TICKETS, ticketsCache),
         setCache(CACHE_KEYS.OFFICE_HOURS, officeHoursCache),
         setCache(CACHE_KEYS.TEACHERS, teachersCache),
+        setCache(CACHE_KEYS.TEACHER_SCHEDULE, teacherSchedulesCache),
       ]);
 
       setCompletionData(completionCache);
@@ -279,7 +306,7 @@ export default function DashboardPage() {
       setOfficeHoursData(officeHoursCache);
 
       addToast(
-        `Tải thành công ${classesResult.length} lớp, ${ticketsResult.data.length} phiếu, ${officeHoursResult.data.length} ca, ${allTeachers.length} GV!`, 
+        `Tải thành công ${classesResult.length} lớp, ${ticketsResult.data.length} phiếu, ${officeHoursResult.data.length} ca, ${allTeachers.length} GV, ${teacherSchedulesResult.length} lịch dạy!`, 
         'success'
       );
     } catch (err: any) {
@@ -311,6 +338,7 @@ export default function DashboardPage() {
         clearCache(CACHE_KEYS.OFFICE_HOURS),
         clearCache(CACHE_KEYS.CLASS_QUALITY),
         clearCache(CACHE_KEYS.TEACHERS),
+        clearCache(CACHE_KEYS.TEACHER_SCHEDULE),
       ]);
       
       setCompletionData(null);
@@ -901,7 +929,7 @@ export default function DashboardPage() {
   return (
     <ProtectedPage pageKey="dashboard">
       <PageLayout title="Tổng quan" activePage="dashboard">
-        <ToastContainer toasts={toasts} />
+        <ToastContainer toasts={toasts} onRemove={removeToast} />
 
       {/* Toolbar */}
       <Toolbar

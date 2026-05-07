@@ -7,6 +7,7 @@
  */
 
 import { authFetch } from '@/lib/auth/clientAuth';
+import type { OfficeHourInfo } from '@/lib/notificationService';
 
 export type ShiftRequestStatus = 'pending' | 'approved' | 'rejected';
 
@@ -41,11 +42,12 @@ export async function createShiftRequest(
   teacherName: string,
   teacherId: string,
   requestNote?: string,
+  officeHourInfo?: OfficeHourInfo,
 ): Promise<ShiftRequest> {
   const res = await authFetch('/api/shift-requests', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ officeHourId, teacherName, teacherId, requestNote }),
+    body: JSON.stringify({ officeHourId, teacherName, teacherId, requestNote, officeHourInfo }),
   });
   if (res.status === 409) {
     throw new Error('Bạn đã yêu cầu ca trực này rồi');

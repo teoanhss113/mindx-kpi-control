@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { requireUser, authErrorResponse, AuthError } from '@/lib/auth/serverAuth';
+import { notifyUsers, getAdminEmailsForPage, NotifyTemplates, type OfficeHourInfo } from '@/lib/notificationService';
 
 /**
  * GET /api/teacher-confirmations
@@ -47,6 +48,7 @@ export async function POST(request: NextRequest) {
 
     const action = body?.action;
     const officeHourId = String(body?.officeHourId || '').trim();
+    const officeHourInfo: OfficeHourInfo | undefined = body?.officeHourInfo ?? undefined;
     if (!officeHourId || (action !== 'confirm' && action !== 'reject')) {
       return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
     }
@@ -84,6 +86,21 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (error) throw error;
+
+    // Notify admins about teacher confirmation/rejection
+    void (async () => {
+      try {
+        const adminEmails = await getAdminEmailsForPage('office-hours');
+        const template =
+          action === 'confirm'
+            ? NotifyTemplates.teacherConfirmed(teacherEmail, officeHourInfo)
+            : NotifyTemplates.teacherRejected(teacherEmail, officeHourInfo, body?.reason);
+        await notifyUsers({ userEmails: adminEmails, ...template });
+      } catch (e) {
+        console.error('[teacher-confirmations POST] Notification error:', e);
+      }
+    })();
+
     return NextResponse.json({ data });
   } catch (error) {
     if (error instanceof AuthError) return authErrorResponse(error);

@@ -304,7 +304,7 @@ export default function TeachersPage() {
       if (!matchesSearch) return false;
 
       // Centre filter (table-level)
-      if (tableSelectedCentres.length > 0) {
+      if (tableSelectedCentres.length > 0 && tableSelectedCentres.length !== tableCentreIds.length) {
         const teacherCentreIds = teacher.centres.map(c => c.id);
         if (!tableSelectedCentres.some(id => teacherCentreIds.includes(id))) {
           return false;
@@ -312,7 +312,7 @@ export default function TeachersPage() {
       }
 
       // Course line filter (by category)
-      if (selectedCourseLines.length > 0) {
+      if (selectedCourseLines.length > 0 && selectedCourseLines.length !== courseLineOptions.length) {
         const teacherCategories = teacher.courseLines.map(cl => getCourseLineCategory(cl.name));
         if (!selectedCourseLines.some(category => teacherCategories.includes(category as any))) {
           return false;
@@ -320,7 +320,7 @@ export default function TeachersPage() {
       }
 
       // Status filter (table-level)
-      if (tableSelectedStatuses.length > 0) {
+      if (tableSelectedStatuses.length > 0 && tableSelectedStatuses.length !== tableStatusOptions.length) {
         const isActive = teacher.isActive;
         const matchesStatus = tableSelectedStatuses.some(status => 
           (status === 'active' && isActive) || (status === 'inactive' && !isActive)
@@ -872,7 +872,7 @@ export default function TeachersPage() {
       )}
 
       {/* Toast Notifications */}
-      <ToastContainer toasts={toasts} />
+      <ToastContainer toasts={toasts} onRemove={removeToast} />
     </PageLayout>
   );
 }

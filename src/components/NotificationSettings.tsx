@@ -1,27 +1,17 @@
-// Notification Settings Component
-// Allows users to manage notification preferences
-
 'use client';
 
 import { useState } from 'react';
-import { Bell, BellOff, TestTube } from 'lucide-react';
+import { Bell, BellOff } from 'lucide-react';
 import { useNotifications } from '@/hooks/useNotifications';
+import { authFetch } from '@/lib/auth/clientAuth';
 import styles from './NotificationSettings.module.css';
 
 export function NotificationSettings() {
-  const {
-    supported,
-    permission,
-    subscribed,
-    loading,
-    error,
-    subscribe,
-    unsubscribe,
-    testNotification,
-    clearError
-  } = useNotifications();
+  const { supported, permission, subscribed, loading, error, subscribe, unsubscribe, clearError } =
+    useNotifications();
 
   const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<'ok' | 'fail' | null>(null);
 
   const handleToggle = async () => {
     if (subscribed) {
@@ -29,17 +19,27 @@ export function NotificationSettings() {
     } else {
       await subscribe();
     }
+    setTestResult(null);
   };
 
   const handleTest = async () => {
     setTesting(true);
+    setTestResult(null);
     try {
-      await testNotification();
-    } catch (err) {
-      console.error('Test notification failed:', err);
+      const res = await authFetch('/api/notifications/test', { method: 'POST' });
+      const data = await res.json();
+      setTestResult(data.success ? 'ok' : 'fail');
+    } catch {
+      setTestResult('fail');
     } finally {
-      setTimeout(() => setTesting(false), 2000);
+      setTesting(false);
+      setTimeout(() => setTestResult(null), 5000);
     }
+  };
+
+  const handleResubscribe = async () => {
+    setTestResult(null);
+    await subscribe();
   };
 
   if (!supported) {
@@ -61,24 +61,20 @@ export function NotificationSettings() {
         </div>
         <div className={styles.headerText}>
           <h3>Thông báo đẩy</h3>
-          <p>Nhận thông báo về các yêu cầu và cập nhật quan trọng</p>
+          <p>Nhận thông báo khi có yêu cầu và cập nhật quan trọng</p>
         </div>
+        <span className={`${styles.statusBadge} ${styles[permission]}`}>
+          {permission === 'granted' ? 'Đã cho phép' : permission === 'denied' ? 'Đã từ chối' : 'Chưa thiết lập'}
+        </span>
       </div>
 
       <div className={styles.content}>
-        {/* Permission Status */}
-        <div className={styles.status}>
-          <span className={styles.statusLabel}>Trạng thái:</span>
-          <span className={`${styles.statusBadge} ${styles[permission]}`}>
-            {permission === 'granted' && 'Đã cho phép'}
-            {permission === 'denied' && 'Đã từ chối'}
-            {permission === 'default' && 'Chưa thiết lập'}
-          </span>
-        </div>
-
-        {/* Subscription Toggle */}
-        {permission === 'granted' && (
-          <div className={styles.toggle}>
+        {permission === 'denied' ? (
+          <p className={styles.helpText}>
+            Bạn đã từ chối quyền thông báo. Vào cài đặt trình duyệt để bật lại cho trang này.
+          </p>
+        ) : (
+          <div className={styles.row}>
             <label className={styles.toggleLabel}>
               <input
                 type="checkbox"
@@ -92,47 +88,36 @@ export function NotificationSettings() {
                 {subscribed ? 'Đang bật' : 'Đang tắt'}
               </span>
             </label>
-          </div>
-        )}
 
-        {/* Test Button */}
-        {subscribed && (
-          <button
-            onClick={handleTest}
-            disabled={testing}
-            className={styles.testButton}
-          >
-            <TestTube size={16} />
-            {testing ? 'Đã gửi!' : 'Gửi thông báo thử'}
-          </button>
-        )}
-
-        {/* Error Message */}
-        {error && (
-          <div className={styles.error}>
-            <p>{error}</p>
-            <button onClick={clearError} className={styles.errorClose}>
-              Đóng
-            </button>
-          </div>
-        )}
-
-        {/* Help Text */}
-        {permission === 'denied' && (
-          <div className={styles.help}>
-            <p>
-              Bạn đã từ chối quyền thông báo. Để bật lại, vui lòng vào cài đặt
-              trình duyệt và cho phép thông báo cho trang web này.
-            </p>
+            {subscribed && permission === 'granted' && (
+              testResult === 'fail' ? (
+                <button onClick={handleResubscribe} className={styles.resubscribeBtn}>
+                  Đăng ký lại
+                </button>
+              ) : (
+                <button
+                  onClick={handleTest}
+                  disabled={testing}
+                  className={styles.testButton}
+                  style={testResult === 'ok' ? { color: '#10b981' } : undefined}
+                >
+                  {testing ? '...' : testResult === 'ok' ? '✓ Đã gửi' : 'Gửi thử'}
+                </button>
+              )
+            )}
           </div>
         )}
 
         {permission === 'default' && (
-          <div className={styles.help}>
-            <p>
-              Bật thông báo để nhận cập nhật về các yêu cầu xác nhận, phê duyệt
-              và các thay đổi quan trọng.
-            </p>
+          <p className={styles.helpText}>
+            Bật thông báo để nhận cập nhật về xác nhận, phê duyệt ca và các thay đổi quan trọng.
+          </p>
+        )}
+
+        {error && (
+          <div className={styles.error}>
+            <span>{error}</span>
+            <button onClick={clearError} className={styles.errorClose}>✕</button>
           </div>
         )}
       </div>

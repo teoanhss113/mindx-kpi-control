@@ -2,6 +2,7 @@
 // Manages notification permissions, subscriptions, and state
 
 import { useState, useEffect, useCallback } from 'react';
+import { authFetch } from '@/lib/auth/clientAuth';
 import {
   isPushSupported,
   getNotificationPermission,
@@ -47,7 +48,7 @@ export function useNotifications(): UseNotificationsReturn {
     async function initialize() {
       try {
         const supported = isPushSupported();
-        
+
         if (!supported) {
           setState(prev => ({
             ...prev,
@@ -60,11 +61,27 @@ export function useNotifications(): UseNotificationsReturn {
 
         const permission = getNotificationPermission();
         const registration = await getServiceWorkerRegistration();
-        
+
         let subscribed = false;
         if (registration && permission === 'granted') {
           const subscription = await getPushSubscription(registration);
           subscribed = !!subscription;
+
+          // Auto-sync: silently re-POST the existing browser subscription to the server.
+          // This corrects any stale records saved under 'anonymous' before the auth fix,
+          // ensuring the subscription is always linked to the current user's email.
+          if (subscription && VAPID_PUBLIC_KEY) {
+            try {
+              const serialized = serializeSubscription(subscription);
+              await authFetch('/api/notifications/subscribe', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(serialized),
+              });
+            } catch {
+              // Non-critical — ignore sync errors silently
+            }
+          }
         }
 
         setState({
@@ -72,14 +89,14 @@ export function useNotifications(): UseNotificationsReturn {
           permission,
           subscribed,
           loading: false,
-          error: null
+          error: null,
         });
       } catch (error) {
         console.error('[useNotifications] Initialization error:', error);
         setState(prev => ({
           ...prev,
           loading: false,
-          error: error instanceof Error ? error.message : 'Lỗi khởi tạo notifications'
+          error: error instanceof Error ? error.message : 'Lỗi khởi tạo notifications',
         }));
       }
     }
@@ -149,8 +166,8 @@ export function useNotifications(): UseNotificationsReturn {
       const subscription = await subscribeToPush(registration, VAPID_PUBLIC_KEY);
       const serialized = serializeSubscription(subscription);
 
-      // Send subscription to server
-      const response = await fetch('/api/notifications/subscribe', {
+      // Send subscription to server (with Firebase auth token)
+      const response = await authFetch('/api/notifications/subscribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(serialized)
@@ -193,8 +210,8 @@ export function useNotifications(): UseNotificationsReturn {
         await unsubscribeFromPush(registration);
       }
 
-      // Remove subscription from server
-      await fetch('/api/notifications/unsubscribe', {
+      // Remove subscription from server (with Firebase auth token)
+      await authFetch('/api/notifications/unsubscribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });

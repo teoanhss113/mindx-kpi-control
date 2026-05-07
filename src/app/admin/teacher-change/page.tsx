@@ -499,11 +499,11 @@ export default function TeacherChangePage() {
       const q = search.toLowerCase();
       list = list.filter(a => a.cls.name.toLowerCase().includes(q) || a.cls.centre?.name?.toLowerCase?.()?.includes(q));
     }
-    if (selectedCourseLines.length > 0) list = list.filter(a => selectedCourseLines.includes(a.courseLineName));
-    if (selectedStatuses.length > 0) list = list.filter(a => selectedStatuses.includes(a.cls.status || ''));
-    if (selectedCentreIds.length > 0) list = list.filter(a => selectedCentreIds.includes(a.cls.centre?.id || ''));
-    if (selectedLevels.length > 0) list = list.filter(a => selectedLevels.includes(a.cls.level || ''));
-    if (selectedOperations.length > 0) list = list.filter(a => selectedOperations.includes(a.cls.operationMethod?.id || ''));
+    if (selectedCourseLines.length > 0 && selectedCourseLines.length !== courseLineOptions.length) list = list.filter(a => selectedCourseLines.includes(a.courseLineName));
+    if (selectedStatuses.length > 0 && selectedStatuses.length !== statusOptions.length) list = list.filter(a => selectedStatuses.includes(a.cls.status || ''));
+    if (selectedCentreIds.length > 0 && selectedCentreIds.length !== tableCentreIds.length) list = list.filter(a => selectedCentreIds.includes(a.cls.centre?.id || ''));
+    if (selectedLevels.length > 0 && selectedLevels.length !== levelOptions.length) list = list.filter(a => selectedLevels.includes(a.cls.level || ''));
+    if (selectedOperations.length > 0 && selectedOperations.length !== operationOptions.length) list = list.filter(a => selectedOperations.includes(a.cls.operationMethod?.id || ''));
     if (rateRange[0] > 0 || rateRange[1] < 100) {
       // Range filter: on uniqueTeacherCount percentage (0-100 mapped to 0-N)
       list = list.filter(a => {
@@ -644,7 +644,7 @@ export default function TeacherChangePage() {
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <>
-      <ToastContainer toasts={toasts} />
+      <ToastContainer toasts={toasts} onRemove={removeToast} />
       <PageLayout
         title="Tỷ lệ thay đổi Giáo viên"
         activePage="teacher-change"

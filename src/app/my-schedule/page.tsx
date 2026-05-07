@@ -346,7 +346,7 @@ export default function MySchedulePage() {
   return (
     <AuthenticatedPage>
       <UserLayout title="Lịch trực trải nghiệm" activePage="my-schedule">
-        <ToastContainer toasts={toasts} />
+        <ToastContainer toasts={toasts} onRemove={removeToast} />
 
         {/* Toolbar */}
         <Toolbar

@@ -6,6 +6,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Bell } from 'lucide-react';
 import { useNotifications } from '@/hooks/useNotifications';
+import { authFetch } from '@/lib/auth/clientAuth';
 import { motion, AnimatePresence } from 'framer-motion';
 import styles from './NotificationBell.module.css';
 
@@ -22,13 +23,36 @@ export function NotificationBell() {
   const [isOpen, setIsOpen] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const { subscribed, subscribe } = useNotifications();
+  const { subscribed, permission, subscribe } = useNotifications();
+  const [showSubscribeHint, setShowSubscribeHint] = useState(false);
+  const [testingPush, setTestingPush] = useState(false);
+  const [testResult, setTestResult] = useState<'ok' | 'fail' | null>(null);
+
+  const handleTestPush = async () => {
+    setTestingPush(true);
+    setTestResult(null);
+    try {
+      const res = await authFetch('/api/notifications/test', { method: 'POST' });
+      const data = await res.json();
+      setTestResult(data.success ? 'ok' : 'fail');
+    } catch {
+      setTestResult('fail');
+    } finally {
+      setTestingPush(false);
+      setTimeout(() => setTestResult(null), 4000);
+    }
+  };
+
+  // Ensure notification tables exist (idempotent — cached server-side after first success)
+  useEffect(() => {
+    fetch('/api/notifications/setup', { method: 'POST' }).catch(() => {});
+  }, []);
 
   // Fetch notifications from API
   useEffect(() => {
     async function fetchNotifications() {
       try {
-        const response = await fetch('/api/notifications/list');
+        const response = await authFetch('/api/notifications/list');
         if (response.ok) {
           const data = await response.json();
           if (data.success && data.notifications) {
@@ -45,26 +69,7 @@ export function NotificationBell() {
         }
       } catch (error) {
         console.error('Failed to fetch notifications:', error);
-        // Fallback to mock data if API fails
-        const mockNotifications: Notification[] = [
-          {
-            id: '1',
-            title: 'Yêu cầu thay đổi giáo viên',
-            body: 'Nguyễn Văn A yêu cầu thay đổi lớp PRO-K12-01',
-            url: '/admin/teacher-change',
-            read: false,
-            timestamp: new Date(Date.now() - 5 * 60 * 1000)
-          },
-          {
-            id: '2',
-            title: 'Phiếu đánh giá mới',
-            body: 'Bạn được giao phiếu đánh giá cho lớp PRO-K12-02',
-            url: '/admin/tickets',
-            read: false,
-            timestamp: new Date(Date.now() - 30 * 60 * 1000)
-          }
-        ];
-        setNotifications(mockNotifications);
+        // Keep existing notifications on error — don't clear what's already shown
       }
     }
 
@@ -99,7 +104,7 @@ export function NotificationBell() {
 
     // Mark as read in database
     try {
-      await fetch('/api/notifications/list', {
+      await authFetch('/api/notifications/list', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ notificationIds: [notification.id] })
@@ -124,7 +129,7 @@ export function NotificationBell() {
 
     // Mark all as read in database
     try {
-      await fetch('/api/notifications/list', {
+      await authFetch('/api/notifications/list', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ notificationIds: unreadIds })
@@ -146,19 +151,6 @@ export function NotificationBell() {
     if (hours < 24) return `${hours} giờ trước`;
     return `${days} ngày trước`;
   };
-
-  // If not subscribed, show subscribe prompt
-  if (!subscribed) {
-    return (
-      <button
-        onClick={subscribe}
-        className={styles.bellButton}
-        title="Bật thông báo"
-      >
-        <Bell size={18} />
-      </button>
-    );
-  }
 
   return (
     <div className={styles.container} ref={dropdownRef}>
@@ -187,14 +179,43 @@ export function NotificationBell() {
             {/* Header */}
             <div className={styles.dropdownHeader}>
               <h3>Thông báo</h3>
-              {unreadCount > 0 && (
-                <button
-                  onClick={handleMarkAllRead}
-                  className={styles.markAllRead}
-                >
-                  Đánh dấu đã đọc
-                </button>
-              )}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                {unreadCount > 0 && (
+                  <button onClick={handleMarkAllRead} className={styles.markAllRead}>
+                    Đánh dấu đã đọc
+                  </button>
+                )}
+                {/* Show re-subscribe option if test failed (stale browser subscription) */}
+                {subscribed && testResult === 'fail' ? (
+                  <button
+                    onClick={async () => { setTestResult(null); await subscribe(); }}
+                    className={styles.markAllRead}
+                    title="Đăng ký lại thông báo"
+                    style={{ color: '#dc2626' }}
+                  >
+                    ✗ Đăng ký lại
+                  </button>
+                ) : subscribed && permission === 'granted' ? (
+                  <button
+                    onClick={handleTestPush}
+                    disabled={testingPush}
+                    className={styles.markAllRead}
+                    title="Gửi thông báo thử để kiểm tra"
+                    style={{ color: testResult === 'ok' ? '#10b981' : 'var(--text-tertiary)' }}
+                  >
+                    {testingPush ? '...' : testResult === 'ok' ? '✓ Đã gửi' : 'Gửi thử'}
+                  </button>
+                ) : (
+                  <button
+                    onClick={async () => { await subscribe(); setShowSubscribeHint(false); }}
+                    className={styles.markAllRead}
+                    title="Bật thông báo đẩy"
+                    style={{ color: 'var(--text-tertiary)' }}
+                  >
+                    Bật thông báo
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* Notifications list */}
@@ -208,9 +229,7 @@ export function NotificationBell() {
                 notifications.map((notification) => (
                   <div
                     key={notification.id}
-                    className={`${styles.notificationItem} ${
-                      !notification.read ? styles.unread : ''
-                    }`}
+                    className={`${styles.notificationItem} ${!notification.read ? styles.unread : ''}`}
                     onClick={() => handleNotificationClick(notification)}
                   >
                     <div className={styles.notificationContent}>
@@ -220,9 +239,7 @@ export function NotificationBell() {
                         {formatTimestamp(notification.timestamp)}
                       </span>
                     </div>
-                    {!notification.read && (
-                      <div className={styles.unreadDot} />
-                    )}
+                    {!notification.read && <div className={styles.unreadDot} />}
                   </div>
                 ))
               )}

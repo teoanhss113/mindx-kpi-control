@@ -1380,7 +1380,7 @@ ClassCard.displayName = 'ClassCard';
 export default function TeacherSchedulePage() {
   const router = useRouter();
   const { logout } = useAuth();
-  const { toasts, addToast } = useToast();
+  const { toasts, addToast, removeToast } = useToast();
   const { hasPreferences } = useQuickFilterChips();
   
   // Media query for mobile detection
@@ -1510,7 +1510,7 @@ export default function TeacherSchedulePage() {
 
       if (!signal.aborted) {
         setSchedules(result);
-        await setCache('mindx_teacher_schedules', {
+        await setCache(CACHE_KEYS.TEACHER_SCHEDULE, {
           schedules: result,
           selectedTeachers,
           timestamp: Date.now(),
@@ -1648,7 +1648,7 @@ export default function TeacherSchedulePage() {
           await setCache(CACHE_KEYS.CENTRES, { centres: freshCentres });
         }
 
-        const cached = await getCache('mindx_teacher_schedules');
+        const cached = await getCache(CACHE_KEYS.TEACHER_SCHEDULE);
         if (cached) {
           if (cached.selectedTeachers) setSelectedTeachers(cached.selectedTeachers);
           if (cached.schedules) setSchedules(cached.schedules);
@@ -1881,7 +1881,7 @@ export default function TeacherSchedulePage() {
 
   return (
     <>
-      <ToastContainer toasts={toasts} />
+      <ToastContainer toasts={toasts} onRemove={removeToast} />
       <PageLayout
         title="Lịch Giảng dạy"
         activePage="teacher-schedule"
@@ -1905,7 +1905,7 @@ export default function TeacherSchedulePage() {
           hasData={schedules.length > 0}
           onClearCache={() => {
             setSchedules([]);
-            clearCache('mindx_teacher_schedules');
+            clearCache(CACHE_KEYS.TEACHER_SCHEDULE);
           }}
           showRegionQuickSelect={true}
           quickFilterSlots={

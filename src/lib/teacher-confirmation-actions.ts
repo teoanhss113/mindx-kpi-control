@@ -7,6 +7,7 @@
  */
 
 import { authFetch } from '@/lib/auth/clientAuth';
+import type { OfficeHourInfo } from '@/lib/notificationService';
 
 export type ConfirmationStatus = 'pending' | 'confirmed' | 'rejected';
 
@@ -44,11 +45,12 @@ export async function confirmOfficeHour(
   officeHourId: string,
   _teacherEmail: string,
   notes?: string,
+  officeHourInfo?: OfficeHourInfo,
 ): Promise<TeacherConfirmation> {
   const res = await authFetch('/api/teacher-confirmations', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'confirm', officeHourId, notes }),
+    body: JSON.stringify({ action: 'confirm', officeHourId, notes, officeHourInfo }),
   });
   const json = await readJson<{ data: TeacherConfirmation }>(res);
   return json.data;
@@ -58,11 +60,12 @@ export async function rejectOfficeHour(
   officeHourId: string,
   _teacherEmail: string,
   reason?: string,
+  officeHourInfo?: OfficeHourInfo,
 ): Promise<TeacherConfirmation> {
   const res = await authFetch('/api/teacher-confirmations', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'reject', officeHourId, reason }),
+    body: JSON.stringify({ action: 'reject', officeHourId, reason, officeHourInfo }),
   });
   const json = await readJson<{ data: TeacherConfirmation }>(res);
   return json.data;

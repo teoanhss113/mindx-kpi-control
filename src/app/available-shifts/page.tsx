@@ -346,12 +346,24 @@ export default function AvailableShiftsPage() {
     setShowRejectModal(true);
   }
 
+  function toOHInfo(oh: OfficeHour) {
+    return {
+      id: oh.id,
+      startTime: oh.startTime,
+      endTime: oh.endTime,
+      centreId: oh.centre?.id,
+      centreName: oh.centre?.shortName || oh.centre?.name,
+      courses: oh.courses?.map(c => c.shortName).filter(Boolean),
+      type: oh.type,
+    };
+  }
+
   async function handleConfirm(item: OfficeHourWithConfirmation) {
     if (!session?.email) return;
 
     try {
       setSubmitting(true);
-      await confirmOfficeHour(item.officeHour.id, session.email);
+      await confirmOfficeHour(item.officeHour.id, session.email, undefined, toOHInfo(item.officeHour));
       addToast('Đã xác nhận ca trực', 'success');
       await handleFetch();
     } catch (error) {
@@ -369,7 +381,8 @@ export default function AvailableShiftsPage() {
       await rejectOfficeHour(
         selectedOfficeHour.officeHour.id,
         session.email,
-        rejectionReason
+        rejectionReason,
+        toOHInfo(selectedOfficeHour.officeHour),
       );
       
       addToast('Đã từ chối ca trực', 'success');
@@ -403,7 +416,9 @@ export default function AvailableShiftsPage() {
         item.officeHour.id,
         session.email,
         teacherInfo.fullName,
-        teacherInfo.id
+        teacherInfo.id,
+        undefined,
+        toOHInfo(item.officeHour),
       );
 
       addToast('Đã gửi yêu cầu xin trực', 'success');
@@ -418,7 +433,7 @@ export default function AvailableShiftsPage() {
   return (
     <AuthenticatedPage>
       <UserLayout title="Ca trực khả dụng" activePage="available-shifts">
-        <ToastContainer toasts={toasts} />
+        <ToastContainer toasts={toasts} onRemove={removeToast} />
 
         {/* Toolbar */}
         <Toolbar

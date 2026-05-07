@@ -11,12 +11,11 @@ const supabase = createClient(
 );
 
 // Configure web-push with VAPID keys
-if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
-  webpush.setVapidDetails(
-    'mailto:admin@mindx.edu.vn',
-    process.env.VAPID_PUBLIC_KEY,
-    process.env.VAPID_PRIVATE_KEY
-  );
+// Accept both VAPID_PUBLIC_KEY and NEXT_PUBLIC_VAPID_PUBLIC_KEY
+const VAPID_PUB = process.env.VAPID_PUBLIC_KEY || process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || '';
+const VAPID_PRIV = process.env.VAPID_PRIVATE_KEY || '';
+if (VAPID_PUB && VAPID_PRIV) {
+  webpush.setVapidDetails('mailto:admin@mindx.edu.vn', VAPID_PUB, VAPID_PRIV);
 }
 
 interface NotificationPayload {

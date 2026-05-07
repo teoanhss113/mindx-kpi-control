@@ -1315,7 +1315,7 @@ export default function ClassQualityPage() {
 
   return (
     <>
-      <ToastContainer toasts={toasts} />
+      <ToastContainer toasts={toasts} onRemove={removeToast} />
       <PageLayout
         title="Chất lượng Lớp học"
         activePage="class-quality"

@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import { authFetch } from '@/lib/auth/clientAuth';
 
@@ -21,11 +21,19 @@ interface PermissionsContextType {
 
 const PermissionsContext = createContext<PermissionsContextType | undefined>(undefined);
 
+// How often to silently re-fetch permissions in the background (30 minutes).
+// This keeps the in-memory cache fresh without forcing a full re-login.
+const REFRESH_INTERVAL_MS = 30 * 60 * 1000;
+
 export function PermissionsProvider({ children }: { children: ReactNode }) {
   const { session } = useAuth();
   const [permissions, setPermissions] = useState<PagePermission[]>([]);
   const [loading, setLoading] = useState(true);
+  // Keep a ref so loadPermissions can always see the current session
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
 
+  // Initial load + reload whenever the logged-in user changes
   useEffect(() => {
     if (!session?.uid) {
       setPermissions([]);
@@ -35,25 +43,40 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
     loadPermissions();
   }, [session?.uid]);
 
-  async function loadPermissions() {
-    if (!session?.uid) {
+  // Periodic background refresh so stale permissions don't silently gate pages
+  useEffect(() => {
+    if (!session?.uid) return;
+    const interval = setInterval(() => {
+      loadPermissions(/* silent = */ true);
+    }, REFRESH_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, [session?.uid]);
+
+  async function loadPermissions(silent = false) {
+    const currentSession = sessionRef.current;
+    if (!currentSession?.uid) {
       setPermissions([]);
       setLoading(false);
       return;
     }
 
+    // Don't show the spinner on background refreshes
+    if (!silent) setLoading(true);
+
     try {
       const res = await authFetch(
-        `/api/auth/sync-user?uid=${encodeURIComponent(session.uid)}`,
+        `/api/auth/sync-user?uid=${encodeURIComponent(currentSession.uid)}`,
       );
-      
+
       if (!res.ok) {
         console.error('[PermissionsContext] Failed to load permissions:', res.status);
-        setPermissions([]);
-        setLoading(false);
+        if (!silent) {
+          setPermissions([]);
+          setLoading(false);
+        }
         return;
       }
-      
+
       const json = await res.json();
       const profile = json?.data?.profile;
       if (!profile?.is_active || !profile?.role_id) {
@@ -76,8 +99,10 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
       setLoading(false);
     } catch (error) {
       console.error('[PermissionsContext] Error loading permissions:', error);
-      setPermissions([]);
-      setLoading(false);
+      if (!silent) {
+        setPermissions([]);
+        setLoading(false);
+      }
     }
   }
 

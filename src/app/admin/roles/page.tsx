@@ -74,19 +74,19 @@ export default function RolesPage() {
   // Toast notifications
   const { toasts, addToast, removeToast } = useToast();
 
-  // Sync pages state
-  const [syncingPages, setSyncingPages] = useState(false);
-
   const { sortedData, sortBy, sortOrder, handleSort } = useTableSort({
     data: roles,
     defaultSortKey: 'created_at' as keyof RoleWithPermissions,
     defaultSortOrder: 'desc'
   });
 
-  // Load data
+  // Load data — auto-syncs pages so all 14 pages are always present
   const loadData = async () => {
     setLoading(true);
     try {
+      // Ensure all pages exist in DB before loading
+      await fetch('/api/admin/sync-pages', { method: 'POST' });
+
       const token = await getAuthToken();
       const [rolesResult, pagesResult] = await Promise.all([
         getRoles(token),
@@ -388,37 +388,6 @@ export default function RolesPage() {
   const userPages = pages.filter(p => USER_PAGE_KEYS.includes(p.key));
   const adminPages = pages.filter(p => !USER_PAGE_KEYS.includes(p.key));
 
-  // Sync pages from code to database
-  const handleSyncPages = async () => {
-    setSyncingPages(true);
-    const loadingToastId = addToast('Đang đồng bộ pages...', 'loading');
-
-    try {
-      const response = await fetch('/api/admin/sync-pages', {
-        method: 'POST',
-      });
-
-      const result = await response.json();
-      removeToast(loadingToastId);
-
-      if (result.success) {
-        addToast(
-          `Đồng bộ thành công: ${result.results.created} tạo mới, ${result.results.updated} cập nhật`,
-          'success'
-        );
-        // Reload pages
-        loadData();
-      } else {
-        addToast(result.error || 'Có lỗi xảy ra khi đồng bộ pages', 'error');
-      }
-    } catch (error) {
-      removeToast(loadingToastId);
-      addToast('Có lỗi xảy ra khi đồng bộ pages', 'error');
-    } finally {
-      setSyncingPages(false);
-    }
-  };
-
   return (
     <ProtectedPage pageKey="admin-roles">
       <AdminPageWrapper title="Quản lý Vai trò" activePage="admin-roles">
@@ -430,49 +399,6 @@ export default function RolesPage() {
           onAction={openCreateModal}
           actionIcon={<Icon.Plus size={16} />}
         />
-
-        {/* Sync Pages Button */}
-        <div style={{ 
-          padding: 'var(--space-4)', 
-          background: 'var(--bg-elevated)', 
-          border: '1px solid var(--border-primary)',
-          borderRadius: 'var(--radius-card)',
-          marginBottom: 'var(--space-4)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 'var(--space-3)'
-        }}>
-          <div>
-            <h3 style={{ margin: 0, fontSize: 14, fontWeight: 510, color: 'var(--text-primary)' }}>
-              Đồng bộ Pages
-            </h3>
-            <p style={{ margin: 'var(--space-1) 0 0 0', fontSize: 13, color: 'var(--text-tertiary)' }}>
-              Tạo tất cả pages cần thiết trong database ({pages.length}/14 pages)
-            </p>
-          </div>
-          <button
-            onClick={handleSyncPages}
-            disabled={syncingPages}
-            style={{
-              padding: 'var(--space-2) var(--space-4)',
-              background: syncingPages ? 'var(--text-quaternary)' : 'var(--brand-indigo)',
-              color: 'white',
-              border: 'none',
-              borderRadius: 'var(--radius-comfortable)',
-              fontSize: 13,
-              fontWeight: 510,
-              cursor: syncingPages ? 'not-allowed' : 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 'var(--space-2)',
-              whiteSpace: 'nowrap'
-            }}
-          >
-            <Icon.Refresh />
-            {syncingPages ? 'Đang đồng bộ...' : 'Đồng bộ Pages'}
-          </button>
-        </div>
 
       {/* Roles Table */}
       {!loading && filteredRoles.length > 0 && (
@@ -838,7 +764,7 @@ export default function RolesPage() {
       />
 
       {/* Toast Notifications */}
-      <ToastContainer toasts={toasts} />
+      <ToastContainer toasts={toasts} onRemove={removeToast} />
     </AdminPageWrapper>
     </ProtectedPage>
   );

@@ -5,17 +5,19 @@
   overflow: hidden;
 }
 
+/* Header */
 .header {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  padding: var(--space-5);
+  padding: var(--space-4) var(--space-5);
   border-bottom: 1px solid var(--border-primary);
 }
 
 .headerIcon {
-  width: 40px;
-  height: 40px;
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -24,47 +26,32 @@
   border-radius: var(--radius-comfortable);
 }
 
+.headerText {
+  flex: 1;
+  min-width: 0;
+}
+
 .headerText h3 {
-  margin: 0 0 var(--space-1) 0;
-  font-size: 16px;
+  margin: 0 0 2px;
+  font-size: 15px;
   font-weight: 590;
   color: var(--text-primary);
-  letter-spacing: -0.16px;
+  letter-spacing: -0.15px;
 }
 
 .headerText p {
   margin: 0;
-  font-size: 13px;
+  font-size: 12px;
   color: var(--text-tertiary);
-  letter-spacing: -0.08px;
 }
 
-.content {
-  padding: var(--space-5);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
-
-/* Status */
-.status {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-}
-
-.statusLabel {
-  font-size: 14px;
-  color: var(--text-secondary);
-  font-weight: 510;
-}
-
+/* Status badge (in header) */
 .statusBadge {
-  padding: var(--space-1) var(--space-3);
+  flex-shrink: 0;
+  padding: 3px var(--space-3);
   border-radius: var(--radius-pill);
   font-size: 12px;
   font-weight: 510;
-  letter-spacing: -0.06px;
 }
 
 .statusBadge.granted {
@@ -82,13 +69,22 @@
   color: var(--text-tertiary);
 }
 
-/* Toggle Switch */
-.toggle {
-  padding: var(--space-4);
-  background: var(--bg-elevated);
-  border-radius: var(--radius-comfortable);
+/* Content */
+.content {
+  padding: var(--space-4) var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
 }
 
+/* Toggle + test button on the same row */
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+/* Toggle */
 .toggleLabel {
   display: flex;
   align-items: center;
@@ -105,11 +101,12 @@
 
 .toggleSwitch {
   position: relative;
-  width: 44px;
-  height: 24px;
+  flex-shrink: 0;
+  width: 40px;
+  height: 22px;
   background: var(--border-secondary);
   border-radius: var(--radius-pill);
-  transition: background 0.2s ease;
+  transition: background 0.18s ease;
 }
 
 .toggleSwitch::after {
@@ -117,11 +114,11 @@
   position: absolute;
   top: 2px;
   left: 2px;
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   background: white;
   border-radius: 50%;
-  transition: transform 0.2s ease;
+  transition: transform 0.18s ease;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
@@ -130,7 +127,7 @@
 }
 
 .toggleInput:checked + .toggleSwitch::after {
-  transform: translateX(20px);
+  transform: translateX(18px);
 }
 
 .toggleInput:disabled + .toggleSwitch {
@@ -139,85 +136,87 @@
 }
 
 .toggleText {
-  font-size: 14px;
+  font-size: 13px;
   color: var(--text-secondary);
   font-weight: 510;
 }
 
-/* Test Button */
+/* Inline test / resubscribe buttons */
 .testButton {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-4);
-  background: var(--bg-elevated);
+  margin-left: auto;
+  padding: var(--space-1) var(--space-3);
+  background: transparent;
   border: 1px solid var(--border-primary);
   border-radius: var(--radius-comfortable);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 510;
-  color: var(--text-secondary);
+  color: var(--text-tertiary);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.15s ease;
 }
 
 .testButton:hover:not(:disabled) {
-  background: var(--bg-panel);
-  border-color: var(--border-secondary);
-  color: var(--text-primary);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
 }
 
 .testButton:disabled {
-  opacity: 0.6;
+  opacity: 0.5;
   cursor: not-allowed;
 }
 
-/* Error */
-.error {
-  padding: var(--space-3);
-  background: #fee2e2;
+.resubscribeBtn {
+  margin-left: auto;
+  padding: var(--space-1) var(--space-3);
+  background: transparent;
   border: 1px solid #fecaca;
   border-radius: var(--radius-comfortable);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-}
-
-.error p {
-  margin: 0;
-  font-size: 13px;
-  color: #991b1b;
-  flex: 1;
-}
-
-.errorClose {
-  padding: var(--space-1) var(--space-2);
-  background: transparent;
-  border: none;
   font-size: 12px;
   font-weight: 510;
-  color: #991b1b;
+  color: #dc2626;
   cursor: pointer;
-  border-radius: var(--radius-standard);
-  transition: background 0.2s ease;
+  transition: all 0.15s ease;
 }
 
-.errorClose:hover {
-  background: rgba(153, 27, 27, 0.1);
+.resubscribeBtn:hover {
+  background: #fee2e2;
 }
 
-/* Help Text */
-.help {
-  padding: var(--space-3);
-  background: var(--bg-elevated);
-  border-radius: var(--radius-comfortable);
-}
-
-.help p {
+/* Help text */
+.helpText {
   margin: 0;
   font-size: 13px;
   color: var(--text-tertiary);
   line-height: 1.5;
+}
+
+/* Error */
+.error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  background: #fee2e2;
+  border: 1px solid #fecaca;
+  border-radius: var(--radius-comfortable);
+  font-size: 13px;
+  color: #991b1b;
+}
+
+.errorClose {
+  flex-shrink: 0;
+  padding: 2px var(--space-2);
+  background: transparent;
+  border: none;
+  font-size: 12px;
+  color: #991b1b;
+  cursor: pointer;
+  border-radius: var(--radius-standard);
+}
+
+.errorClose:hover {
+  background: rgba(153, 27, 27, 0.1);
 }
 
 /* Unsupported */
@@ -228,27 +227,22 @@
 }
 
 .unsupported svg {
-  margin: 0 auto var(--space-3);
-  opacity: 0.5;
+  margin: 0 auto var(--space-2);
+  display: block;
+  opacity: 0.4;
 }
 
 .unsupported p {
   margin: 0;
-  font-size: 14px;
+  font-size: 13px;
 }
 
-/* Mobile responsive */
 @media (max-width: 640px) {
-  .header,
-  .content {
+  .header {
     padding: var(--space-4);
   }
 
-  .headerText h3 {
-    font-size: 15px;
-  }
-
-  .headerText p {
-    font-size: 12px;
+  .content {
+    padding: var(--space-4);
   }
 }

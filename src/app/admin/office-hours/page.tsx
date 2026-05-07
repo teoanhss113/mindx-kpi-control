@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   BarChart, Bar, LineChart, Line, ComposedChart, XAxis, YAxis, CartesianGrid, Tooltip as ReTooltip,
@@ -49,10 +49,17 @@ function parseTeacherNote(customField: string | null | undefined): string {
   }
 }
 
-export default function OfficeHoursPage() {
+import { Suspense } from 'react';
+
+function OfficeHoursPageInner() {
   const { session, isLoading: authLoading, logout } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { toasts, addToast, removeToast } = useToast();
+
+  // Deep-link from notification: ?date=YYYY-MM-DD&centre=id&open=officeHourId
+  const pendingOpenIdRef = useRef<string | null>(null);
+  const deepLinkAppliedRef = useRef(false);
   const { hasPreferences } = useQuickFilterChips();
 
   const [officeHours, setOfficeHours] = useState<OfficeHour[]>([]);
@@ -149,6 +156,28 @@ export default function OfficeHoursPage() {
     })();
   }, []);
 
+  // Deep-link: apply URL params once filters are loaded from cache, then auto-fetch
+  useEffect(() => {
+    if (deepLinkAppliedRef.current || !datesLoaded) return;
+    const date   = searchParams.get('date');
+    const centre = searchParams.get('centre');
+    const open   = searchParams.get('open');
+    if (!date && !centre && !open) return;
+
+    deepLinkAppliedRef.current = true;
+    if (open) pendingOpenIdRef.current = open;
+
+    if (date) { setTimeFrom(date); setTimeTo(date); }
+    if (centre) setSelectedCentres([centre]);
+
+    // Fetch with explicit params to bypass state-update timing
+    handleFetch({ date: date ?? undefined, centreIds: centre ? [centre] : undefined });
+
+    // Clean up URL so refresh doesn't re-trigger
+    router.replace('/admin/office-hours', { scroll: false });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [datesLoaded]);
+
   // Fetch centres on mount
   useEffect(() => {
     if (!session) return;
@@ -178,6 +207,28 @@ export default function OfficeHoursPage() {
       }
     });
     return Array.from(ids);
+  }, [officeHours]);
+
+  // Status options (based on actual data, not just enum)
+  const statusOptions: SelectOption[] = useMemo(() => {
+    const statuses = new Set<string>();
+    officeHours.forEach(oh => {
+      if (oh.status) {
+        statuses.add(oh.status);
+      }
+    });
+    return Array.from(statuses).sort().map(status => ({ value: status, label: status }));
+  }, [officeHours]);
+
+  // Type options (based on actual data, not just enum)
+  const typeOptions: SelectOption[] = useMemo(() => {
+    const types = new Set<string>();
+    officeHours.forEach(oh => {
+      if (oh.type) {
+        types.add(oh.type);
+      }
+    });
+    return Array.from(types).sort().map(type => ({ value: type, label: getOfficeHourTypeLabel(type) }));
   }, [officeHours]);
 
   // Course line options (categorized into Coding, Robotics, Art, Others)
@@ -216,9 +267,13 @@ export default function OfficeHoursPage() {
     return { typeCounts, statusCounts, appointmentStatusCounts };
   }, [officeHours]);
 
-  // Fetch office hours
-  const handleFetch = async () => {
-    if (!timeFrom || !timeTo) {
+  // Fetch office hours (override params used by deep-link to bypass state timing)
+  const handleFetch = async (override?: { date?: string; centreIds?: string[] }) => {
+    const resolvedFrom = override?.date ?? timeFrom;
+    const resolvedTo   = override?.date ?? timeTo;
+    const resolvedCentres = override?.centreIds ?? selectedCentres;
+
+    if (!resolvedFrom || !resolvedTo) {
       addToast(MESSAGES.ERROR.DATE_RANGE_REQUIRED, 'error');
       return;
     }
@@ -229,16 +284,16 @@ export default function OfficeHoursPage() {
     setProgress({ loaded: 0, total: 0 });
     setOfficeHours([]); // Clear existing data
     const tid = addToast(MESSAGES.LOADING.CONNECTING, 'loading');
-    
+
     let accumulated: OfficeHour[] = [];
 
     try {
-      const fromUTC = new Date(timeFrom + 'T00:00:00+07:00').toISOString();
-      const toUTC = new Date(timeTo + 'T23:59:59+07:00').toISOString();
+      const fromUTC = new Date(resolvedFrom + 'T00:00:00+07:00').toISOString();
+      const toUTC = new Date(resolvedTo + 'T23:59:59+07:00').toISOString();
 
       const result = await fetchOfficeHours(
         {
-          centreIn: selectedCentres.length > 0 ? selectedCentres : undefined,
+          centreIn: resolvedCentres.length > 0 ? resolvedCentres : undefined,
           timeFrom: fromUTC,
           timeTo: toUTC,
         },
@@ -384,6 +439,18 @@ export default function OfficeHoursPage() {
     }
   }, []);
 
+  // Auto-open modal when the target office hour arrives in loaded data (deep-link)
+  useEffect(() => {
+    if (!pendingOpenIdRef.current || officeHours.length === 0) return;
+    const target = officeHours.find(oh => oh.id === pendingOpenIdRef.current);
+    if (!target) return;
+    pendingOpenIdRef.current = null;
+    setSelectedOfficeHourId(target.id);
+    openEditForOfficeHour(target);
+  // openEditForOfficeHour is stable (useCallback with [])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [officeHours]);
+
   // Approve office hour
   const handleApproveOfficeHour = useCallback(async (officeHourId: string) => {
     setApprovingOfficeHour(true);
@@ -527,17 +594,17 @@ export default function OfficeHoursPage() {
     }
 
     // Status filter
-    if (selectedStatuses.length > 0) {
+    if (selectedStatuses.length > 0 && selectedStatuses.length !== statusOptions.length) {
       filtered = filtered.filter(oh => selectedStatuses.includes(oh.status));
     }
 
     // Type filter
-    if (selectedTypes.length > 0) {
+    if (selectedTypes.length > 0 && selectedTypes.length !== typeOptions.length) {
       filtered = filtered.filter(oh => selectedTypes.includes(oh.type));
     }
 
     // Grade filter (by category: Coding, Robotics, Art, Others)
-    if (selectedGrades.length > 0) {
+    if (selectedGrades.length > 0 && selectedGrades.length !== courseLineOptions.length) {
       filtered = filtered.filter(oh => {
         const category = getOfficeHourCategory(oh.courseLines || []);
         return selectedGrades.includes(category);
@@ -604,7 +671,7 @@ export default function OfficeHoursPage() {
     });
 
     return filtered;
-  }, [officeHours, tableSelectedCentres, selectedStatuses, selectedTypes, selectedGrades, searchQuery, sortBy, sortOrder]);
+  }, [officeHours, tableSelectedCentres, selectedStatuses, selectedTypes, selectedGrades, searchQuery, sortBy, sortOrder, statusOptions, typeOptions, courseLineOptions]);
 
   // Group by teacher for 'by-teacher' view
   const groupedByTeacher = useMemo(() => {
@@ -864,7 +931,7 @@ export default function OfficeHoursPage() {
 
   return (
     <>
-      <ToastContainer toasts={toasts} />
+      <ToastContainer toasts={toasts} onRemove={removeToast} />
       <PageLayout
         title="Ca Trải nghiệm"
         activePage="office-hours"
@@ -1113,18 +1180,18 @@ export default function OfficeHoursPage() {
                         />
                       )}
                       {/* 3. Status */}
-                      {Object.values(OFFICE_HOUR_STATUS).length > 1 && (
+                      {statusOptions.length > 1 && (
                         <MultiSelect
-                          options={Object.values(OFFICE_HOUR_STATUS).map(status => ({ value: status, label: status }))}
+                          options={statusOptions}
                           selected={selectedStatuses}
                           onChange={setSelectedStatuses}
                           placeholder="Tất cả trạng thái"
                         />
                       )}
                       {/* 4. Specific: Type */}
-                      {Object.values(OFFICE_HOUR_TYPE).length > 1 && (
+                      {typeOptions.length > 1 && (
                         <MultiSelect
-                          options={Object.values(OFFICE_HOUR_TYPE).map(type => ({ value: type, label: type }))}
+                          options={typeOptions}
                           selected={selectedTypes}
                           onChange={setSelectedTypes}
                           placeholder="Tất cả loại"
@@ -2736,7 +2803,11 @@ export default function OfficeHoursPage() {
     </>
   );
 }
-// Improved error handling
-// Integrated confirmation flow
 
-// Improved error handling
+export default function OfficeHoursPage() {
+  return (
+    <Suspense fallback={<div>Đang tải...</div>}>
+      <OfficeHoursPageInner />
+    </Suspense>
+  );
+}

@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
-import { authFetch } from '@/lib/auth/clientAuth';
+import { usePermissionsContext } from '@/lib/PermissionsContext';
 
 interface ProtectedPageProps {
   children: React.ReactNode;
@@ -11,90 +11,34 @@ interface ProtectedPageProps {
   requireEdit?: boolean;
 }
 
+/**
+ * ProtectedPage
+ *
+ * Uses the shared PermissionsContext (loaded once per login) instead of
+ * making a new API call on every page mount. This eliminates the race
+ * conditions and redundant fetches that caused intermittent redirects to /.
+ */
 export function ProtectedPage({ children, pageKey, requireEdit = false }: ProtectedPageProps) {
   const { session, logout } = useAuth();
+  const { loading, canView, canEdit } = usePermissionsContext();
   const router = useRouter();
-  const [checking, setChecking] = useState(true);
-  const [hasAccess, setHasAccess] = useState(false);
 
+  // Redirect to login if not authenticated at all
   useEffect(() => {
-    checkAccess();
-  }, [session?.uid, pageKey]);
-
-  async function checkAccess() {
-    if (!session?.uid) {
+    if (!session) {
       router.replace('/login');
-      return;
     }
+  }, [session, router]);
 
-    try {
-      const res = await authFetch(
-        `/api/auth/sync-user?uid=${encodeURIComponent(session.uid)}`,
-      );
-      
-      if (!res.ok) {
-        // If 401, session is invalid - logout
-        if (res.status === 401) {
-          console.log('[ProtectedPage] 401 error, logging out...');
-          logout();
-          return;
-        }
-        router.replace('/');
-        return;
-      }
-      
-      const json = await res.json();
-      const profile = json?.data?.profile;
-      if (!profile) {
-        router.replace('/');
-        return;
-      }
-      if (!profile.is_active) {
-        setHasAccess(false);
-        setChecking(false);
-        return;
-      }
-      if (!profile.role_id) {
-        router.replace('/');
-        return;
-      }
+  if (!session) return null;
 
-      const rolePermissions: Array<{
-        can_view: boolean;
-        can_edit: boolean;
-        pages?: { key?: string };
-      }> = profile?.roles?.role_permissions || [];
-
-      const match = rolePermissions.find(rp => rp?.pages?.key === pageKey);
-      if (!match) {
-        setHasAccess(false);
-        setChecking(false);
-        return;
-      }
-
-      setHasAccess(requireEdit ? !!(match.can_view && match.can_edit) : !!match.can_view);
-      setChecking(false);
-    } catch (error) {
-      console.error('[ProtectedPage] Error checking access:', error);
-      
-      // If error message indicates session expired, logout
-      if (error instanceof Error && error.message.includes('Session expired')) {
-        logout();
-        return;
-      }
-      
-      setHasAccess(false);
-      setChecking(false);
-    }
-  }
-
-  // Show loading while checking
-  if (checking) {
+  // Show spinner while permissions are being fetched (only on initial login load)
+  if (loading) {
     return (
-      <div style={{ 
-        display: 'flex', 
-        justifyContent: 'center', 
-        alignItems: 'center', 
+      <div style={{
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
         minHeight: '50vh',
         flexDirection: 'column',
         gap: 'var(--space-3)'
@@ -114,13 +58,14 @@ export function ProtectedPage({ children, pageKey, requireEdit = false }: Protec
     );
   }
 
-  // Show access denied if no permission
+  const hasAccess = requireEdit ? canEdit(pageKey) : canView(pageKey);
+
   if (!hasAccess) {
     return (
-      <div style={{ 
-        display: 'flex', 
-        justifyContent: 'center', 
-        alignItems: 'center', 
+      <div style={{
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
         minHeight: '100vh',
         flexDirection: 'column',
         gap: 'var(--space-4)',
@@ -133,18 +78,18 @@ export function ProtectedPage({ children, pageKey, requireEdit = false }: Protec
           <line x1="9" y1="9" x2="15" y2="15" stroke="#dc2626" />
         </svg>
         <div style={{ textAlign: 'center' }}>
-          <h2 style={{ 
-            margin: 0, 
-            marginBottom: 'var(--space-2)', 
-            fontSize: 20, 
+          <h2 style={{
+            margin: 0,
+            marginBottom: 'var(--space-2)',
+            fontSize: 20,
             fontWeight: 590,
             color: 'var(--text-primary)'
           }}>
             Không có quyền truy cập
           </h2>
-          <p style={{ 
-            margin: 0, 
-            fontSize: 14, 
+          <p style={{
+            margin: 0,
+            fontSize: 14,
             color: 'var(--text-secondary)',
             maxWidth: 400,
             lineHeight: 1.6
@@ -155,9 +100,7 @@ export function ProtectedPage({ children, pageKey, requireEdit = false }: Protec
           </p>
         </div>
         <button
-          onClick={() => {
-            logout();
-          }}
+          onClick={logout}
           style={{
             padding: 'var(--space-3) var(--space-5)',
             background: 'var(--brand-indigo)',
@@ -175,6 +118,5 @@ export function ProtectedPage({ children, pageKey, requireEdit = false }: Protec
     );
   }
 
-  // Render children if has access
   return <>{children}</>;
 }

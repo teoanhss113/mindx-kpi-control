@@ -1,91 +1,98 @@
 // Service Worker for Push Notifications
 // Handles background push events and notification clicks
 
-const NOTIFICATION_TAG = 'mindx-kpi';
 const CACHE_NAME = 'mindx-notifications-v1';
 
-// Install event
-self.addEventListener('install', (event) => {
-  console.log('[SW] Installing service worker...');
+// ── Lifecycle ────────────────────────────────────────────────────────────────
+
+self.addEventListener('install', () => {
+  console.log('[SW] Installing...');
   self.skipWaiting();
 });
 
-// Activate event
 self.addEventListener('activate', (event) => {
-  console.log('[SW] Activating service worker...');
+  console.log('[SW] Activating...');
   event.waitUntil(self.clients.claim());
 });
 
-// Push event - Nhận notification từ server
+// ── Push event ───────────────────────────────────────────────────────────────
+
 self.addEventListener('push', (event) => {
-  console.log('[SW] Push received:', event);
-  
-  let data = {
-    title: 'MindX KPI Dashboard',
+  console.log('[SW] Push received');
+
+  // Defaults — shown if payload parse fails
+  let title = 'MindX KPI Dashboard';
+  let options = {
     body: 'Bạn có thông báo mới',
     icon: '/logo/logo.svg',
     badge: '/logo/x_white.svg',
-    tag: NOTIFICATION_TAG,
-    data: {}
+    tag: 'mindx-notification',
+    data: { url: '/' },
+    requireInteraction: false,
   };
 
   if (event.data) {
     try {
       const payload = event.data.json();
-      data = { ...data, ...payload };
+
+      title = payload.title || title;
+      options = {
+        body: payload.body || options.body,
+        icon: payload.icon || options.icon,
+        badge: payload.badge || options.badge,
+        tag: payload.tag || options.tag,
+        // Merge the top-level data object so click handler can read .url
+        data: Object.assign({ url: '/' }, payload.data),
+        requireInteraction: !!payload.requireInteraction,
+        // actions only work in browsers that support them — safe to include
+        ...(payload.actions && payload.actions.length > 0
+          ? { actions: payload.actions }
+          : {}),
+      };
     } catch (e) {
-      console.error('[SW] Failed to parse push data:', e);
-      data.body = event.data.text();
+      console.error('[SW] Failed to parse push payload:', e);
+      options.body = event.data.text ? event.data.text() : options.body;
     }
   }
 
-  const options = {
-    body: data.body,
-    icon: data.icon,
-    badge: data.badge,
-    tag: data.tag,
-    data: data.data,
-    requireInteraction: data.requireInteraction || false,
-    actions: data.actions || [],
-    vibrate: [200, 100, 200],
-    timestamp: Date.now()
-  };
-
   event.waitUntil(
-    self.registration.showNotification(data.title, options)
+    self.registration.showNotification(title, options)
   );
 });
 
-// Notification click event
+// ── Notification click ───────────────────────────────────────────────────────
+
 self.addEventListener('notificationclick', (event) => {
-  console.log('[SW] Notification clicked:', event);
-  
+  console.log('[SW] Notification clicked, url:', event.notification.data?.url);
   event.notification.close();
 
-  const urlToOpen = event.notification.data?.url || '/';
-  
+  const urlToOpen = new URL(
+    event.notification.data?.url || '/',
+    self.location.origin
+  ).href;
+
   event.waitUntil(
-    self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+    self.clients
+      .matchAll({ type: 'window', includeUncontrolled: true })
       .then((clientList) => {
-        // Tìm tab đã mở
+        // Focus an existing tab on the same origin
         for (const client of clientList) {
-          if (client.url.includes(self.location.origin) && 'focus' in client) {
-            return client.focus().then(() => {
-              if ('navigate' in client) {
-                return client.navigate(urlToOpen);
-              }
-            });
+          if (client.url.startsWith(self.location.origin) && 'focus' in client) {
+            client.focus();
+            if ('navigate' in client) {
+              return client.navigate(urlToOpen);
+            }
+            return;
           }
         }
-        // Mở tab mới nếu chưa có
-        if (self.clients.openWindow) {
-          return self.clients.openWindow(urlToOpen);
-        }
+        // No existing tab — open a new one
+        return self.clients.openWindow(urlToOpen);
       })
   );
 });
 
-// Notification close event
+// ── Notification close ───────────────────────────────────────────────────────
+
 self.addEventListener('notificationclose', (event) => {
-  console.log('[SW] Notification closed:', event);
+  console.log('[SW] Notification closed, tag:', event.notification.tag);
 });

@@ -91,7 +91,7 @@ export async function subscribeToPush(
 
     const subscription = await registration.pushManager.subscribe({
       userVisibleOnly: true,
-      applicationServerKey: convertedVapidKey
+      applicationServerKey: convertedVapidKey as BufferSource
     });
 
     console.log('[Notifications] Push subscription created:', subscription);
@@ -157,7 +157,7 @@ export async function showLocalNotification(
     badge: '/logo/x_white.svg',
     vibrate: [200, 100, 200],
     ...options
-  });
+  } as NotificationOptions & { vibrate?: number[] });
 }
 
 /**

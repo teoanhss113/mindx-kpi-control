@@ -1,41 +1,28 @@
 // API Route: Unsubscribe from Push Notifications
-// Removes push subscription from database
+// Removes push subscription from database for the verified user.
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+import { supabaseAdmin } from '@/lib/supabase/admin';
+import { requireUser, authErrorResponse, AuthError } from '@/lib/auth/serverAuth';
 
 export async function POST(request: NextRequest) {
   try {
-    // Get user from session
-    const userId = request.headers.get('x-user-id') || 'anonymous';
+    const user = await requireUser(request);
 
-    // Delete subscription from database
-    const { error } = await supabase
+    const { error } = await supabaseAdmin
       .from('push_subscriptions')
       .delete()
-      .eq('user_id', userId);
+      .eq('user_id', user.email);
 
     if (error) {
       console.error('[Unsubscribe] Database error:', error);
-      return NextResponse.json(
-        { error: 'Failed to remove subscription' },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: 'Failed to remove subscription' }, { status: 500 });
     }
 
-    return NextResponse.json({
-      success: true
-    });
+    return NextResponse.json({ success: true });
   } catch (error) {
+    if (error instanceof AuthError) return authErrorResponse(error);
     console.error('[Unsubscribe] Error:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

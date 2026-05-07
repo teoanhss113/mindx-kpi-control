@@ -345,9 +345,10 @@ export default function DashboardPage() {
     let filtered = normalClasses.filter(c => {
       if (c.isExcludedByCourse) return false;
       if (search && !c.name.toLowerCase().includes(search.toLowerCase())) return false;
-      if (selectedCourseLines.length > 0 && !selectedCourseLines.includes(c.courseLineName)) return false;
-      if (filterCentres.length > 0 && !filterCentres.includes(c.centre?.id)) return false;
-      if (filterReasons.length > 0 && !filterReasons.some(r => Object.keys(c.reasonsSummary).includes(r))) return false;
+      if (selectedCourseLines.length > 0 && selectedCourseLines.length !== availableCourseLines.length && !selectedCourseLines.includes(c.courseLineName)) return false;
+      if (filterCentres.length > 0 && filterCentres.length !== tableCentreIds.length && !filterCentres.includes(c.centre?.id)) return false;
+      // Note: filterReasons uses tableReasonOptions, but computing it matches keys. If not ALL are selected, filter it.
+      if (filterReasons.length > 0 && filterReasons.length !== Object.keys(reasonCounts).length && !filterReasons.some(r => Object.keys(c.reasonsSummary).includes(r))) return false;
       if (c.rate < rateRange[0] || c.rate > rateRange[1]) return false;
       if (showDemoOnly && !Object.keys(c.reasonsSummary).includes(DEMO_REASON_KEY)) return false;
       return true;
@@ -528,7 +529,7 @@ export default function DashboardPage() {
   return (
     <ProtectedPage pageKey="completion">
       <>
-        <ToastContainer toasts={toasts} />
+        <ToastContainer toasts={toasts} onRemove={removeToast} />
         <PageLayout
           title="Tỷ lệ Hoàn thành"
           activePage="completion"

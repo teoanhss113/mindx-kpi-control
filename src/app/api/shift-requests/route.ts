@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { requireUser, authErrorResponse, AuthError } from '@/lib/auth/serverAuth';
+import { notifyUsers, getAdminEmailsForPage, NotifyTemplates, type OfficeHourInfo } from '@/lib/notificationService';
 
 /**
  * GET /api/shift-requests
@@ -79,6 +80,7 @@ export async function POST(request: NextRequest) {
     const teacherName = String(body?.teacherName || '').trim() || null;
     const teacherId = String(body?.teacherId || '').trim() || null;
     const requestNote = body?.requestNote ?? null;
+    const officeHourInfo: OfficeHourInfo | undefined = body?.officeHourInfo ?? undefined;
 
     if (!officeHourId) {
       return NextResponse.json({ error: 'officeHourId required' }, { status: 400 });
@@ -106,6 +108,20 @@ export async function POST(request: NextRequest) {
       }
       throw error;
     }
+
+    // Notify admins who manage office-hours
+    void (async () => {
+      try {
+        const adminEmails = await getAdminEmailsForPage('office-hours');
+        await notifyUsers({
+          userEmails: adminEmails,
+          ...NotifyTemplates.shiftRequested(teacherName ?? user.email, officeHourInfo),
+        });
+      } catch (e) {
+        console.error('[shift-requests POST] Notification error:', e);
+      }
+    })();
+
     return NextResponse.json({ data });
   } catch (error) {
     if (error instanceof AuthError) return authErrorResponse(error);
@@ -133,6 +149,20 @@ export async function DELETE(request: NextRequest) {
       .eq('status', 'pending');
 
     if (error) throw error;
+
+    // Notify admins of cancellation
+    void (async () => {
+      try {
+        const adminEmails = await getAdminEmailsForPage('office-hours');
+        await notifyUsers({
+          userEmails: adminEmails,
+          ...NotifyTemplates.shiftCancelled(user.email),
+        });
+      } catch (e) {
+        console.error('[shift-requests DELETE] Notification error:', e);
+      }
+    })();
+
     return NextResponse.json({ success: true });
   } catch (error) {
     if (error instanceof AuthError) return authErrorResponse(error);

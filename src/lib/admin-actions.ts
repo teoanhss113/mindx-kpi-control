@@ -88,6 +88,24 @@ export async function getUsers(idToken: string) {
     const { data, error } = await supabaseAdmin
       .from('profiles')
       .select(`*, roles (id, name, description)`)
+      .not('role_id', 'is', null)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    return { success: true, data: (data || []) as any[] };
+  } catch (error) {
+    { const f = failure(error); return { success: false as const, error: f.error, data: [] }; }
+  }
+}
+
+export async function getUnmanagedUsers(idToken: string) {
+  try {
+    await requireAdminToken(idToken);
+
+    const { data, error } = await supabaseAdmin
+      .from('profiles')
+      .select(`id, email, is_active, created_at, last_login_at`)
+      .is('role_id', null)
       .order('created_at', { ascending: false });
 
     if (error) throw error;

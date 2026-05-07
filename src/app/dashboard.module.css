@@ -1692,11 +1692,50 @@
   font-size: 13px; font-weight: 510;
   display: flex; align-items: center; gap: var(--space-3);
   letter-spacing: -0.13px; pointer-events: auto;
+  position: relative;
 }
 .toast.success { border-left: 3px solid var(--status-emerald); }
 .toast.error   { border-left: 3px solid var(--status-error); }
 .toast.info    { border-left: 3px solid var(--brand-indigo); }
 .toast.loading .spinner { border-color: rgba(0,0,0,0.1); border-top-color: var(--brand-indigo); }
+
+.toastContent {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: 1;
+  min-width: 0;
+}
+
+.toastMessage {
+  flex: 1;
+  min-width: 0;
+  word-wrap: break-word;
+}
+
+.toastCloseButton {
+  background: none;
+  border: none;
+  color: var(--text-quaternary);
+  cursor: pointer;
+  padding: var(--space-1);
+  border-radius: var(--radius-standard);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease, color 0.15s ease;
+  flex-shrink: 0;
+  margin-left: var(--space-2);
+}
+
+.toastCloseButton:hover {
+  background: rgba(0, 0, 0, 0.08);
+  color: var(--text-secondary);
+}
+
+.toastCloseButton:active {
+  background: rgba(0, 0, 0, 0.12);
+}
 
 /* ══════════════════════════════════════════════════════════════════════════════
    SUMMARY FILTERS & EXPORT
@@ -1816,4 +1855,247 @@
 .exportMenuBtn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   DATE RANGE PICKER — Single field with dropdown
+══════════════════════════════════════════════════════════════════════════════ */
+.dateRangePickerContainer {
+  position: relative;
+  min-width: 0;
+}
+
+.dateRangePickerTrigger {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  background: rgba(0, 0, 0, 0.02);
+  border: 1px solid var(--border-input);
+  color: var(--text-secondary);
+  padding: var(--space-2);
+  border-radius: var(--radius-comfortable);
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+  min-width: 200px;
+  white-space: nowrap;
+}
+
+.dateRangePickerTrigger:hover {
+  background: rgba(0, 0, 0, 0.04);
+  border-color: var(--border-secondary);
+}
+
+.dateRangePickerTrigger:focus {
+  outline: none;
+  border-color: var(--brand-indigo);
+  box-shadow: var(--shadow-focus);
+}
+
+.dateRangePickerValue {
+  flex: 1;
+  text-align: left;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-primary);
+}
+
+.dateRangePickerValue:empty::before {
+  content: attr(placeholder);
+  color: var(--text-quaternary);
+}
+
+.dateRangePickerDropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 200;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-elevated);
+  min-width: 320px;
+  padding: var(--space-3);
+}
+
+@media (max-width: 600px) {
+  .dateRangePickerTrigger {
+    min-width: 180px;
+  }
+  .dateRangePickerDropdown {
+    min-width: 280px;
+    max-width: calc(100vw - 32px);
+  }
+}
+
+/* Date range presets */
+.dateRangePresets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-bottom: var(--space-3);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.dateRangePresetBtn {
+  background: rgba(0, 0, 0, 0.02);
+  border: 1px solid var(--border-input);
+  color: var(--text-tertiary);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-standard);
+  font-size: 12px;
+  font-weight: 510;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.dateRangePresetBtn:hover {
+  background: rgba(0, 0, 0, 0.04);
+  border-color: var(--border-secondary);
+  color: var(--text-secondary);
+}
+
+.dateRangePresetActive {
+  background: rgba(94, 106, 210, 0.08);
+  border-color: var(--brand-indigo);
+  color: var(--brand-indigo);
+}
+
+/* Date range input row */
+.dateRangeInputRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.dateRangeInputGroup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  flex: 1;
+}
+
+.dateRangeInputGroup .dateLabel {
+  font-size: 11px;
+  font-weight: 590;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.dateRangeInputGroup .dateInput {
+  width: 100%;
+}
+
+/* Calendar styles */
+.calendarContainer {
+  padding-top: var(--space-2);
+}
+
+.calendarHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-3);
+}
+
+.calendarNavBtn {
+  background: rgba(0, 0, 0, 0.02);
+  border: 1px solid var(--border-input);
+  color: var(--text-tertiary);
+  padding: var(--space-1);
+  border-radius: var(--radius-standard);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.calendarNavBtn:hover {
+  background: rgba(0, 0, 0, 0.04);
+  border-color: var(--border-secondary);
+  color: var(--text-secondary);
+}
+
+.calendarMonthLabel {
+  font-size: 13px;
+  font-weight: 590;
+  color: var(--text-primary);
+  text-transform: capitalize;
+}
+
+.calendarWeekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: var(--space-1);
+  margin-bottom: var(--space-2);
+}
+
+.calendarWeekday {
+  font-size: 11px;
+  font-weight: 590;
+  color: var(--text-quaternary);
+  text-align: center;
+  padding: var(--space-1);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.calendarGrid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+
+.calendarDay {
+  aspect-ratio: 1;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 400;
+  cursor: pointer;
+  border-radius: var(--radius-standard);
+  transition: all 0.15s ease;
+  position: relative;
+  font-family: inherit;
+}
+
+.calendarDay:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.calendarDayOtherMonth {
+  color: var(--text-quaternary);
+  opacity: 0.4;
+}
+
+.calendarDayToday {
+  font-weight: 590;
+  color: var(--brand-indigo);
+}
+
+.calendarDaySelected {
+  background: var(--brand-indigo);
+  color: var(--bg-surface);
+  font-weight: 590;
+}
+
+.calendarDaySelected:hover {
+  background: var(--accent-violet);
+}
+
+.calendarDayInRange {
+  background: rgba(94, 106, 210, 0.08);
+  color: var(--text-primary);
+}
+
+.calendarDayInRange:hover {
+  background: rgba(94, 106, 210, 0.15);
 }
