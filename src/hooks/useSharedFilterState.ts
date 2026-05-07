@@ -5,7 +5,7 @@
  * When user loads data on Dashboard, other pages will automatically use the same filters.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { getCache, setCache } from '@/lib/idb';
 import { CACHE_KEYS, DATE_UTILS } from '@/constants';
 
@@ -108,51 +108,35 @@ export function useSharedCentres(): [
 ] {
   const { filterState, loaded } = useSharedFilterState();
   const [selectedCentres, setSelectedCentres] = useState<string[]>([]);
+  // Timestamp of the cache version we last applied. Used so the poll only
+  // syncs when cache was updated externally (other tab/page) — never clobbers
+  // the user's local edits with a stale cached value.
+  const lastAppliedTimestampRef = useRef<number>(0);
 
-  // Update centres when filter state loads
   useEffect(() => {
-    console.log('[useSharedCentres] Filter state update:', {
-      loaded,
-      filterState,
-      selectedCentres: filterState?.selectedCentres
-    });
-    
-    if (loaded && filterState?.selectedCentres) {
-      console.log('[useSharedCentres] Setting centres:', filterState.selectedCentres);
+    if (loaded && filterState?.selectedCentres && filterState.timestamp > lastAppliedTimestampRef.current) {
+      lastAppliedTimestampRef.current = filterState.timestamp;
       setSelectedCentres(filterState.selectedCentres);
     }
   }, [loaded, filterState]);
 
-  // Poll for filter state updates (check immediately and every 1 second)
   useEffect(() => {
-    // Check immediately on mount
-    (async () => {
+    const apply = async () => {
       try {
         const cached = await getCache(CACHE_KEYS.FILTER_STATE);
-        if (cached?.selectedCentres && JSON.stringify(cached.selectedCentres) !== JSON.stringify(selectedCentres)) {
-          console.log('[useSharedCentres] Initial check - detected filter state:', cached.selectedCentres);
+        if (cached?.selectedCentres && cached.timestamp > lastAppliedTimestampRef.current) {
+          lastAppliedTimestampRef.current = cached.timestamp;
           setSelectedCentres(cached.selectedCentres);
         }
       } catch (err) {
         console.error('Failed to check filter state:', err);
       }
-    })();
+    };
 
-    // Then poll every 1 second
-    const interval = setInterval(async () => {
-      try {
-        const cached = await getCache(CACHE_KEYS.FILTER_STATE);
-        if (cached?.selectedCentres && JSON.stringify(cached.selectedCentres) !== JSON.stringify(selectedCentres)) {
-          console.log('[useSharedCentres] Polling detected filter state change:', cached.selectedCentres);
-          setSelectedCentres(cached.selectedCentres);
-        }
-      } catch (err) {
-        console.error('Failed to poll filter state:', err);
-      }
-    }, 1000);
-
+    apply();
+    const interval = setInterval(apply, 1000);
     return () => clearInterval(interval);
-  }, [selectedCentres]);
+  }, []);
 
   return [selectedCentres, setSelectedCentres, loaded];
 }

@@ -773,20 +773,22 @@ export function MultiSelect({
       selected.includes(v) ? selected.filter((x) => x !== v) : [...selected, v],
     )
 
-  const isAll = selected.length === options.length
+  // Region options (value starts with "region:") are meta-options used for
+  // batch selection — they are never stored in `selected` (only centre IDs are).
+  // Exclude them from isAll / selectAll so the "Tất cả" checkbox works correctly.
+  const leafOptions = options.filter((o) => !o.isRegion)
+  const isAll = leafOptions.length > 0 && leafOptions.every((o) => selected.includes(o.value))
   const selectAll = () => {
     if (isAll) {
-      // Deselect all
       onChange([])
     } else {
-      // Select all
-      onChange(options.map((o) => o.value))
+      onChange(leafOptions.map((o) => o.value))
     }
     setQuery('')
   }
 
   const triggerLabel = isAll
-    ? `Tất cả (${options.length})`
+    ? `Tất cả (${leafOptions.length})`
     : selected.length === 0
       ? placeholder
       : selected.length <= maxDisplay
