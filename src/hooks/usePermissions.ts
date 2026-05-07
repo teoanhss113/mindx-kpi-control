@@ -5,7 +5,7 @@
 
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/AuthContext';
-import { supabase } from '@/lib/supabase/client';
+import { authFetch } from '@/lib/auth/clientAuth';
 import type { UserPermissions } from '@/lib/permissions';
 import {
   canViewPage,
@@ -27,67 +27,53 @@ export function usePermissions() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!session?.email) {
+    if (!session?.uid) {
       setPermissions(null);
       setLoading(false);
       return;
     }
-
     loadPermissions();
-  }, [session?.email]);
+  }, [session?.uid]);
 
   async function loadPermissions() {
-    if (!session?.email) return;
+    if (!session?.uid) return;
 
     setLoading(true);
     setError(null);
 
     try {
-      // 1. Get user profile by EMAIL to get role_id
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('role_id, is_active')
-        .eq('email', session.email)
-        .single();
-
-      if (profileError) throw profileError;
-      
+      const res = await authFetch(
+        `/api/auth/sync-user?uid=${encodeURIComponent(session.uid)}`,
+      );
+      if (!res.ok) {
+        setPermissions(null);
+        setLoading(false);
+        return;
+      }
+      const json = await res.json();
+      const profile = json?.data?.profile;
       if (!profile) {
         setPermissions(null);
         setLoading(false);
         return;
       }
-
       if (!profile.is_active) {
         setError('User account is inactive');
         setPermissions(null);
         setLoading(false);
         return;
       }
-
       if (!profile.role_id) {
         setPermissions(null);
         setLoading(false);
         return;
       }
 
-      // 2. Get role permissions with page details
-      const { data: rolePermissions, error: permissionsError } = await supabase
-        .from('role_permissions')
-        .select(`
-          *,
-          pages (*)
-        `)
-        .eq('role_id', profile.role_id);
-
-      if (permissionsError) throw permissionsError;
-
       setPermissions({
-        rolePermissions: rolePermissions as any,
+        rolePermissions: (profile?.roles?.role_permissions || []) as any,
       });
     } catch (err: any) {
-      console.error('Failed to load permissions:', err);
-      setError(err.message);
+      setError(err?.message || 'Failed to load permissions');
       setPermissions(null);
     } finally {
       setLoading(false);

@@ -1,13 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import {
+  extractBearer,
+  verifyFirebaseIdToken,
+  authErrorResponse,
+  AuthError,
+} from '@/lib/auth/serverAuth';
 
 /**
- * Sync Firebase user to Supabase profiles table
- * Called after successful Firebase authentication
+ * Sync Firebase user to Supabase profiles table.
+ * Caller must present a Firebase ID token whose uid+email match the body.
  */
 export async function POST(request: NextRequest) {
   try {
-    const { uid, email, displayName, photoURL } = await request.json();
+    const idToken = extractBearer(request);
+    const verified = await verifyFirebaseIdToken(idToken);
+
+    const body = await request.json().catch(() => ({}));
+    const uid = String(body?.uid || '').trim();
+    const email = String(body?.email || '').trim().toLowerCase();
+    const { displayName, photoURL } = body || {};
 
     if (!uid || !email) {
       return NextResponse.json(
@@ -16,17 +28,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Upsert user to Supabase profiles
+    if (uid !== verified.uid || email !== verified.email) {
+      throw new AuthError('Token does not match request body', 403);
+    }
+
     const { data, error } = await supabaseAdmin
       .from('profiles')
       .upsert({
-        id: uid, // Firebase UID
+        id: uid,
         email,
         display_name: displayName || null,
         photo_url: photoURL || null,
         last_login_at: new Date().toISOString(),
-        // role_id will be assigned by admin later
-        // is_active defaults to true
       }, {
         onConflict: 'id',
         ignoreDuplicates: false,
@@ -37,40 +50,36 @@ export async function POST(request: NextRequest) {
       `)
       .single();
 
-    if (error) {
-      console.error('[sync-user] Supabase error:', error);
-      throw error;
-    }
+    if (error) throw error;
 
-    console.log('[sync-user] User synced successfully:', data.email);
-
-    return NextResponse.json({ 
-      success: true, 
+    return NextResponse.json({
+      success: true,
       data: {
         id: data.id,
         email: data.email,
         role: data.roles?.name || null,
         is_active: data.is_active,
-      }
+      },
     });
-  } catch (error: any) {
-    console.error('[sync-user] Error:', error);
+  } catch (error) {
+    if (error instanceof AuthError) return authErrorResponse(error);
     return NextResponse.json(
-      { success: false, error: error.message },
+      { success: false, error: 'Internal error' },
       { status: 500 }
     );
   }
 }
 
 /**
- * Get user profile and permissions
- * Called to check user access rights
+ * Get the caller's own profile and permissions.
+ * The `uid` query param must match the Firebase token uid.
  */
 export async function GET(request: NextRequest) {
   try {
-    const searchParams = request.nextUrl.searchParams;
-    const uid = searchParams.get('uid');
+    const idToken = extractBearer(request);
+    const verified = await verifyFirebaseIdToken(idToken);
 
+    const uid = request.nextUrl.searchParams.get('uid');
     if (!uid) {
       return NextResponse.json(
         { success: false, error: 'Missing uid parameter' },
@@ -78,7 +87,10 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Get user profile with role and permissions
+    if (uid !== verified.uid) {
+      throw new AuthError('Cannot read another user\'s profile', 403);
+    }
+
     const { data: profile, error: profileError } = await supabaseAdmin
       .from('profiles')
       .select(`
@@ -91,12 +103,7 @@ export async function GET(request: NextRequest) {
             page_id,
             can_view,
             can_edit,
-            pages (
-              id,
-              page_name,
-              key,
-              path
-            )
+            pages ( id, page_name, key, path )
           )
         )
       `)
@@ -112,7 +119,6 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Get user-specific permissions (regions + courses)
     const { data: userPermissions, error: permError } = await supabaseAdmin
       .from('user_permissions')
       .select(`
@@ -138,10 +144,10 @@ export async function GET(request: NextRequest) {
         permissions: userPermissions || [],
       },
     });
-  } catch (error: any) {
-    console.error('[sync-user GET] Error:', error);
+  } catch (error) {
+    if (error instanceof AuthError) return authErrorResponse(error);
     return NextResponse.json(
-      { success: false, error: error.message },
+      { success: false, error: 'Internal error' },
       { status: 500 }
     );
   }

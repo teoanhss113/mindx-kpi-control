@@ -1,17 +1,18 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { searchUsers } from '@/services/ticketService';
+import { requireAdmin, authErrorResponse, AuthError } from '@/lib/auth/serverAuth';
 
-export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const query = searchParams.get('q') || '';
-  
-  console.log('Testing user search for:', query);
-  
+export async function GET(request: NextRequest) {
+  if (process.env.NODE_ENV === 'production') {
+    return NextResponse.json({ error: 'Not available' }, { status: 404 });
+  }
+
   try {
+    await requireAdmin(request);
+
+    const query = request.nextUrl.searchParams.get('q') || '';
     const result = await searchUsers(query, 0, 20);
-    
-    console.log('Search results:', result);
-    
+
     return NextResponse.json({
       query,
       total: result.total,
@@ -23,11 +24,8 @@ export async function GET(request: Request) {
         displayName: u.displayName,
       })),
     });
-  } catch (error: any) {
-    console.error('Error:', error);
-    return NextResponse.json({
-      error: error.message,
-      query,
-    }, { status: 500 });
+  } catch (error) {
+    if (error instanceof AuthError) return authErrorResponse(error);
+    return NextResponse.json({ error: 'Internal error' }, { status: 500 });
   }
 }

@@ -1,41 +1,23 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import { requireAdmin, authErrorResponse, AuthError } from '@/lib/auth/serverAuth';
 
-/**
- * Delete all default roles and role_permissions
- * This is a one-time cleanup operation
- */
-export async function POST() {
+export async function POST(request: NextRequest) {
   try {
-    console.log('[delete-default-roles] Starting deletion...');
+    await requireAdmin(request);
 
-    // Step 1: Delete all role_permissions first (due to foreign key)
     const { error: permError } = await supabaseAdmin
       .from('role_permissions')
       .delete()
-      .neq('id', '00000000-0000-0000-0000-000000000000'); // Delete all
+      .neq('id', '00000000-0000-0000-0000-000000000000');
+    if (permError) throw permError;
 
-    if (permError) {
-      console.error('[delete-default-roles] Error deleting permissions:', permError);
-      throw permError;
-    }
-
-    console.log('[delete-default-roles] ✅ Deleted all role_permissions');
-
-    // Step 2: Delete all roles
     const { error: roleError } = await supabaseAdmin
       .from('roles')
       .delete()
-      .neq('id', '00000000-0000-0000-0000-000000000000'); // Delete all
+      .neq('id', '00000000-0000-0000-0000-000000000000');
+    if (roleError) throw roleError;
 
-    if (roleError) {
-      console.error('[delete-default-roles] Error deleting roles:', roleError);
-      throw roleError;
-    }
-
-    console.log('[delete-default-roles] ✅ Deleted all roles');
-
-    // Step 3: Verify deletion
     const { count: roleCount } = await supabaseAdmin
       .from('roles')
       .select('*', { count: 'exact', head: true });
@@ -43,10 +25,6 @@ export async function POST() {
     const { count: permCount } = await supabaseAdmin
       .from('role_permissions')
       .select('*', { count: 'exact', head: true });
-
-    console.log('[delete-default-roles] Verification:');
-    console.log(`  - Roles remaining: ${roleCount}`);
-    console.log(`  - Permissions remaining: ${permCount}`);
 
     return NextResponse.json({
       success: true,
@@ -58,13 +36,10 @@ export async function POST() {
         permissions_remaining: permCount,
       },
     });
-  } catch (error: any) {
-    console.error('[delete-default-roles] Error:', error);
+  } catch (error) {
+    if (error instanceof AuthError) return authErrorResponse(error);
     return NextResponse.json(
-      {
-        success: false,
-        error: error.message,
-      },
+      { success: false, error: 'Operation failed' },
       { status: 500 }
     );
   }

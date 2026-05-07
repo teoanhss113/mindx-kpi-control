@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { ProtectedPage } from '@/components/ProtectedPage';
 import { ErrorBanner } from '@/components/ErrorBanner';
 import { getRegions, createRegion, updateRegion, deleteRegion } from '@/lib/admin-actions';
+import { getAuthToken } from '@/lib/auth/clientAuth';
 import { AdminPageWrapper } from '@/components/AdminPageWrapper';
 import { useTableSort } from '@/hooks/useTableSort';
 import { SortableHeader, AdminToolbar, AdminTableSection, Icon, Spinner, EmptyState, CentreSelect } from '@/components/ui';
@@ -97,7 +98,8 @@ export default function RegionsPage() {
     setLoading(true);
     setError(null);
     try {
-      const result = await getRegions();
+      const token = await getAuthToken();
+      const result = await getRegions(token);
       if (result.success) {
         setRegions(result.data || []);
       } else {
@@ -154,9 +156,10 @@ export default function RegionsPage() {
     setSubmitting(true);
     setError(null);
     try {
+      const token = await getAuthToken();
       let result;
       if (editingRegion) {
-        result = await updateRegion({
+        result = await updateRegion(token, {
           id: editingRegion.id,
           name: formData.name,
           description: formData.description,
@@ -165,7 +168,7 @@ export default function RegionsPage() {
           centresData: centres,
         });
       } else {
-        result = await createRegion({
+        result = await createRegion(token, {
           name: formData.name,
           description: formData.description,
           is_active: formData.is_active,
@@ -192,7 +195,8 @@ export default function RegionsPage() {
     if (!confirm(`Xóa khu vực "${region.name}"?\n\nLưu ý: Các phân quyền liên quan sẽ bị xóa.`)) return;
 
     try {
-      const result = await deleteRegion(region.id);
+      const token = await getAuthToken();
+      const result = await deleteRegion(token, region.id);
       if (result.success) {
         loadRegions();
       } else {

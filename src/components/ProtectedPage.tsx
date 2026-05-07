@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
-import { supabase } from '@/lib/supabase/client';
+import { authFetch } from '@/lib/auth/clientAuth';
 
 interface ProtectedPageProps {
   children: React.ReactNode;
@@ -19,75 +19,54 @@ export function ProtectedPage({ children, pageKey, requireEdit = false }: Protec
 
   useEffect(() => {
     checkAccess();
-  }, [session?.email, pageKey]);
+  }, [session?.uid, pageKey]);
 
   async function checkAccess() {
-    if (!session?.email) {
+    if (!session?.uid) {
       router.replace('/login');
       return;
     }
 
     try {
-      // Get user profile by EMAIL (not UID)
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('role_id, is_active')
-        .eq('email', session.email)
-        .single();
-
-      if (profileError || !profile) {
-        console.log('[ProtectedPage] No profile found for email:', session.email);
-        // No profile = regular user, redirect to user view
+      const res = await authFetch(
+        `/api/auth/sync-user?uid=${encodeURIComponent(session.uid)}`,
+      );
+      if (!res.ok) {
         router.replace('/');
         return;
       }
-
+      const json = await res.json();
+      const profile = json?.data?.profile;
+      if (!profile) {
+        router.replace('/');
+        return;
+      }
       if (!profile.is_active) {
-        console.log('[ProtectedPage] User account is inactive');
         setHasAccess(false);
         setChecking(false);
         return;
       }
-
       if (!profile.role_id) {
-        console.log('[ProtectedPage] No role assigned to user');
-        // No role = regular user, redirect to user view
         router.replace('/');
         return;
       }
 
-      // Get role permissions for this page
-      const { data: permissions, error: permissionsError } = await supabase
-        .from('role_permissions')
-        .select(`
-          can_view,
-          can_edit,
-          pages!inner (key)
-        `)
-        .eq('role_id', profile.role_id)
-        .eq('pages.key', pageKey)
-        .single();
+      const rolePermissions: Array<{
+        can_view: boolean;
+        can_edit: boolean;
+        pages?: { key?: string };
+      }> = profile?.roles?.role_permissions || [];
 
-      if (permissionsError || !permissions) {
-        console.log('[ProtectedPage] No permission for page:', pageKey);
+      const match = rolePermissions.find(rp => rp?.pages?.key === pageKey);
+      if (!match) {
         setHasAccess(false);
         setChecking(false);
         return;
       }
 
-      // Check if user has required permission
-      const canView = permissions.can_view;
-      const canEdit = permissions.can_edit;
-
-      if (requireEdit) {
-        setHasAccess(canView && canEdit);
-      } else {
-        setHasAccess(canView);
-      }
-
+      setHasAccess(requireEdit ? !!(match.can_view && match.can_edit) : !!match.can_view);
       setChecking(false);
-    } catch (error) {
-      console.error('[ProtectedPage] Error checking access:', error);
+    } catch {
       setHasAccess(false);
       setChecking(false);
     }

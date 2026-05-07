@@ -1,9 +1,10 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import { requireAdmin, authErrorResponse, AuthError } from '@/lib/auth/serverAuth';
 
-export async function POST() {
+export async function POST(request: NextRequest) {
   try {
-    console.log('[update-page-names] Starting page names update...');
+    await requireAdmin(request);
 
     // Update page names to match Sidebar labels
     const updates = [
@@ -114,10 +115,10 @@ export async function POST() {
       message: 'Page names updated successfully',
       updated: updates.length,
     });
-  } catch (error: any) {
-    console.error('[update-page-names] Error:', error);
+  } catch (error) {
+    if (error instanceof AuthError) return authErrorResponse(error);
     return NextResponse.json(
-      { success: false, error: error.message },
+      { success: false, error: 'Operation failed' },
       { status: 500 }
     );
   }

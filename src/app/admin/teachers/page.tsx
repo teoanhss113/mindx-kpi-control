@@ -27,6 +27,7 @@ import { getTeachers } from '@/services/teacherService';
 import { fetchAllCentres, type Centre } from '@/services/centresService';
 import { getCache, setCache, clearCache } from '@/lib/idb';
 import { useQuickFilterChips } from '@/hooks/useUserPreferences';
+import { useSharedCentres } from '@/hooks/useSharedFilterState';
 import { getCourseLineCategory } from '@/lib/courseCategories';
 import type { Teacher } from '@/types/teacher';
 import styles from '../../dashboard.module.css';
@@ -47,8 +48,19 @@ export default function TeachersPage() {
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  // Toolbar filters (for API request)
-  const [toolbarSelectedCentres, setToolbarSelectedCentres] = useState<string[]>([]);
+  // Shared filter state (synced across pages) - only centres, no date range
+  const [toolbarSelectedCentres, setToolbarSelectedCentres, centresLoaded] = useSharedCentres();
+
+  // Debug: Log shared centres state
+  useEffect(() => {
+    console.log('[Teachers] Shared centres state:', {
+      centresLoaded,
+      toolbarSelectedCentres,
+      length: toolbarSelectedCentres.length
+    });
+  }, [centresLoaded, toolbarSelectedCentres]);
+
+  // Toolbar filters (for API request) - dates default to empty (no filter)
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
@@ -60,6 +72,25 @@ export default function TeachersPage() {
 
   // Toast notifications
   const { toasts, addToast, removeToast } = useToast();
+
+  // Load cached teachers data on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        const cached = await getCache(CACHE_KEYS.TEACHERS);
+        if (cached?.teachers && cached.teachers.length > 0) {
+          setTeachers(cached.teachers);
+          // Show toast if data was loaded from dashboard (has timestamp from recent fetch)
+          const isRecent = cached.timestamp && (Date.now() - cached.timestamp < 60000); // Within 1 minute
+          if (isRecent) {
+            addToast(`Đã tải ${cached.teachers.length} giáo viên từ bộ nhớ tạm`, 'success');
+          }
+        }
+      } catch (error) {
+        console.error('Failed to load cached teachers:', error);
+      }
+    })();
+  }, [addToast]);
 
   // Auth check
   useEffect(() => {
@@ -86,20 +117,6 @@ export default function TeachersPage() {
   // Load centres on mount
   useEffect(() => {
     loadCentres();
-  }, []);
-
-  // Load cached teachers data on mount
-  useEffect(() => {
-    (async () => {
-      try {
-        const cached = await getCache(CACHE_KEYS.TEACHERS);
-        if (cached?.teachers) {
-          setTeachers(cached.teachers);
-        }
-      } catch (error) {
-        console.error('Failed to load cached teachers:', error);
-      }
-    })();
   }, []);
 
   async function loadCentres() {

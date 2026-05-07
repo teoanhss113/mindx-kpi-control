@@ -1,14 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import {
+  extractBearer,
+  verifyFirebaseIdToken,
+  authErrorResponse,
+  AuthError,
+} from '@/lib/auth/serverAuth';
 
 /**
- * Sync user profile from Firebase to Supabase
- * Creates or updates profile based on email
+ * Sync user profile from Firebase to Supabase.
+ * The caller MUST present a valid Firebase ID token whose uid+email match
+ * the body — otherwise anyone could rewrite or delete other people's profiles.
  */
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { uid, email, displayName } = body;
+    const idToken = extractBearer(request);
+    const verified = await verifyFirebaseIdToken(idToken);
+
+    const body = await request.json().catch(() => ({}));
+    const uid = String(body?.uid || '').trim();
+    const email = String(body?.email || '').trim().toLowerCase();
 
     if (!uid || !email) {
       return NextResponse.json(
@@ -17,7 +28,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 1. Check if profile exists with this UID
+    if (uid !== verified.uid || email !== verified.email) {
+      throw new AuthError('Token does not match request body', 403);
+    }
+
+    // 1. Profile already exists with this UID
     const { data: existingProfile } = await supabaseAdmin
       .from('profiles')
       .select('*')
@@ -25,7 +40,6 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (existingProfile) {
-      // Profile exists, just return it
       return NextResponse.json({
         success: true,
         action: 'found',
@@ -33,7 +47,9 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // 2. Check if profile exists with this email (created with temp ID)
+    // 2. A profile with this email exists (created with a temporary id) —
+    //    rebind it to the verified Firebase UID. Use a single UPDATE; do NOT
+    //    delete-then-recreate, which previously allowed cross-user takeover.
     const { data: profileByEmail } = await supabaseAdmin
       .from('profiles')
       .select('*')
@@ -41,7 +57,6 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (profileByEmail) {
-      // Update the profile ID to match Firebase UID
       const { data: updatedProfile, error: updateError } = await supabaseAdmin
         .from('profiles')
         .update({ id: uid })
@@ -50,35 +65,10 @@ export async function POST(request: NextRequest) {
         .single();
 
       if (updateError) {
-        // If update fails (e.g., ID conflict), delete old and create new
-        await supabaseAdmin
-          .from('profiles')
-          .delete()
-          .eq('email', email);
-
-        const { data: newProfile, error: createError } = await supabaseAdmin
-          .from('profiles')
-          .insert({
-            id: uid,
-            email: email,
-            role_id: profileByEmail.role_id,
-            is_active: profileByEmail.is_active,
-          })
-          .select()
-          .single();
-
-        if (createError) {
-          return NextResponse.json(
-            { error: 'Failed to create profile', details: createError },
-            { status: 500 }
-          );
-        }
-
-        return NextResponse.json({
-          success: true,
-          action: 'recreated',
-          profile: newProfile,
-        });
+        return NextResponse.json(
+          { error: 'Failed to rebind profile' },
+          { status: 500 }
+        );
       }
 
       return NextResponse.json({
@@ -88,12 +78,12 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // 3. No profile exists, create new one (no role assigned)
+    // 3. No profile exists yet — create one with no role.
     const { data: newProfile, error: createError } = await supabaseAdmin
       .from('profiles')
       .insert({
         id: uid,
-        email: email,
+        email,
         role_id: null,
         is_active: true,
       })
@@ -102,7 +92,7 @@ export async function POST(request: NextRequest) {
 
     if (createError) {
       return NextResponse.json(
-        { error: 'Failed to create profile', details: createError },
+        { error: 'Failed to create profile' },
         { status: 500 }
       );
     }
@@ -113,11 +103,11 @@ export async function POST(request: NextRequest) {
       profile: newProfile,
       warning: 'No role assigned. Please contact admin to assign a role.',
     });
-  } catch (error: any) {
+  } catch (error) {
+    if (error instanceof AuthError) return authErrorResponse(error);
     return NextResponse.json(
-      { error: error.message },
+      { error: 'Internal error' },
       { status: 500 }
     );
   }
 }
-// Improved token validation

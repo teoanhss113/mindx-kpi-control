@@ -2,13 +2,17 @@
 
 /**
  * Admin Actions
- * Server actions for admin CRUD operations
+ * Server actions for admin CRUD operations.
+ *
+ * Every action requires a Firebase ID token whose holder has the Admin
+ * role. The token is verified server-side via requireAdminToken before
+ * any privileged supabaseAdmin call is made.
  */
 
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { revalidatePath } from 'next/cache';
+import { requireAdminToken, AuthError } from '@/lib/auth/serverAuth';
 
-// Types
 interface CreateUserData {
   email: string;
   role_id: string;
@@ -62,40 +66,45 @@ interface UpdatePermissionData extends CreatePermissionData {
   id: string;
 }
 
+type ActionResult<T = void> =
+  | (T extends void ? { success: true } : { success: true; data: T })
+  | { success: false; error: string; data?: T };
+
+function failure(error: unknown): { success: false; error: string } {
+  if (error instanceof AuthError) {
+    return { success: false, error: error.message };
+  }
+  return { success: false, error: 'Operation failed' };
+}
+
 // =====================================================
 // USER ACTIONS
 // =====================================================
 
-export async function getUsers() {
+export async function getUsers(idToken: string) {
   try {
-    const timestamp = Date.now();
-    console.log(`[getUsers ${timestamp}] Starting...`);
-    
+    await requireAdminToken(idToken);
+
     const { data, error } = await supabaseAdmin
       .from('profiles')
-      .select(`
-        *,
-        roles (id, name, description)
-      `)
+      .select(`*, roles (id, name, description)`)
       .order('created_at', { ascending: false });
 
     if (error) throw error;
-    
-    console.log(`[getUsers ${timestamp}] Fetched profiles:`, data?.length || 0);
-    
     return { success: true, data: (data || []) as any[] };
-  } catch (error: any) {
-    console.error('[getUsers] Error:', error);
-    return { success: false, error: error.message, data: [] };
+  } catch (error) {
+    { const f = failure(error); return { success: false as const, error: f.error, data: [] }; }
   }
 }
 
-export async function createUser(userData: CreateUserData) {
+export async function createUser(idToken: string, userData: CreateUserData) {
   try {
+    await requireAdminToken(idToken);
+
     const { error } = await supabaseAdmin
       .from('profiles')
       .insert({
-        id: crypto.randomUUID(), // Temporary - will be replaced by Firebase UID
+        id: crypto.randomUUID(),
         email: userData.email,
         role_id: userData.role_id,
         is_active: userData.is_active,
@@ -103,14 +112,16 @@ export async function createUser(userData: CreateUserData) {
 
     if (error) throw error;
     revalidatePath('/admin/users');
-    return { success: true };
-  } catch (error: any) {
-    return { success: false, error: error.message };
+    return { success: true as const };
+  } catch (error) {
+    return failure(error);
   }
 }
 
-export async function updateUser(userData: UpdateUserData) {
+export async function updateUser(idToken: string, userData: UpdateUserData) {
   try {
+    await requireAdminToken(idToken);
+
     const { error } = await supabaseAdmin
       .from('profiles')
       .update({
@@ -122,14 +133,16 @@ export async function updateUser(userData: UpdateUserData) {
 
     if (error) throw error;
     revalidatePath('/admin/users');
-    return { success: true };
-  } catch (error: any) {
-    return { success: false, error: error.message };
+    return { success: true as const };
+  } catch (error) {
+    return failure(error);
   }
 }
 
-export async function deleteUser(userId: string) {
+export async function deleteUser(idToken: string, userId: string) {
   try {
+    await requireAdminToken(idToken);
+
     const { error } = await supabaseAdmin
       .from('profiles')
       .delete()
@@ -137,9 +150,9 @@ export async function deleteUser(userId: string) {
 
     if (error) throw error;
     revalidatePath('/admin/users');
-    return { success: true };
-  } catch (error: any) {
-    return { success: false, error: error.message };
+    return { success: true as const };
+  } catch (error) {
+    return failure(error);
   }
 }
 
@@ -147,26 +160,26 @@ export async function deleteUser(userId: string) {
 // REGION ACTIONS
 // =====================================================
 
-export async function getRegions() {
+export async function getRegions(idToken: string) {
   try {
+    await requireAdminToken(idToken);
+
     const { data, error } = await supabaseAdmin
       .from('regions')
-      .select(`
-        *,
-        region_centres (*)
-      `)
+      .select(`*, region_centres (*)`)
       .order('created_at', { ascending: false });
 
     if (error) throw error;
-    return { success: true, data: data as any[] || [] };
-  } catch (error: any) {
-    return { success: false, error: error.message, data: [] };
+    return { success: true, data: (data as any[]) || [] };
+  } catch (error) {
+    { const f = failure(error); return { success: false as const, error: f.error, data: [] }; }
   }
 }
 
-export async function createRegion(regionData: CreateRegionData) {
+export async function createRegion(idToken: string, regionData: CreateRegionData) {
   try {
-    // Create region
+    await requireAdminToken(idToken);
+
     const { data: newRegion, error: createError } = await supabaseAdmin
       .from('regions')
       .insert({
@@ -179,7 +192,6 @@ export async function createRegion(regionData: CreateRegionData) {
 
     if (createError) throw createError;
 
-    // Insert centres
     const centresToInsert = regionData.selectedCentres.map(centreId => {
       const centre = regionData.centresData.find(c => c.id === centreId);
       return {
@@ -197,15 +209,16 @@ export async function createRegion(regionData: CreateRegionData) {
     if (insertError) throw insertError;
 
     revalidatePath('/admin/regions');
-    return { success: true };
-  } catch (error: any) {
-    return { success: false, error: error.message };
+    return { success: true as const };
+  } catch (error) {
+    return failure(error);
   }
 }
 
-export async function updateRegion(regionData: UpdateRegionData) {
+export async function updateRegion(idToken: string, regionData: UpdateRegionData) {
   try {
-    // Update region
+    await requireAdminToken(idToken);
+
     const { error: updateError } = await supabaseAdmin
       .from('regions')
       .update({
@@ -218,13 +231,11 @@ export async function updateRegion(regionData: UpdateRegionData) {
 
     if (updateError) throw updateError;
 
-    // Delete old centres
     await supabaseAdmin
       .from('region_centres')
       .delete()
       .eq('region_id', regionData.id);
 
-    // Insert new centres
     const centresToInsert = regionData.selectedCentres.map(centreId => {
       const centre = regionData.centresData.find(c => c.id === centreId);
       return {
@@ -242,14 +253,16 @@ export async function updateRegion(regionData: UpdateRegionData) {
     if (insertError) throw insertError;
 
     revalidatePath('/admin/regions');
-    return { success: true };
-  } catch (error: any) {
-    return { success: false, error: error.message };
+    return { success: true as const };
+  } catch (error) {
+    return failure(error);
   }
 }
 
-export async function deleteRegion(regionId: string) {
+export async function deleteRegion(idToken: string, regionId: string) {
   try {
+    await requireAdminToken(idToken);
+
     const { error } = await supabaseAdmin
       .from('regions')
       .delete()
@@ -257,9 +270,9 @@ export async function deleteRegion(regionId: string) {
 
     if (error) throw error;
     revalidatePath('/admin/regions');
-    return { success: true };
-  } catch (error: any) {
-    return { success: false, error: error.message };
+    return { success: true as const };
+  } catch (error) {
+    return failure(error);
   }
 }
 
@@ -267,8 +280,10 @@ export async function deleteRegion(regionId: string) {
 // PERMISSION ACTIONS
 // =====================================================
 
-export async function getPermissions() {
+export async function getPermissions(idToken: string) {
   try {
+    await requireAdminToken(idToken);
+
     const { data, error } = await supabaseAdmin
       .from('user_permissions')
       .select(`
@@ -279,32 +294,32 @@ export async function getPermissions() {
       .order('created_at', { ascending: false });
 
     if (error) throw error;
-    
-    console.log('[getPermissions] Raw data:', data);
-    
-    return { success: true, data: data as any[] || [] };
-  } catch (error: any) {
-    console.error('[getPermissions] Error:', error);
-    return { success: false, error: error.message, data: [] };
+    return { success: true, data: (data as any[]) || [] };
+  } catch (error) {
+    { const f = failure(error); return { success: false as const, error: f.error, data: [] }; }
   }
 }
 
-export async function getPermissionUsers() {
+export async function getPermissionUsers(idToken: string) {
   try {
+    await requireAdminToken(idToken);
+
     const { data, error } = await supabaseAdmin
       .from('profiles')
       .select('id, email')
       .order('email');
 
     if (error) throw error;
-    return { success: true, data: data as any[] || [] };
-  } catch (error: any) {
-    return { success: false, error: error.message, data: [] };
+    return { success: true, data: (data as any[]) || [] };
+  } catch (error) {
+    { const f = failure(error); return { success: false as const, error: f.error, data: [] }; }
   }
 }
 
-export async function getPermissionRegions() {
+export async function getPermissionRegions(idToken: string) {
   try {
+    await requireAdminToken(idToken);
+
     const { data, error } = await supabaseAdmin
       .from('regions')
       .select('id, name')
@@ -312,15 +327,16 @@ export async function getPermissionRegions() {
       .order('name');
 
     if (error) throw error;
-    return { success: true, data: data as any[] || [] };
-  } catch (error: any) {
-    return { success: false, error: error.message, data: [] };
+    return { success: true, data: (data as any[]) || [] };
+  } catch (error) {
+    { const f = failure(error); return { success: false as const, error: f.error, data: [] }; }
   }
 }
 
-export async function createPermission(permissionData: CreatePermissionData) {
+export async function createPermission(idToken: string, permissionData: CreatePermissionData) {
   try {
-    // Check if permission already exists
+    await requireAdminToken(idToken);
+
     const { data: existing } = await supabaseAdmin
       .from('user_permissions')
       .select('id')
@@ -345,14 +361,16 @@ export async function createPermission(permissionData: CreatePermissionData) {
 
     if (error) throw error;
     revalidatePath('/admin/permissions');
-    return { success: true };
-  } catch (error: any) {
-    return { success: false, error: error.message };
+    return { success: true as const };
+  } catch (error) {
+    return failure(error);
   }
 }
 
-export async function updatePermission(permissionData: UpdatePermissionData) {
+export async function updatePermission(idToken: string, permissionData: UpdatePermissionData) {
   try {
+    await requireAdminToken(idToken);
+
     const { error } = await supabaseAdmin
       .from('user_permissions')
       .update({
@@ -366,14 +384,16 @@ export async function updatePermission(permissionData: UpdatePermissionData) {
 
     if (error) throw error;
     revalidatePath('/admin/permissions');
-    return { success: true };
-  } catch (error: any) {
-    return { success: false, error: error.message };
+    return { success: true as const };
+  } catch (error) {
+    return failure(error);
   }
 }
 
-export async function deletePermission(permissionId: string) {
+export async function deletePermission(idToken: string, permissionId: string) {
   try {
+    await requireAdminToken(idToken);
+
     const { error } = await supabaseAdmin
       .from('user_permissions')
       .delete()
@@ -381,9 +401,9 @@ export async function deletePermission(permissionId: string) {
 
     if (error) throw error;
     revalidatePath('/admin/permissions');
-    return { success: true };
-  } catch (error: any) {
-    return { success: false, error: error.message };
+    return { success: true as const };
+  } catch (error) {
+    return failure(error);
   }
 }
 
@@ -391,43 +411,42 @@ export async function deletePermission(permissionId: string) {
 // ROLE MANAGEMENT ACTIONS
 // =====================================================
 
-export async function getRoles() {
+export async function getRoles(idToken: string) {
   try {
+    await requireAdminToken(idToken);
+
     const { data, error } = await supabaseAdmin
       .from('roles')
-      .select(`
-        *,
-        role_permissions (
-          *,
-          pages (*)
-        )
-      `)
+      .select(`*, role_permissions ( *, pages (*) )`)
       .order('created_at', { ascending: false });
 
     if (error) throw error;
-    return { success: true, data: data as any[] || [] };
-  } catch (error: any) {
-    return { success: false, error: error.message, data: [] };
+    return { success: true, data: (data as any[]) || [] };
+  } catch (error) {
+    { const f = failure(error); return { success: false as const, error: f.error, data: [] }; }
   }
 }
 
-export async function getPages() {
+export async function getPages(idToken: string) {
   try {
+    await requireAdminToken(idToken);
+
     const { data, error } = await supabaseAdmin
       .from('pages')
       .select('*')
       .order('display_order');
 
     if (error) throw error;
-    return { success: true, data: data as any[] || [] };
-  } catch (error: any) {
-    return { success: false, error: error.message, data: [] };
+    return { success: true, data: (data as any[]) || [] };
+  } catch (error) {
+    { const f = failure(error); return { success: false as const, error: f.error, data: [] }; }
   }
 }
 
-export async function createRole(roleData: CreateRoleData) {
+export async function createRole(idToken: string, roleData: CreateRoleData) {
   try {
-    // Check if role name already exists
+    await requireAdminToken(idToken);
+
     const { data: existing } = await supabaseAdmin
       .from('roles')
       .select('id')
@@ -438,13 +457,12 @@ export async function createRole(roleData: CreateRoleData) {
       return { success: false, error: 'Tên vai trò đã tồn tại' };
     }
 
-    // Create role
     const { data: newRole, error: createError } = await supabaseAdmin
       .from('roles')
       .insert({
         name: roleData.name.trim(),
         description: roleData.description?.trim() || null,
-        is_system_role: false, // Custom roles are not system roles
+        is_system_role: false,
         is_active: roleData.is_active,
       })
       .select()
@@ -452,7 +470,6 @@ export async function createRole(roleData: CreateRoleData) {
 
     if (createError) throw createError;
 
-    // Insert role permissions with view/edit flags
     const permissionsToInsert = roleData.pagePermissions.map(perm => ({
       role_id: newRole.id,
       page_id: perm.pageId,
@@ -464,20 +481,20 @@ export async function createRole(roleData: CreateRoleData) {
       const { error: insertError } = await supabaseAdmin
         .from('role_permissions')
         .insert(permissionsToInsert);
-
       if (insertError) throw insertError;
     }
 
     revalidatePath('/admin/roles');
-    return { success: true };
-  } catch (error: any) {
-    return { success: false, error: error.message };
+    return { success: true as const };
+  } catch (error) {
+    return failure(error);
   }
 }
 
-export async function updateRole(roleData: UpdateRoleData) {
+export async function updateRole(idToken: string, roleData: UpdateRoleData) {
   try {
-    // Check if role name already exists (excluding current role)
+    await requireAdminToken(idToken);
+
     const { data: existing } = await supabaseAdmin
       .from('roles')
       .select('id')
@@ -489,7 +506,6 @@ export async function updateRole(roleData: UpdateRoleData) {
       return { success: false, error: 'Tên vai trò đã tồn tại' };
     }
 
-    // Update role
     const { error: updateError } = await supabaseAdmin
       .from('roles')
       .update({
@@ -502,13 +518,11 @@ export async function updateRole(roleData: UpdateRoleData) {
 
     if (updateError) throw updateError;
 
-    // Delete old permissions
     await supabaseAdmin
       .from('role_permissions')
       .delete()
       .eq('role_id', roleData.id);
 
-    // Insert new permissions with view/edit flags
     const permissionsToInsert = roleData.pagePermissions.map(perm => ({
       role_id: roleData.id,
       page_id: perm.pageId,
@@ -520,20 +534,20 @@ export async function updateRole(roleData: UpdateRoleData) {
       const { error: insertError } = await supabaseAdmin
         .from('role_permissions')
         .insert(permissionsToInsert);
-
       if (insertError) throw insertError;
     }
 
     revalidatePath('/admin/roles');
-    return { success: true };
-  } catch (error: any) {
-    return { success: false, error: error.message };
+    return { success: true as const };
+  } catch (error) {
+    return failure(error);
   }
 }
 
-export async function deleteRole(roleId: string) {
+export async function deleteRole(idToken: string, roleId: string) {
   try {
-    // Check if role is system role
+    await requireAdminToken(idToken);
+
     const { data: role } = await supabaseAdmin
       .from('roles')
       .select('is_system_role, name')
@@ -544,7 +558,6 @@ export async function deleteRole(roleId: string) {
       return { success: false, error: 'Không thể xóa vai trò hệ thống' };
     }
 
-    // Check if role is being used by any users
     const { data: users } = await supabaseAdmin
       .from('profiles')
       .select('id')
@@ -562,9 +575,9 @@ export async function deleteRole(roleId: string) {
 
     if (error) throw error;
     revalidatePath('/admin/roles');
-    return { success: true };
-  } catch (error: any) {
-    return { success: false, error: error.message };
+    return { success: true as const };
+  } catch (error) {
+    return failure(error);
   }
 }
 
@@ -572,8 +585,10 @@ export async function deleteRole(roleId: string) {
 // HELPER FUNCTIONS
 // =====================================================
 
-export async function getUserRoles() {
+export async function getUserRoles(idToken: string) {
   try {
+    await requireAdminToken(idToken);
+
     const { data, error } = await supabaseAdmin
       .from('roles')
       .select('id, name, description, is_active, is_system_role, created_at')
@@ -581,55 +596,57 @@ export async function getUserRoles() {
       .order('name');
 
     if (error) throw error;
-    return { success: true, data: data as any[] || [] };
-  } catch (error: any) {
-    return { success: false, error: error.message, data: [] };
+    return { success: true, data: (data as any[]) || [] };
+  } catch (error) {
+    { const f = failure(error); return { success: false as const, error: f.error, data: [] }; }
   }
 }
 
-export async function getUserPermissionsByUserId(userId: string) {
+export async function getUserPermissionsByUserId(idToken: string, userId: string) {
   try {
+    await requireAdminToken(idToken);
+
     const { data, error } = await supabaseAdmin
       .from('user_permissions')
       .select('*')
       .eq('user_id', userId);
 
     if (error) throw error;
-    return { success: true, data: data as any[] || [] };
-  } catch (error: any) {
-    return { success: false, error: error.message, data: [] };
+    return { success: true, data: (data as any[]) || [] };
+  } catch (error) {
+    { const f = failure(error); return { success: false as const, error: f.error, data: [] }; }
   }
 }
 
-export async function saveUserPermissions(userId: string, permissions: Array<{
-  region_id: string;
-  courses: string[];
-  can_view: boolean;
-  can_edit: boolean;
-  can_manage: boolean;
-}>) {
+export async function saveUserPermissions(
+  idToken: string,
+  userId: string,
+  permissions: Array<{
+    region_id: string;
+    courses: string[];
+    can_view: boolean;
+    can_edit: boolean;
+    can_manage: boolean;
+  }>,
+) {
   try {
-    // Delete existing permissions
+    await requireAdminToken(idToken);
+
     await supabaseAdmin
       .from('user_permissions')
       .delete()
       .eq('user_id', userId);
 
-    // Insert new permissions
     if (permissions.length > 0) {
       const { error } = await supabaseAdmin
         .from('user_permissions')
-        .insert(permissions.map(p => ({
-          user_id: userId,
-          ...p
-        })));
-
+        .insert(permissions.map(p => ({ user_id: userId, ...p })));
       if (error) throw error;
     }
 
     revalidatePath('/admin/users');
-    return { success: true };
-  } catch (error: any) {
-    return { success: false, error: error.message };
+    return { success: true as const };
+  } catch (error) {
+    return failure(error);
   }
 }

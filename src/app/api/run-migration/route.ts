@@ -3,13 +3,15 @@
  * Access: http://localhost:3000/api/run-migration
  */
 
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import { requireAdmin, authErrorResponse, AuthError } from '@/lib/auth/serverAuth';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    // Read migration file
+    await requireAdmin(request);
+
     const migrationPath = join(process.cwd(), 'supabase/migrations/011_office_hours_teacher_confirmation.sql');
     const sql = readFileSync(migrationPath, 'utf8');
 
@@ -74,11 +76,12 @@ export async function GET() {
         : '⚠️ Migration ran but table verification failed. Please check Supabase dashboard.',
     });
 
-  } catch (error: any) {
+  } catch (error) {
+    if (error instanceof AuthError) return authErrorResponse(error);
     return NextResponse.json({
       success: false,
-      error: error.message,
-      message: '❌ Migration failed. Please run SQL manually in Supabase dashboard.',
+      error: 'Migration failed',
+      message: '❌ Migration failed. Run SQL manually in Supabase dashboard.',
     }, { status: 500 });
   }
 }
