@@ -68,7 +68,7 @@ export async function findUserByEmail(email: string): Promise<LMSUser | null> {
         search: username, // Search by username instead of full email
         isActive: true,
         pageIndex: 0,
-        itemsPerPage: 20,
+        itemsPerPage: 100, // Increased from 20 for better performance
         orderBy: 'createdAt_desc'
       },
       operationName: 'getUsers',
@@ -135,7 +135,7 @@ export async function findUserByUsername(username: string): Promise<LMSUser | nu
         search: username.trim(),
         isActive: true,
         pageIndex: 0,
-        itemsPerPage: 20,
+        itemsPerPage: 100, // Increased from 20 for better performance
         orderBy: 'createdAt_desc'
       },
       operationName: 'getUsers',

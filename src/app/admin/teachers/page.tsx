@@ -49,16 +49,16 @@ export default function TeachersPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // Shared filter state (synced across pages) - only centres, no date range
-  const [toolbarSelectedCentres, setToolbarSelectedCentres, centresLoaded] = useSharedCentres();
+  const [selectedCentres, setSelectedCentres, centresLoaded] = useSharedCentres();
 
   // Debug: Log shared centres state
   useEffect(() => {
     console.log('[Teachers] Shared centres state:', {
       centresLoaded,
-      toolbarSelectedCentres,
-      length: toolbarSelectedCentres.length
+      selectedCentres,
+      length: selectedCentres.length
     });
-  }, [centresLoaded, toolbarSelectedCentres]);
+  }, [centresLoaded, selectedCentres]);
 
   // Toolbar filters (for API request) - dates default to empty (no filter)
   const [dateFrom, setDateFrom] = useState('');
@@ -150,8 +150,8 @@ export default function TeachersPage() {
       };
 
       // Add centres filter if selected
-      if (toolbarSelectedCentres.length > 0) {
-        baseVariables.centers = toolbarSelectedCentres;
+      if (selectedCentres.length > 0) {
+        baseVariables.centers = selectedCentres;
       }
 
       // Add date range filter if both dates are provided
@@ -237,7 +237,7 @@ export default function TeachersPage() {
   async function handleClearCache() {
     await clearCache(CACHE_KEYS.TEACHERS);
     setTeachers([]);
-    setToolbarSelectedCentres([]);
+    setSelectedCentres([]);
     setDateFrom('');
     setDateTo('');
     setSelectedStatuses([]);
@@ -391,8 +391,8 @@ export default function TeachersPage() {
       {/* Toolbar */}
       <Toolbar
         centres={centres}
-        selectedCentres={toolbarSelectedCentres}
-        onCentresChange={setToolbarSelectedCentres}
+        selectedCentres={selectedCentres}
+        onCentresChange={setSelectedCentres}
         centresLoading={centres.length === 0}
         dateFrom={dateFrom}
         dateTo={dateTo}
@@ -411,8 +411,8 @@ export default function TeachersPage() {
             {hasPreferences && (
               <QuickFilterChips
                 centres={centres}
-                selectedCentres={toolbarSelectedCentres}
-                onCentresChange={setToolbarSelectedCentres}
+                selectedCentres={selectedCentres}
+                onCentresChange={setSelectedCentres}
                 showCentres={true}
                 showCourses={false}
               />
@@ -658,7 +658,7 @@ export default function TeachersPage() {
                   <label style={{ fontSize: 12, color: 'var(--text-tertiary)', display: 'block', marginBottom: 'var(--space-1)' }}>
                     Họ tên
                   </label>
-                  <div style={{ fontSize: 14, color: 'var(--text-primary)', fontWeight: 510 }}>
+                  <div style={{ fontSize: 14, color: 'var(--text-primary)', fontWeight: 510, textTransform: 'capitalize' }}>
                     {selectedTeacher.fullName}
                   </div>
                 </div>
@@ -801,7 +801,7 @@ export default function TeachersPage() {
                         <div key={course.id} style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
                           <span style={{ fontWeight: 510, color: 'var(--text-primary)' }}>{course.shortName}</span>
                           {' — '}
-                          {course.name}
+                          <span style={{ textTransform: 'capitalize' }}>{course.name}</span>
                         </div>
                       ))
                     ) : (
@@ -826,7 +826,7 @@ export default function TeachersPage() {
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
                 {selectedTeacher.centres.length > 0 ? (
                   selectedTeacher.centres.map(centre => (
-                    <span key={centre.id} className={styles.statusPill} style={{ fontSize: 13 }}>
+                    <span key={centre.id} className={styles.statusPill} style={{ fontSize: 13, textTransform: 'capitalize' }}>
                       {centre.name}
                     </span>
                   ))
@@ -852,7 +852,8 @@ export default function TeachersPage() {
                   fontSize: 13, 
                   color: 'var(--text-secondary)', 
                   lineHeight: 1.6,
-                  whiteSpace: 'pre-wrap'
+                  whiteSpace: 'pre-wrap',
+                  textTransform: 'capitalize'
                 }}>
                   {selectedTeacher.notes}
                 </div>

@@ -23,6 +23,7 @@ import { fetchAllClasses, dateRangeToUtcRange } from '@/services/classesService'
 import { fetchAllCentres, Centre } from '@/services/centresService';
 import { fetchTickets } from '@/services/ticketService';
 import { fetchOfficeHours } from '@/services/officeHoursService';
+import { getTeachers } from '@/services/teacherService';
 import styles from '../../dashboard.module.css';
 
 export default function DashboardPage() {
@@ -82,12 +83,13 @@ export default function DashboardPage() {
 
   async function loadCachedData() {
     try {
-      const [completion, teacherChange, tickets, officeHours, classQuality] = await Promise.all([
+      const [completion, teacherChange, tickets, officeHours, classQuality, teachers] = await Promise.all([
         getCache(CACHE_KEYS.COMPLETION),
         getCache(CACHE_KEYS.TEACHER_CHANGE),
         getCache(CACHE_KEYS.TICKETS),
         getCache(CACHE_KEYS.OFFICE_HOURS),
         getCache(CACHE_KEYS.CLASS_QUALITY),
+        getCache(CACHE_KEYS.TEACHERS),
       ]);
 
       setCompletionData(completion);
@@ -132,6 +134,7 @@ export default function DashboardPage() {
     const classesController = new AbortController();
     const ticketsController = new AbortController();
     const officeHoursController = new AbortController();
+    const teachersController = new AbortController();
     
     // Store all controllers so we can abort all
     abortControllerRef.current = {
@@ -139,6 +142,7 @@ export default function DashboardPage() {
         classesController.abort();
         ticketsController.abort();
         officeHoursController.abort();
+        teachersController.abort();
       }
     } as any;
 
@@ -147,6 +151,11 @@ export default function DashboardPage() {
       const centreIds = selectedCentres.length > 0 ? selectedCentres : centres.map(c => c.id);
 
       // Save filter state for other pages to use
+      console.log('[Dashboard] Saving filter state:', {
+        selectedCentres: centreIds,
+        fromDate,
+        toDate,
+      });
       await saveFilterState({
         selectedCentres: centreIds,
         fromDate,
@@ -155,6 +164,7 @@ export default function DashboardPage() {
 
       // Step 1: Fetch classes with progress
       const classesToastId = addToast(MESSAGES.LOADING.LOADING_CLASSES, 'loading');
+      setProgress({ loaded: 0, total: 0 }); // Initialize progress immediately
       const classesResult = await fetchAllClasses(
         {
           centres: centreIds,
@@ -170,29 +180,75 @@ export default function DashboardPage() {
 
       // Step 2: Fetch tickets
       const ticketsToastId = addToast(MESSAGES.LOADING.LOADING_TICKETS, 'loading');
+      setProgress({ loaded: 0, total: 0 }); // Initialize progress immediately
       const ticketsResult = await fetchTickets(
         {
           centreId_in: centreIds,
           createdAt_gte: new Date(fromDate).toISOString(),
           createdAt_lte: new Date(toDate).toISOString(),
         },
-        undefined,
+        (loaded, total) => {
+          setProgress({ loaded, total });
+        },
         ticketsController.signal
       );
       removeToast(ticketsToastId);
 
       // Step 3: Fetch office hours
       const officeHoursToastId = addToast(MESSAGES.LOADING.LOADING_OFFICE_HOURS, 'loading');
+      setProgress({ loaded: 0, total: 0 }); // Initialize progress immediately
       const officeHoursResult = await fetchOfficeHours(
         {
           centreIn: centreIds,
           timeFrom: new Date(fromDate).toISOString(),
           timeTo: new Date(toDate).toISOString(),
         },
-        undefined,
+        (loaded, total) => {
+          setProgress({ loaded, total });
+        },
         officeHoursController.signal
       );
       removeToast(officeHoursToastId);
+
+      // Step 4: Fetch teachers
+      const teachersToastId = addToast('Đang tải dữ liệu giáo viên...', 'loading');
+      setProgress({ loaded: 0, total: 0 }); // Initialize progress immediately
+      
+      // Fetch teachers with pagination (same logic as teachers page)
+      const teachersVariables: any = {
+        pageIndex: 0,
+        itemsPerPage: 100,
+        orderBy: 'createdAt_desc',
+        centers: centreIds,
+      };
+      
+      const firstTeachersPage = await getTeachers(teachersVariables, teachersController.signal);
+      const teachersTotal = firstTeachersPage.total;
+      let allTeachers = [...firstTeachersPage.data];
+      setProgress({ loaded: allTeachers.length, total: teachersTotal });
+      
+      // Fetch remaining pages if needed
+      if (teachersTotal > 100) {
+        const totalPages = Math.ceil(teachersTotal / 100);
+        const remainingPages = [];
+        
+        for (let page = 1; page < totalPages; page++) {
+          remainingPages.push(
+            getTeachers({
+              ...teachersVariables,
+              pageIndex: page,
+            }, teachersController.signal)
+          );
+        }
+        
+        const teachersResults = await Promise.all(remainingPages);
+        teachersResults.forEach(result => {
+          allTeachers = [...allTeachers, ...result.data];
+          setProgress({ loaded: allTeachers.length, total: teachersTotal });
+        });
+      }
+      
+      removeToast(teachersToastId);
 
       // Process and cache data for each KPI
       const completionCache = { classes: classesResult, timestamp: Date.now() };
@@ -205,6 +261,7 @@ export default function DashboardPage() {
       };
       const ticketsCache = { tickets: ticketsResult.data, timestamp: Date.now() };
       const officeHoursCache = { officeHours: officeHoursResult.data, timestamp: Date.now() };
+      const teachersCache = { teachers: allTeachers, timestamp: Date.now() };
 
       await Promise.all([
         setCache(CACHE_KEYS.COMPLETION, completionCache),
@@ -212,6 +269,7 @@ export default function DashboardPage() {
         setCache(CACHE_KEYS.CLASS_QUALITY, classQualityCache),
         setCache(CACHE_KEYS.TICKETS, ticketsCache),
         setCache(CACHE_KEYS.OFFICE_HOURS, officeHoursCache),
+        setCache(CACHE_KEYS.TEACHERS, teachersCache),
       ]);
 
       setCompletionData(completionCache);
@@ -221,7 +279,7 @@ export default function DashboardPage() {
       setOfficeHoursData(officeHoursCache);
 
       addToast(
-        `Tải thành công ${classesResult.length} lớp, ${ticketsResult.data.length} phiếu, ${officeHoursResult.data.length} ca!`, 
+        `Tải thành công ${classesResult.length} lớp, ${ticketsResult.data.length} phiếu, ${officeHoursResult.data.length} ca, ${allTeachers.length} GV!`, 
         'success'
       );
     } catch (err: any) {
@@ -252,6 +310,7 @@ export default function DashboardPage() {
         clearCache(CACHE_KEYS.TICKETS),
         clearCache(CACHE_KEYS.OFFICE_HOURS),
         clearCache(CACHE_KEYS.CLASS_QUALITY),
+        clearCache(CACHE_KEYS.TEACHERS),
       ]);
       
       setCompletionData(null);

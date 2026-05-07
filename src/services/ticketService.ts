@@ -92,7 +92,7 @@ export async function fetchTickets(
 
   // We loop to fetch all pages if necessary, or just rely on itemsPerPage if we want all at once?
   // Since we want all tickets for a specific month, we can fetch in chunks like classes.
-  const PAGE_SIZE = 50;
+  const PAGE_SIZE = 100; // Increased from 50 for better performance
   let allTickets: Ticket[] = [];
   let pageIndex = params.pageIndex || 0;
   let total = 0;
@@ -180,7 +180,7 @@ export async function updateTicket(payload: UpdateTicketPayload): Promise<Ticket
 }
 
 // ─── Search Users (Assignee) ──────────────────────────────────────────────────
-export async function searchUsers(search: string, pageIndex = 0, itemsPerPage = 20): Promise<{ data: LmsUser[]; total: number }> {
+export async function searchUsers(search: string, pageIndex = 0, itemsPerPage = 100): Promise<{ data: LmsUser[]; total: number }> {
   const query = `
     query getUsers($search: String, $isActive: Boolean, $pageIndex: Int!, $itemsPerPage: Int!, $orderBy: String) {
       users(payload: {

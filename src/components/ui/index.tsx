@@ -765,7 +765,12 @@ export function Toolbar({
           {loading ? (
             <>
               <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', fontSize: 13, color: 'var(--text-secondary)' }}>
-                <Spinner />{progress && progress.total > 0 ? `Tải ${progress.loaded}/${progress.total}` : 'Đang khởi tạo...'}
+                <Spinner />
+                {progress && progress.total > 0 
+                  ? `Tải ${progress.loaded}/${progress.total}` 
+                  : progress && progress.loaded === 0 && progress.total === 0
+                  ? 'Đang kết nối...'
+                  : 'Đang khởi tạo...'}
               </div>
               {onCancel && (
                 <button className={styles.clearCacheBtn} onClick={onCancel} style={{ color: 'var(--status-error)', borderColor: 'var(--status-error)' }}>

@@ -280,15 +280,15 @@ export default function RegionsPage() {
                   <tr key={region.id}>
                     <td>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
-                        <div style={{ fontWeight: 510 }}>{region.name}</div>
+                        <div style={{ fontWeight: 510, textTransform: 'capitalize' }}>{region.name}</div>
                         {region.description && (
-                          <div style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>
+                          <div style={{ fontSize: 13, color: 'var(--text-tertiary)', textTransform: 'capitalize' }}>
                             {region.description}
                           </div>
                         )}
                       </div>
                     </td>
-                    <td style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                    <td style={{ fontSize: 13, color: 'var(--text-secondary)', textTransform: 'capitalize' }}>
                       {region.description || '—'}
                     </td>
                     <td>
@@ -298,7 +298,7 @@ export default function RegionsPage() {
                           {region.region_centres.length > 0 ? (
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-1)' }}>
                               {region.region_centres.slice(0, 3).map((rc) => (
-                                <span key={rc.id} className={styles.reasonTag} style={{ fontSize: 11 }}>
+                                <span key={rc.id} className={styles.reasonTag} style={{ fontSize: 11, textTransform: 'capitalize' }}>
                                   {rc.centre_short_name || rc.centre_id}
                                 </span>
                               ))}

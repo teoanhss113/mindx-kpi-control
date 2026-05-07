@@ -451,7 +451,7 @@ export default function UsersPage() {
                 {sortedData.map((user) => (
                   <tr key={user.id}>
                     <td style={{ fontWeight: 510 }}>{user.email}</td>
-                    <td>{user.full_name || '—'}</td>
+                    <td style={{ textTransform: 'capitalize' }}>{user.full_name || '—'}</td>
                     <td style={{ color: 'var(--text-tertiary)' }}>{user.username || '—'}</td>
                     <td>
                       <span className={styles.statusPill}>
@@ -578,7 +578,8 @@ export default function UsersPage() {
                   className={styles.dateInput}
                   style={{ 
                     width: '100%',
-                    backgroundColor: 'var(--bg-elevated)'
+                    backgroundColor: 'var(--bg-elevated)',
+                    textTransform: 'capitalize'
                   }}
                 />
                 <p style={{ fontSize: 13, color: 'var(--text-quaternary)', marginTop: 'var(--space-1)' }}>

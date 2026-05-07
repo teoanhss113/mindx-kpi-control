@@ -122,7 +122,7 @@ export const DEFAULT_CENTRE_IDS = [
   '62d6dc936e356729147d7399',
 ];
 
-const ITEMS_PER_PAGE = 20;
+const ITEMS_PER_PAGE = 100; // Increased from 20 for better performance
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 

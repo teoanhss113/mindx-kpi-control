@@ -661,7 +661,7 @@ export async function fetchOfficeHours(
     }
   `;
 
-  const PAGE_SIZE = 50;
+  const PAGE_SIZE = 100; // Increased from 50 for better performance
   let allOfficeHours: OfficeHour[] = [];
   let pageIndex = params.pageIndex || 0;
   let total = 0;
