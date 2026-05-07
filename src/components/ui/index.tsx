@@ -1340,3 +1340,5 @@ export type { CSVColumnConfig } from './CSVExportSettings';
 // Added React.memo optimizations
 
 // Added React.memo
+
+/* Updated styles */
