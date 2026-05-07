@@ -287,6 +287,23 @@
   .hamburger { display: flex; align-items: center; justify-content: center; }
 }
 
+/* Mobile logo — visible only when the sidebar (which holds the real logo) is hidden */
+.headerMobileLogo {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .headerMobileLogo {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+  }
+  /* Hide page title on mobile — branding takes its place */
+  .pageTitle {
+    display: none;
+  }
+}
+
 .headerLeft {
   display: flex; align-items: center; gap: var(--space-4); min-width: 0; flex: 1;
 }

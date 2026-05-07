@@ -680,7 +680,7 @@ export default function DashboardPage() {
           description: 'Cần xử lý ngay',
           severity: 'critical' as const,
           icon: <Icon.AlertTriangle size={16} />,
-          href: '/completion-rate?filter=demo',
+          href: '/admin/completion-rate?filter=demo',
           priority: 100,
         });
       }
@@ -700,7 +700,7 @@ export default function DashboardPage() {
           description: studentsNeeded > 0 ? `Cần thêm ${studentsNeeded} HV để đạt 95%` : 'Cần cải thiện',
           severity,
           icon: <Icon.TrendingDown size={16} />,
-          href: '/completion-rate',
+          href: '/admin/completion-rate',
           priority: severity === 'critical' ? 90 : 70,
         });
       }
@@ -718,7 +718,7 @@ export default function DashboardPage() {
         description: severity === 'critical' ? 'Cần xử lý ngay' : 'Cần theo dõi',
         severity,
         icon: <Icon.XCircle size={16} />,
-        href: '/class-quality?tab=violations',
+        href: '/admin/class-quality?tab=violations',
         priority: severity === 'critical' ? 85 : severity === 'warning' ? 65 : 45,
       });
     }
@@ -735,7 +735,7 @@ export default function DashboardPage() {
         description: severity === 'critical' ? 'Cần xử lý ngay' : 'Cần theo dõi',
         severity,
         icon: <Icon.AlertCircle size={16} />,
-        href: '/class-quality?tab=attendance',
+        href: '/admin/class-quality?tab=attendance',
         priority: severity === 'critical' ? 80 : severity === 'warning' ? 60 : 40,
       });
     }
@@ -752,7 +752,7 @@ export default function DashboardPage() {
         description: severity === 'critical' ? 'Cần xử lý ngay' : 'Cần xem xét',
         severity,
         icon: <Icon.Bell size={16} />,
-        href: '/tickets?status=new',
+        href: '/admin/tickets?status=new',
         priority: severity === 'critical' ? 75 : severity === 'warning' ? 55 : 35,
       });
     }
@@ -769,7 +769,7 @@ export default function DashboardPage() {
         description: 'Mục tiêu dưới 3%',
         severity,
         icon: <Icon.Repeat size={16} />,
-        href: '/teacher-change',
+        href: '/admin/teacher-change',
         priority: severity === 'critical' ? 70 : severity === 'warning' ? 50 : 30,
       });
     }
@@ -786,7 +786,7 @@ export default function DashboardPage() {
         description: 'Cần cải thiện',
         severity,
         icon: <Icon.User size={16} />,
-        href: '/tickets',
+        href: '/admin/tickets',
         priority: severity === 'critical' ? 65 : severity === 'warning' ? 45 : 25,
       });
     }
@@ -803,7 +803,7 @@ export default function DashboardPage() {
         description: 'Mục tiêu trên 30%',
         severity,
         icon: <Icon.TrendingDown size={16} />,
-        href: '/office-hours',
+        href: '/admin/office-hours',
         priority: severity === 'critical' ? 60 : severity === 'warning' ? 40 : 20,
       });
     }
@@ -833,7 +833,7 @@ export default function DashboardPage() {
           description: `${activeClassesCount} lớp học`,
           color: completionRate !== null ? completionColor(completionRate) : 'var(--text-quaternary)',
           icon: <Icon.CheckCircle size={18} />,
-          href: '/completion-rate',
+          href: '/admin/completion-rate',
         },
         {
           key: 'teacher-change',
@@ -842,7 +842,7 @@ export default function DashboardPage() {
           description: `${activeTeacherChangeClassesCount} lớp học`,
           color: teacherChangeRate !== null ? teacherChangeColor(teacherChangeRate) : 'var(--text-quaternary)',
           icon: <Icon.Repeat size={18} />,
-          href: '/teacher-change',
+          href: '/admin/teacher-change',
         },
         {
           key: 'tickets',
@@ -851,7 +851,7 @@ export default function DashboardPage() {
           description: `${ticketsData?.tickets?.length || 0} phiếu`,
           color: surveyScore !== null ? surveyColor(surveyScore) : 'var(--text-quaternary)',
           icon: <Icon.User size={18} />,
-          href: '/tickets',
+          href: '/admin/tickets',
         },
         {
           key: 'office-hours',
@@ -860,7 +860,7 @@ export default function DashboardPage() {
           description: `${officeHoursData?.officeHours?.length || 0} ca học`,
           color: conversionRate !== null ? conversionColor(conversionRate) : 'var(--text-quaternary)',
           icon: <Icon.TrendingUp size={18} />,
-          href: '/office-hours',
+          href: '/admin/office-hours',
         },
       ],
       
@@ -873,7 +873,7 @@ export default function DashboardPage() {
           description: `${activeClassesCount} lớp học`,
           color: commentViolationsCount !== null ? getCountColor(commentViolationsCount, [5, 10, 20, Infinity]) : 'var(--text-quaternary)',
           icon: <Icon.XCircle size={18} />,
-          href: '/class-quality?tab=violations',
+          href: '/admin/class-quality?tab=violations',
         },
         {
           key: 'attendance-alerts',
@@ -882,7 +882,7 @@ export default function DashboardPage() {
           description: `${activeClassesCount} lớp học`,
           color: attendanceAlertsCount !== null ? getCountColor(attendanceAlertsCount, [3, 6, 10, Infinity]) : 'var(--text-quaternary)',
           icon: <Icon.AlertCircle size={18} />,
-          href: '/class-quality?tab=attendance',
+          href: '/admin/class-quality?tab=attendance',
         },
         {
           key: 'multi-teacher',
@@ -891,7 +891,7 @@ export default function DashboardPage() {
           description: `${activeTeacherChangeClassesCount} lớp học`,
           color: multiTeacherRate !== null ? kpiColor(multiTeacherScore(multiTeacherRate)) : 'var(--text-quaternary)',
           icon: <Icon.Users size={18} />,
-          href: '/teacher-change',
+          href: '/admin/teacher-change',
         },
         {
           key: 'new-tickets',
@@ -900,7 +900,7 @@ export default function DashboardPage() {
           description: `${ticketsData?.tickets?.length || 0} phiếu`,
           color: newTicketsCount !== null ? getCountColor(newTicketsCount, [5, 10, 20, Infinity]) : 'var(--text-quaternary)',
           icon: <Icon.Bell size={18} />,
-          href: '/tickets?status=new',
+          href: '/admin/tickets?status=new',
         },
       ],
     };

@@ -26,31 +26,34 @@ const PermissionsContext = createContext<PermissionsContextType | undefined>(und
 const REFRESH_INTERVAL_MS = 30 * 60 * 1000;
 
 export function PermissionsProvider({ children }: { children: ReactNode }) {
-  const { session } = useAuth();
+  const { session, isLoading: authLoading } = useAuth();
   const [permissions, setPermissions] = useState<PagePermission[]>([]);
   const [loading, setLoading] = useState(true);
   // Keep a ref so loadPermissions can always see the current session
   const sessionRef = useRef(session);
   sessionRef.current = session;
 
-  // Initial load + reload whenever the logged-in user changes
+  // Initial load + reload whenever the logged-in user changes.
+  // Wait for AuthContext to finish before acting — otherwise we'd set
+  // loading=false with empty permissions while the token is still being restored.
   useEffect(() => {
+    if (authLoading) return;
     if (!session?.uid) {
       setPermissions([]);
       setLoading(false);
       return;
     }
     loadPermissions();
-  }, [session?.uid]);
+  }, [session?.uid, authLoading]);
 
   // Periodic background refresh so stale permissions don't silently gate pages
   useEffect(() => {
-    if (!session?.uid) return;
+    if (authLoading || !session?.uid) return;
     const interval = setInterval(() => {
       loadPermissions(/* silent = */ true);
     }, REFRESH_INTERVAL_MS);
     return () => clearInterval(interval);
-  }, [session?.uid]);
+  }, [session?.uid, authLoading]);
 
   async function loadPermissions(silent = false) {
     const currentSession = sessionRef.current;

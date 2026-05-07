@@ -1,6 +1,6 @@
 'use client';
 
-import { ReactNode, useState } from 'react';
+import { ReactNode, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { usePermissionsContext } from '@/lib/PermissionsContext';
@@ -23,17 +23,22 @@ export function PageLayout({ children, title, activePage, sidebarOpen = false, o
   const [adminSubmenuOpen, setAdminSubmenuOpen] = useState(
     activePage === 'admin' || activePage === 'admin-users' || activePage === 'admin-regions' || activePage === 'admin-roles'
   );
+  // Internal sidebar state — used when no external controller is wired up (e.g. dashboard)
+  const [internalSidebarOpen, setInternalSidebarOpen] = useState(false);
+  const isControlled = onSidebarToggle !== undefined;
+  const effectiveSidebarOpen = isControlled ? sidebarOpen : internalSidebarOpen;
+  const handleSidebarToggle = useCallback((open: boolean) => {
+    if (isControlled) onSidebarToggle!(open);
+    else setInternalSidebarOpen(open);
+  }, [isControlled, onSidebarToggle]);
 
   // User display - use session from AuthContext (always fresh)
   const _displayName = session?.displayName?.trim() || '';
   const _email = session?.email || '';
-  
+
   const userAvatar = _displayName ? initials(_displayName) : _email.charAt(0).toUpperCase();
   const userName = _displayName || _email.split('@')[0];
   const userEmail = _email;
-
-  // Handle sidebar toggle - if no handler provided, use internal state
-  const handleSidebarToggle = onSidebarToggle || (() => {});
 
   // Check if any admin page is active
   const isAdminActive = activePage === 'admin' || activePage === 'admin-users' || activePage === 'admin-regions' || activePage === 'admin-roles';
@@ -44,12 +49,12 @@ export function PageLayout({ children, title, activePage, sidebarOpen = false, o
   return (
     <div className={styles.page}>
       {/* Sidebar overlay for mobile */}
-      {sidebarOpen && (
+      {effectiveSidebarOpen && (
         <div className={styles.sidebarOverlay} onClick={() => handleSidebarToggle(false)} aria-hidden />
       )}
 
       {/* Sidebar */}
-      <aside className={`${styles.sidebar} ${sidebarOpen ? styles.sidebarMobileOpen : ''}`}>
+      <aside className={`${styles.sidebar} ${effectiveSidebarOpen ? styles.sidebarMobileOpen : ''}`}>
         <div className={styles.sidebarLogo}>
           <img src="/logo/logo.svg" alt="MindX" style={{ height: 26, objectFit: 'contain' }} />
         </div>
@@ -289,7 +294,7 @@ export function PageLayout({ children, title, activePage, sidebarOpen = false, o
         <header className={styles.header}>
           <button
             className={styles.hamburger}
-            onClick={() => handleSidebarToggle(!sidebarOpen)}
+            onClick={() => handleSidebarToggle(!effectiveSidebarOpen)}
             aria-label="Mở menu"
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -298,6 +303,11 @@ export function PageLayout({ children, title, activePage, sidebarOpen = false, o
               <line x1="3" y1="18" x2="21" y2="18" />
             </svg>
           </button>
+          {/* Mobile: show logo (sidebar is hidden) */}
+          <div className={styles.headerMobileLogo}>
+            <img src="/logo/logo.svg" alt="MindX" style={{ height: 22, objectFit: 'contain' }} />
+          </div>
+          {/* Desktop: show page title */}
           <div className={styles.headerLeft}>
             <h1 className={styles.pageTitle}>{title}</h1>
           </div>

@@ -19,18 +19,21 @@ interface ProtectedPageProps {
  * conditions and redundant fetches that caused intermittent redirects to /.
  */
 export function ProtectedPage({ children, pageKey, requireEdit = false }: ProtectedPageProps) {
-  const { session, logout } = useAuth();
+  const { session, logout, isLoading: authLoading } = useAuth();
   const { loading, canView, canEdit } = usePermissionsContext();
   const router = useRouter();
 
-  // Redirect to login if not authenticated at all
+  // Only redirect once auth has finished initialising — otherwise a hard reload
+  // would redirect to /login before localStorage tokens are restored.
   useEffect(() => {
+    if (authLoading) return;
     if (!session) {
       router.replace('/login');
     }
-  }, [session, router]);
+  }, [session, authLoading, router]);
 
-  if (!session) return null;
+  // Show nothing while auth is still loading (prevents flash of redirect)
+  if (authLoading || !session) return null;
 
   // Show spinner while permissions are being fetched (only on initial login load)
   if (loading) {
