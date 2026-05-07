@@ -20,12 +20,47 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
 
   useEffect(() => {
+    initializeAuth();
+  }, []);
+
+  async function initializeAuth() {
     const stored = loadSession();
-    if (stored && isAuthenticated()) {
+    
+    if (!stored) {
+      setIsLoading(false);
+      return;
+    }
+
+    // Check if token is still valid
+    if (!isAuthenticated()) {
+      console.log('[AuthProvider] Session expired, clearing...');
+      clearSession();
+      setSession(null);
+      setIsLoading(false);
+      return;
+    }
+
+    // Check if token needs refresh (within 5 minutes of expiry)
+    const now = Date.now();
+    const bufferTime = 5 * 60 * 1000; // 5 minutes
+    
+    if (now >= stored.expiresAt - bufferTime) {
+      console.log('[AuthProvider] Token expiring soon, refreshing...');
+      try {
+        const { refreshSession } = await import('@/services/authService');
+        const refreshed = await refreshSession(stored);
+        setSession(refreshed);
+      } catch (error) {
+        console.error('[AuthProvider] Token refresh failed:', error);
+        clearSession();
+        setSession(null);
+      }
+    } else {
       setSession(stored);
     }
+    
     setIsLoading(false);
-  }, []);
+  }
 
   const logout = useCallback(() => {
     clearSession();

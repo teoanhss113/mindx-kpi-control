@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { usePermissionsContext } from '@/lib/PermissionsContext';
 import { initials } from '@/components/ui';
+import { NotificationBell } from '@/components/NotificationBell';
 import styles from '@/app/dashboard.module.css';
 
 interface PageLayoutProps {
@@ -300,7 +301,9 @@ export function PageLayout({ children, title, activePage, sidebarOpen = false, o
           <div className={styles.headerLeft}>
             <h1 className={styles.pageTitle}>{title}</h1>
           </div>
-          <div className={styles.headerRight} />
+          <div className={styles.headerRight}>
+            <NotificationBell />
+          </div>
         </header>
 
         {/* Main content */}

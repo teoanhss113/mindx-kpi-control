@@ -31,10 +31,18 @@ export function ProtectedPage({ children, pageKey, requireEdit = false }: Protec
       const res = await authFetch(
         `/api/auth/sync-user?uid=${encodeURIComponent(session.uid)}`,
       );
+      
       if (!res.ok) {
+        // If 401, session is invalid - logout
+        if (res.status === 401) {
+          console.log('[ProtectedPage] 401 error, logging out...');
+          logout();
+          return;
+        }
         router.replace('/');
         return;
       }
+      
       const json = await res.json();
       const profile = json?.data?.profile;
       if (!profile) {
@@ -66,7 +74,15 @@ export function ProtectedPage({ children, pageKey, requireEdit = false }: Protec
 
       setHasAccess(requireEdit ? !!(match.can_view && match.can_edit) : !!match.can_view);
       setChecking(false);
-    } catch {
+    } catch (error) {
+      console.error('[ProtectedPage] Error checking access:', error);
+      
+      // If error message indicates session expired, logout
+      if (error instanceof Error && error.message.includes('Session expired')) {
+        logout();
+        return;
+      }
+      
       setHasAccess(false);
       setChecking(false);
     }

@@ -9,35 +9,28 @@ import {
 
 /**
  * Sync user profile from Firebase to Supabase.
- * The caller MUST present a valid Firebase ID token whose uid+email match
- * the body — otherwise anyone could rewrite or delete other people's profiles.
+ * Uses email (from verified Firebase token) as the stable identifier.
+ * Firebase UID is only used for auth verification, not stored as PK.
  */
 export async function POST(request: NextRequest) {
   try {
     const idToken = extractBearer(request);
     const verified = await verifyFirebaseIdToken(idToken);
 
-    const body = await request.json().catch(() => ({}));
-    const uid = String(body?.uid || '').trim();
-    const email = String(body?.email || '').trim().toLowerCase();
-
-    if (!uid || !email) {
+    const email = verified.email;
+    if (!email) {
       return NextResponse.json(
-        { error: 'uid and email are required' },
+        { error: 'Email not found in token' },
         { status: 400 }
       );
     }
 
-    if (uid !== verified.uid || email !== verified.email) {
-      throw new AuthError('Token does not match request body', 403);
-    }
-
-    // 1. Profile already exists with this UID
+    // Look up profile by email (stable identifier across both systems)
     const { data: existingProfile } = await supabaseAdmin
       .from('profiles')
       .select('*')
-      .eq('id', uid)
-      .single();
+      .eq('email', email)
+      .maybeSingle();
 
     if (existingProfile) {
       return NextResponse.json({
@@ -47,42 +40,11 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // 2. A profile with this email exists (created with a temporary id) —
-    //    rebind it to the verified Firebase UID. Use a single UPDATE; do NOT
-    //    delete-then-recreate, which previously allowed cross-user takeover.
-    const { data: profileByEmail } = await supabaseAdmin
-      .from('profiles')
-      .select('*')
-      .eq('email', email)
-      .single();
-
-    if (profileByEmail) {
-      const { data: updatedProfile, error: updateError } = await supabaseAdmin
-        .from('profiles')
-        .update({ id: uid })
-        .eq('email', email)
-        .select()
-        .single();
-
-      if (updateError) {
-        return NextResponse.json(
-          { error: 'Failed to rebind profile' },
-          { status: 500 }
-        );
-      }
-
-      return NextResponse.json({
-        success: true,
-        action: 'updated',
-        profile: updatedProfile,
-      });
-    }
-
-    // 3. No profile exists yet — create one with no role.
+    // No profile yet — create one with no role
     const { data: newProfile, error: createError } = await supabaseAdmin
       .from('profiles')
       .insert({
-        id: uid,
+        id: crypto.randomUUID(),
         email,
         role_id: null,
         is_active: true,

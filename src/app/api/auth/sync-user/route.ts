@@ -8,8 +8,8 @@ import {
 } from '@/lib/auth/serverAuth';
 
 /**
- * Sync Firebase user to Supabase profiles table.
- * Caller must present a Firebase ID token whose uid+email match the body.
+ * POST — Update last_login_at for the authenticated user.
+ * Uses email from the verified Firebase token as the lookup key.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -17,48 +17,27 @@ export async function POST(request: NextRequest) {
     const verified = await verifyFirebaseIdToken(idToken);
 
     const body = await request.json().catch(() => ({}));
-    const uid = String(body?.uid || '').trim();
-    const email = String(body?.email || '').trim().toLowerCase();
     const { displayName, photoURL } = body || {};
-
-    if (!uid || !email) {
-      return NextResponse.json(
-        { success: false, error: 'Missing required fields: uid, email' },
-        { status: 400 }
-      );
-    }
-
-    if (uid !== verified.uid || email !== verified.email) {
-      throw new AuthError('Token does not match request body', 403);
-    }
 
     const { data, error } = await supabaseAdmin
       .from('profiles')
-      .upsert({
-        id: uid,
-        email,
+      .update({
         display_name: displayName || null,
         photo_url: photoURL || null,
         last_login_at: new Date().toISOString(),
-      }, {
-        onConflict: 'id',
-        ignoreDuplicates: false,
       })
-      .select(`
-        *,
-        roles (id, name, description)
-      `)
-      .single();
+      .eq('email', verified.email)
+      .select(`*, roles (id, name, description)`)
+      .maybeSingle();
 
     if (error) throw error;
 
     return NextResponse.json({
       success: true,
       data: {
-        id: data.id,
-        email: data.email,
-        role: data.roles?.name || null,
-        is_active: data.is_active,
+        email: verified.email,
+        role: data?.roles?.name || null,
+        is_active: data?.is_active,
       },
     });
   } catch (error) {
@@ -71,25 +50,13 @@ export async function POST(request: NextRequest) {
 }
 
 /**
- * Get the caller's own profile and permissions.
- * The `uid` query param must match the Firebase token uid.
+ * GET — Return the caller's profile and role permissions.
+ * Uses email from the verified Firebase token — no UID matching needed.
  */
 export async function GET(request: NextRequest) {
   try {
     const idToken = extractBearer(request);
     const verified = await verifyFirebaseIdToken(idToken);
-
-    const uid = request.nextUrl.searchParams.get('uid');
-    if (!uid) {
-      return NextResponse.json(
-        { success: false, error: 'Missing uid parameter' },
-        { status: 400 }
-      );
-    }
-
-    if (uid !== verified.uid) {
-      throw new AuthError('Cannot read another user\'s profile', 403);
-    }
 
     const { data: profile, error: profileError } = await supabaseAdmin
       .from('profiles')
@@ -107,8 +74,8 @@ export async function GET(request: NextRequest) {
           )
         )
       `)
-      .eq('id', uid)
-      .single();
+      .eq('email', verified.email)
+      .maybeSingle();
 
     if (profileError) throw profileError;
 
@@ -133,7 +100,7 @@ export async function GET(request: NextRequest) {
           )
         )
       `)
-      .eq('user_id', uid);
+      .eq('user_id', profile.id);
 
     if (permError) throw permError;
 

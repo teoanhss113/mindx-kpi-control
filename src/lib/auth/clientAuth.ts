@@ -10,15 +10,51 @@ import { getValidToken } from '@/services/authService';
  * Wrapper around fetch that attaches the current Firebase ID token as
  * a Bearer Authorization header. Use for all calls to `/api/admin/*`,
  * `/api/auth/*`, `/api/run-migration`, and `/api/debug/*`.
+ * 
+ * Automatically handles 401 errors by attempting token refresh once.
  */
 export async function authFetch(
   input: RequestInfo | URL,
   init: RequestInit = {},
 ): Promise<Response> {
-  const token = await getValidToken();
-  const headers = new Headers(init.headers);
-  headers.set('Authorization', `Bearer ${token}`);
-  return fetch(input, { ...init, headers });
+  try {
+    const token = await getValidToken();
+    const headers = new Headers(init.headers);
+    headers.set('Authorization', `Bearer ${token}`);
+    
+    const response = await fetch(input, { ...init, headers });
+    
+    // If 401, try to refresh token and retry once
+    if (response.status === 401) {
+      console.log('[authFetch] Got 401, attempting token refresh...');
+      
+      try {
+        // Import authService dynamically to avoid circular dependency
+        const authService = await import('@/services/authService');
+        const session = authService.loadSession();
+        
+        if (session) {
+          const newSession = await authService.refreshSession(session);
+          
+          // Retry with new token
+          const newHeaders = new Headers(init.headers);
+          newHeaders.set('Authorization', `Bearer ${newSession.idToken}`);
+          return fetch(input, { ...init, headers: newHeaders });
+        }
+      } catch (refreshError) {
+        console.error('[authFetch] Token refresh failed:', refreshError);
+        // Clear session and throw
+        const authService = await import('@/services/authService');
+        authService.clearSession();
+        throw new Error('Session expired - please login again');
+      }
+    }
+    
+    return response;
+  } catch (error) {
+    console.error('[authFetch] Error:', error);
+    throw error;
+  }
 }
 
 /**

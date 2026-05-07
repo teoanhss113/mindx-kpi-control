@@ -32,13 +32,22 @@ export default function LoginPage() {
     setError(null);
 
     try {
+      console.log('[Login] Starting login with:', emailOrUsername.includes('@') ? 'email' : 'username');
+      
       const session = await signIn(emailOrUsername.trim(), password);
+      console.log('[Login] Sign in successful, session:', {
+        uid: session.uid,
+        email: session.email,
+        hasToken: !!session.idToken,
+      });
+      
       persistSession(session);
       updateSession(session);
 
       // Sync profile (creates if missing) and learn the user's role.
       let profile: { role_id?: string | null; is_active?: boolean } | null = null;
       try {
+        console.log('[Login] Syncing profile...');
         const syncRes = await fetch('/api/auth/sync-profile', {
           method: 'POST',
           headers: {
@@ -51,22 +60,33 @@ export default function LoginPage() {
             displayName: session.displayName,
           }),
         });
+        
         if (syncRes.ok) {
           const json = await syncRes.json();
           profile = json?.profile || null;
+          console.log('[Login] Profile synced:', {
+            role_id: profile?.role_id,
+            is_active: profile?.is_active,
+          });
+        } else {
+          console.error('[Login] Profile sync failed:', syncRes.status);
         }
-      } catch {
+      } catch (syncError) {
+        console.error('[Login] Profile sync error:', syncError);
         // Sync failure → fall through to user view.
       }
 
       await new Promise((r) => setTimeout(r, 400));
 
       if (profile?.role_id && profile.is_active) {
+        console.log('[Login] Redirecting to /admin');
         router.replace('/admin');
       } else {
+        console.log('[Login] Redirecting to /');
         router.replace('/');
       }
     } catch (err) {
+      console.error('[Login] Login error:', err);
       const msg = err instanceof Error ? err.message : 'Đăng nhập thất bại';
       // Map Firebase error codes to user-friendly messages
       setError(

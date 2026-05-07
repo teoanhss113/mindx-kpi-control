@@ -46,11 +46,14 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
       const res = await authFetch(
         `/api/auth/sync-user?uid=${encodeURIComponent(session.uid)}`,
       );
+      
       if (!res.ok) {
+        console.error('[PermissionsContext] Failed to load permissions:', res.status);
         setPermissions([]);
         setLoading(false);
         return;
       }
+      
       const json = await res.json();
       const profile = json?.data?.profile;
       if (!profile?.is_active || !profile?.role_id) {
@@ -71,7 +74,8 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
 
       setPermissions(perms);
       setLoading(false);
-    } catch {
+    } catch (error) {
+      console.error('[PermissionsContext] Error loading permissions:', error);
       setPermissions([]);
       setLoading(false);
     }

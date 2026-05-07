@@ -26,7 +26,21 @@ export async function signIn(emailOrUsername: string, password: string): Promise
   if (isEmail) {
     return signInWithEmail(emailOrUsername, password);
   } else {
-    return signInWithUsername(emailOrUsername, password);
+    // Try username login first
+    try {
+      return await signInWithUsername(emailOrUsername, password);
+    } catch (error) {
+      console.log('[signIn] Username login failed, trying with @mindx.com.vn suffix...');
+      
+      // If username login fails, try appending @mindx.com.vn
+      // This handles cases where user enters "tuannh" but needs "tuannh@mindx.com.vn"
+      try {
+        return await signInWithEmail(`${emailOrUsername}@mindx.com.vn`, password);
+      } catch (emailError) {
+        // If both fail, throw the original username error
+        throw error;
+      }
+    }
   }
 }
 
@@ -72,6 +86,8 @@ async function signInWithEmail(email: string, password: string): Promise<AuthSes
  * Gets customToken from LMS, then exchanges it for Firebase tokens
  */
 async function signInWithUsername(username: string, password: string): Promise<AuthSession> {
+  console.log('[signInWithUsername] Starting login for username:', username);
+  
   // Step 1: Get customToken from LMS via proxy endpoint
   const lmsRes = await fetch('/api/auth/login-username', {
     method: 'POST',
@@ -82,21 +98,34 @@ async function signInWithUsername(username: string, password: string): Promise<A
   });
 
   if (!lmsRes.ok) {
+    console.error('[signInWithUsername] LMS request failed:', lmsRes.status);
     const errorData = await lmsRes.json().catch(() => ({}));
     throw new Error(errorData.error || 'LMS authentication failed');
   }
 
   const lmsData = await lmsRes.json();
+  console.log('[signInWithUsername] LMS response:', {
+    hasErrors: !!lmsData.errors,
+    hasData: !!lmsData.data,
+    hasUsers: !!lmsData.data?.users,
+    hasLoginWithUsername: !!lmsData.data?.users?.loginWithUsername,
+    hasCustomToken: !!lmsData.data?.users?.loginWithUsername?.customToken,
+    fullResponse: JSON.stringify(lmsData).substring(0, 200), // First 200 chars
+  });
   
   if (lmsData.errors?.length) {
+    console.error('[signInWithUsername] LMS errors:', lmsData.errors);
     const messages = lmsData.errors.map((e: { message: string }) => e.message).join('; ');
     throw new Error(messages);
   }
 
   const customToken = lmsData.data?.users?.loginWithUsername?.customToken;
   if (!customToken) {
+    console.error('[signInWithUsername] No customToken in response');
     throw new Error('Invalid username or password');
   }
+
+  console.log('[signInWithUsername] Got customToken, exchanging for Firebase tokens...');
 
   // Step 2: Exchange customToken for Firebase tokens
   const firebaseRes = await fetch(FIREBASE_CUSTOM_TOKEN_URL, {
@@ -109,12 +138,15 @@ async function signInWithUsername(username: string, password: string): Promise<A
   });
 
   if (!firebaseRes.ok) {
+    console.error('[signInWithUsername] Firebase exchange failed:', firebaseRes.status);
     const err = await firebaseRes.json().catch(() => ({}));
+    console.error('[signInWithUsername] Firebase error:', err);
     const message = err?.error?.message ?? 'Firebase authentication failed';
     throw new Error(message);
   }
 
   const firebaseData = await firebaseRes.json();
+  console.log('[signInWithUsername] Firebase exchange successful');
 
   // Step 3: Get user info from Firebase (customToken exchange may not return displayName/email)
   const userInfoRes = await fetch(
@@ -197,9 +229,23 @@ export async function getValidToken(): Promise<string> {
   let session = loadSession();
   if (!session) throw new Error('Not authenticated');
 
-  // Refresh 60 seconds before expiry
-  if (Date.now() >= session.expiresAt - 60_000) {
-    session = await refreshSession(session);
+  // Check if token is expired or about to expire (5 minutes buffer)
+  const now = Date.now();
+  const bufferTime = 5 * 60 * 1000; // 5 minutes
+  
+  if (now >= session.expiresAt - bufferTime) {
+    try {
+      console.log('[getValidToken] Token expiring soon, refreshing...', {
+        expiresAt: new Date(session.expiresAt).toISOString(),
+        now: new Date(now).toISOString(),
+      });
+      session = await refreshSession(session);
+    } catch (error) {
+      console.error('[getValidToken] Token refresh failed:', error);
+      // Clear invalid session
+      clearSession();
+      throw new Error('Session expired - please login again');
+    }
   }
 
   return session.idToken;

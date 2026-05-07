@@ -7,13 +7,14 @@ import { AdminPageWrapper } from '@/components/AdminPageWrapper';
 import { AdminToolbar, AdminTableSection, Icon, SortableHeader, EmptyState, ConfirmDialog, useToast, ToastContainer } from '@/components/ui';
 import { useTableSort } from '@/hooks/useTableSort';
 import { LABELS, MESSAGES, ENTITIES } from '@/constants';
-import { 
-  getRoles, 
-  getPages, 
-  createRole, 
-  updateRole, 
-  deleteRole 
+import {
+  getRoles,
+  getPages,
+  createRole,
+  updateRole,
+  deleteRole
 } from '@/lib/admin-actions';
+import { USER_PAGE_KEYS } from '@/lib/pageGroups';
 import { getAuthToken } from '@/lib/auth/clientAuth';
 import type { Role, Page, RolePermission } from '@/lib/supabase/types';
 import styles from '@/app/dashboard.module.css';
@@ -72,6 +73,9 @@ export default function RolesPage() {
 
   // Toast notifications
   const { toasts, addToast, removeToast } = useToast();
+
+  // Sync pages state
+  const [syncingPages, setSyncingPages] = useState(false);
 
   const { sortedData, sortBy, sortOrder, handleSort } = useTableSort({
     data: roles,
@@ -319,26 +323,100 @@ export default function RolesPage() {
     });
   };
 
-  const toggleAllPages = () => {
-    const allSelected = formData.pagePermissions.filter(p => p.canView).length === pages.length;
-    if (allSelected) {
-      // Deselect all
-      setFormData(prev => ({ ...prev, pagePermissions: [] }));
-    } else {
-      // Select all with view only
-      setFormData(prev => ({
-        ...prev,
-        pagePermissions: pages.map(page => ({
-          pageId: page.id,
-          canView: true,
-          canEdit: false,
+  const toggleAllView = () => {
+    const allSelected = pages.every(page =>
+      formData.pagePermissions.some(p => p.pageId === page.id && p.canView)
+    );
+    setFormData(prev => ({
+      ...prev,
+      pagePermissions: pages.map(page => {
+        const existing = prev.pagePermissions.find(p => p.pageId === page.id);
+        return { pageId: page.id, canView: !allSelected, canEdit: allSelected ? false : (existing?.canEdit ?? false) };
+      }),
+    }));
+  };
+
+  const toggleAllEdit = () => {
+    const allSelected = pages.every(page =>
+      formData.pagePermissions.some(p => p.pageId === page.id && p.canEdit)
+    );
+    setFormData(prev => ({
+      ...prev,
+      pagePermissions: pages.map(page => {
+        const existing = prev.pagePermissions.find(p => p.pageId === page.id);
+        return { pageId: page.id, canView: !allSelected ? true : (existing?.canView ?? false), canEdit: !allSelected };
+      }),
+    }));
+  };
+
+  const toggleGroupView = (groupPages: Page[]) => {
+    const groupIds = groupPages.map(p => p.id);
+    const allSelected = groupIds.every(id =>
+      formData.pagePermissions.some(p => p.pageId === id && p.canView)
+    );
+    setFormData(prev => ({
+      ...prev,
+      pagePermissions: prev.pagePermissions
+        .filter(p => !groupIds.includes(p.pageId))
+        .concat(groupPages.map(page => {
+          const existing = prev.pagePermissions.find(p => p.pageId === page.id);
+          return { pageId: page.id, canView: !allSelected, canEdit: allSelected ? false : (existing?.canEdit ?? false) };
         })),
-      }));
-    }
+    }));
+  };
+
+  const toggleGroupEdit = (groupPages: Page[]) => {
+    const groupIds = groupPages.map(p => p.id);
+    const allSelected = groupIds.every(id =>
+      formData.pagePermissions.some(p => p.pageId === id && p.canEdit)
+    );
+    setFormData(prev => ({
+      ...prev,
+      pagePermissions: prev.pagePermissions
+        .filter(p => !groupIds.includes(p.pageId))
+        .concat(groupPages.map(page => {
+          const existing = prev.pagePermissions.find(p => p.pageId === page.id);
+          return { pageId: page.id, canView: !allSelected ? true : (existing?.canView ?? false), canEdit: !allSelected };
+        })),
+    }));
   };
 
   const getPagePermission = (pageId: string) => {
     return formData.pagePermissions.find(p => p.pageId === pageId) || { pageId, canView: false, canEdit: false };
+  };
+
+  const userPages = pages.filter(p => USER_PAGE_KEYS.includes(p.key));
+  const adminPages = pages.filter(p => !USER_PAGE_KEYS.includes(p.key));
+
+  // Sync pages from code to database
+  const handleSyncPages = async () => {
+    setSyncingPages(true);
+    const loadingToastId = addToast('Đang đồng bộ pages...', 'loading');
+
+    try {
+      const response = await fetch('/api/admin/sync-pages', {
+        method: 'POST',
+      });
+
+      const result = await response.json();
+      removeToast(loadingToastId);
+
+      if (result.success) {
+        addToast(
+          `Đồng bộ thành công: ${result.results.created} tạo mới, ${result.results.updated} cập nhật`,
+          'success'
+        );
+        // Reload pages
+        loadData();
+      } else {
+        addToast(result.error || 'Có lỗi xảy ra khi đồng bộ pages', 'error');
+      }
+    } catch (error) {
+      removeToast(loadingToastId);
+      addToast('Có lỗi xảy ra khi đồng bộ pages', 'error');
+    } finally {
+      setSyncingPages(false);
+    }
   };
 
   return (
@@ -352,6 +430,49 @@ export default function RolesPage() {
           onAction={openCreateModal}
           actionIcon={<Icon.Plus size={16} />}
         />
+
+        {/* Sync Pages Button */}
+        <div style={{ 
+          padding: 'var(--space-4)', 
+          background: 'var(--bg-elevated)', 
+          border: '1px solid var(--border-primary)',
+          borderRadius: 'var(--radius-card)',
+          marginBottom: 'var(--space-4)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 'var(--space-3)'
+        }}>
+          <div>
+            <h3 style={{ margin: 0, fontSize: 14, fontWeight: 510, color: 'var(--text-primary)' }}>
+              Đồng bộ Pages
+            </h3>
+            <p style={{ margin: 'var(--space-1) 0 0 0', fontSize: 13, color: 'var(--text-tertiary)' }}>
+              Tạo tất cả pages cần thiết trong database ({pages.length}/14 pages)
+            </p>
+          </div>
+          <button
+            onClick={handleSyncPages}
+            disabled={syncingPages}
+            style={{
+              padding: 'var(--space-2) var(--space-4)',
+              background: syncingPages ? 'var(--text-quaternary)' : 'var(--brand-indigo)',
+              color: 'white',
+              border: 'none',
+              borderRadius: 'var(--radius-comfortable)',
+              fontSize: 13,
+              fontWeight: 510,
+              cursor: syncingPages ? 'not-allowed' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 'var(--space-2)',
+              whiteSpace: 'nowrap'
+            }}
+          >
+            <Icon.Refresh />
+            {syncingPages ? 'Đang đồng bộ...' : 'Đồng bộ Pages'}
+          </button>
+        </div>
 
       {/* Roles Table */}
       {!loading && filteredRoles.length > 0 && (
@@ -519,88 +640,118 @@ export default function RolesPage() {
                 </div>
 
                 <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-2)' }}>
-                    <label style={{ fontSize: 13, fontWeight: 510, color: 'var(--text-primary)' }}>
-                      Quyền truy cập * 
-                      <span style={{ fontSize: 12, fontWeight: 400, color: 'var(--text-tertiary)', marginLeft: 'var(--space-2)' }}>
-                        ({formData.pagePermissions.filter(p => p.canView).length}/{pages.length} trang)
-                      </span>
-                    </label>
-                    <button
-                      type="button"
-                      onClick={toggleAllPages}
-                      style={{
-                        fontSize: 12,
-                        color: 'var(--brand-indigo)',
-                        background: 'none',
-                        border: 'none',
-                        cursor: 'pointer',
-                        padding: 'var(--space-1) var(--space-2)',
-                      }}
-                    >
-                      {formData.pagePermissions.filter(p => p.canView).length === pages.length ? 'Bỏ chọn tất cả' : 'Chọn tất cả'}
-                    </button>
-                  </div>
-                  
-                  <div style={{
-                    border: '1px solid var(--border-primary)',
-                    borderRadius: 'var(--radius-comfortable)',
-                    overflow: 'hidden',
-                    maxHeight: '400px',
-                    overflowY: 'auto',
-                  }}>
+                  <label style={{ display: 'block', fontSize: 13, fontWeight: 510, color: 'var(--text-primary)', marginBottom: 'var(--space-2)' }}>
+                    Quyền truy cập *
+                    <span style={{ fontSize: 12, fontWeight: 400, color: 'var(--text-tertiary)', marginLeft: 'var(--space-2)' }}>
+                      ({formData.pagePermissions.filter(p => p.canView).length}/{pages.length} trang)
+                    </span>
+                  </label>
+
+                  <div style={{ border: '1px solid var(--border-primary)', borderRadius: 'var(--radius-comfortable)', overflow: 'hidden', maxHeight: '420px', overflowY: 'auto' }}>
                     <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>
                       <thead style={{ position: 'sticky', top: 0, background: 'var(--bg-panel)', zIndex: 1 }}>
                         <tr>
-                          <th style={{ textAlign: 'left', padding: 'var(--space-3)', fontWeight: 510, borderBottom: '1px solid var(--border-primary)' }}>
-                            Trang
+                          <th style={{ textAlign: 'left', padding: 'var(--space-3)', fontWeight: 510, borderBottom: '1px solid var(--border-primary)' }}>Trang</th>
+                          <th style={{ textAlign: 'center', padding: '6px var(--space-2)', fontWeight: 510, borderBottom: '1px solid var(--border-primary)', width: '80px' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+                              <span>Xem</span>
+                              <button type="button" onClick={toggleAllView} style={{ fontSize: 10, color: 'var(--brand-indigo)', background: 'none', border: 'none', cursor: 'pointer', padding: '1px 4px', whiteSpace: 'nowrap' }}>
+                                {pages.every(p => formData.pagePermissions.some(pp => pp.pageId === p.id && pp.canView)) ? 'Bỏ tất cả' : 'Chọn tất cả'}
+                              </button>
+                            </div>
                           </th>
-                          <th style={{ textAlign: 'center', padding: 'var(--space-3)', fontWeight: 510, borderBottom: '1px solid var(--border-primary)', width: '80px' }}>
-                            Xem
-                          </th>
-                          <th style={{ textAlign: 'center', padding: 'var(--space-3)', fontWeight: 510, borderBottom: '1px solid var(--border-primary)', width: '80px' }}>
-                            Sửa
+                          <th style={{ textAlign: 'center', padding: '6px var(--space-2)', fontWeight: 510, borderBottom: '1px solid var(--border-primary)', width: '80px' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+                              <span>Sửa</span>
+                              <button type="button" onClick={toggleAllEdit} style={{ fontSize: 10, color: 'var(--brand-indigo)', background: 'none', border: 'none', cursor: 'pointer', padding: '1px 4px', whiteSpace: 'nowrap' }}>
+                                {pages.every(p => formData.pagePermissions.some(pp => pp.pageId === p.id && pp.canEdit)) ? 'Bỏ tất cả' : 'Chọn tất cả'}
+                              </button>
+                            </div>
                           </th>
                         </tr>
                       </thead>
                       <tbody>
-                        {pages.map((page, index) => {
+                        {/* ── Trang người dùng ── */}
+                        {userPages.length > 0 && (
+                          <tr>
+                            <td style={{ padding: '6px var(--space-3) 6px 20px', background: 'var(--bg-panel)', borderBottom: '1px solid var(--border-primary)', borderTop: '1px solid var(--border-primary)' }}>
+                              <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                                Trang người dùng
+                                <span style={{ fontWeight: 400, marginLeft: 6 }}>
+                                  ({userPages.filter(p => formData.pagePermissions.some(pp => pp.pageId === p.id && pp.canView)).length}/{userPages.length})
+                                </span>
+                              </span>
+                            </td>
+                            <td style={{ textAlign: 'center', background: 'var(--bg-panel)', borderBottom: '1px solid var(--border-primary)', borderTop: '1px solid var(--border-primary)', width: '80px' }}>
+                              <button type="button" onClick={() => toggleGroupView(userPages)} style={{ fontSize: 10, color: 'var(--brand-indigo)', background: 'none', border: 'none', cursor: 'pointer', padding: '1px 4px', whiteSpace: 'nowrap' }}>
+                                {userPages.every(p => formData.pagePermissions.some(pp => pp.pageId === p.id && pp.canView)) ? 'Bỏ nhóm' : 'Chọn nhóm'}
+                              </button>
+                            </td>
+                            <td style={{ textAlign: 'center', background: 'var(--bg-panel)', borderBottom: '1px solid var(--border-primary)', borderTop: '1px solid var(--border-primary)', width: '80px' }}>
+                              <button type="button" onClick={() => toggleGroupEdit(userPages)} style={{ fontSize: 10, color: 'var(--brand-indigo)', background: 'none', border: 'none', cursor: 'pointer', padding: '1px 4px', whiteSpace: 'nowrap' }}>
+                                {userPages.every(p => formData.pagePermissions.some(pp => pp.pageId === p.id && pp.canEdit)) ? 'Bỏ nhóm' : 'Chọn nhóm'}
+                              </button>
+                            </td>
+                          </tr>
+                        )}
+                        {userPages.map((page, index) => {
                           const perm = getPagePermission(page.id);
                           return (
-                            <tr key={page.id} style={{ 
-                              background: index % 2 === 0 ? 'var(--bg-surface)' : 'var(--bg-elevated)',
-                              transition: 'background 0.15s ease',
-                            }}>
-                              <td style={{ padding: 'var(--space-3)', borderBottom: '1px solid var(--border-primary)' }}>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
-                                  <span style={{ fontWeight: 510, color: 'var(--text-primary)' }}>
-                                    {page.page_name}
-                                  </span>
-                                  {page.description && (
-                                    <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
-                                      {page.description}
-                                    </span>
-                                  )}
+                            <tr key={page.id} style={{ background: index % 2 === 0 ? 'var(--bg-surface)' : 'var(--bg-elevated)' }}>
+                              <td style={{ padding: 'var(--space-3)', borderBottom: '1px solid var(--border-primary)', paddingLeft: 20 }}>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                  <span style={{ fontWeight: 510, color: 'var(--text-primary)' }}>{page.page_name}</span>
+                                  {page.description && <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{page.description}</span>}
                                 </div>
                               </td>
                               <td style={{ textAlign: 'center', padding: 'var(--space-3)', borderBottom: '1px solid var(--border-primary)' }}>
-                                <input
-                                  type="checkbox"
-                                  checked={perm.canView}
-                                  onChange={() => togglePageView(page.id)}
-                                  className={styles.reasonCheckbox}
-                                  style={{ cursor: 'pointer' }}
-                                />
+                                <input type="checkbox" checked={perm.canView} onChange={() => togglePageView(page.id)} className={styles.reasonCheckbox} style={{ cursor: 'pointer' }} />
                               </td>
                               <td style={{ textAlign: 'center', padding: 'var(--space-3)', borderBottom: '1px solid var(--border-primary)' }}>
-                                <input
-                                  type="checkbox"
-                                  checked={perm.canEdit}
-                                  onChange={() => togglePageEdit(page.id)}
-                                  disabled={!perm.canView}
-                                  className={styles.reasonCheckbox}
-                                  style={{ cursor: perm.canView ? 'pointer' : 'not-allowed', opacity: perm.canView ? 1 : 0.5 }}
-                                />
+                                <input type="checkbox" checked={perm.canEdit} onChange={() => togglePageEdit(page.id)} disabled={!perm.canView} className={styles.reasonCheckbox} style={{ cursor: perm.canView ? 'pointer' : 'not-allowed', opacity: perm.canView ? 1 : 0.5 }} />
+                              </td>
+                            </tr>
+                          );
+                        })}
+
+                        {/* ── Trang quản trị ── */}
+                        {adminPages.length > 0 && (
+                          <tr>
+                            <td style={{ padding: '6px var(--space-3) 6px 20px', background: 'var(--bg-panel)', borderBottom: '1px solid var(--border-primary)', borderTop: '1px solid var(--border-primary)' }}>
+                              <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                                Trang quản trị
+                                <span style={{ fontWeight: 400, marginLeft: 6 }}>
+                                  ({adminPages.filter(p => formData.pagePermissions.some(pp => pp.pageId === p.id && pp.canView)).length}/{adminPages.length})
+                                </span>
+                              </span>
+                            </td>
+                            <td style={{ textAlign: 'center', background: 'var(--bg-panel)', borderBottom: '1px solid var(--border-primary)', borderTop: '1px solid var(--border-primary)', width: '80px' }}>
+                              <button type="button" onClick={() => toggleGroupView(adminPages)} style={{ fontSize: 10, color: 'var(--brand-indigo)', background: 'none', border: 'none', cursor: 'pointer', padding: '1px 4px', whiteSpace: 'nowrap' }}>
+                                {adminPages.every(p => formData.pagePermissions.some(pp => pp.pageId === p.id && pp.canView)) ? 'Bỏ nhóm' : 'Chọn nhóm'}
+                              </button>
+                            </td>
+                            <td style={{ textAlign: 'center', background: 'var(--bg-panel)', borderBottom: '1px solid var(--border-primary)', borderTop: '1px solid var(--border-primary)', width: '80px' }}>
+                              <button type="button" onClick={() => toggleGroupEdit(adminPages)} style={{ fontSize: 10, color: 'var(--brand-indigo)', background: 'none', border: 'none', cursor: 'pointer', padding: '1px 4px', whiteSpace: 'nowrap' }}>
+                                {adminPages.every(p => formData.pagePermissions.some(pp => pp.pageId === p.id && pp.canEdit)) ? 'Bỏ nhóm' : 'Chọn nhóm'}
+                              </button>
+                            </td>
+                          </tr>
+                        )}
+                        {adminPages.map((page, index) => {
+                          const perm = getPagePermission(page.id);
+                          return (
+                            <tr key={page.id} style={{ background: index % 2 === 0 ? 'var(--bg-surface)' : 'var(--bg-elevated)' }}>
+                              <td style={{ padding: 'var(--space-3)', borderBottom: '1px solid var(--border-primary)', paddingLeft: 20 }}>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                  <span style={{ fontWeight: 510, color: 'var(--text-primary)' }}>{page.page_name}</span>
+                                  {page.description && <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{page.description}</span>}
+                                </div>
+                              </td>
+                              <td style={{ textAlign: 'center', padding: 'var(--space-3)', borderBottom: '1px solid var(--border-primary)' }}>
+                                <input type="checkbox" checked={perm.canView} onChange={() => togglePageView(page.id)} className={styles.reasonCheckbox} style={{ cursor: 'pointer' }} />
+                              </td>
+                              <td style={{ textAlign: 'center', padding: 'var(--space-3)', borderBottom: '1px solid var(--border-primary)' }}>
+                                <input type="checkbox" checked={perm.canEdit} onChange={() => togglePageEdit(page.id)} disabled={!perm.canView} className={styles.reasonCheckbox} style={{ cursor: perm.canView ? 'pointer' : 'not-allowed', opacity: perm.canView ? 1 : 0.5 }} />
                               </td>
                             </tr>
                           );
@@ -608,7 +759,7 @@ export default function RolesPage() {
                       </tbody>
                     </table>
                   </div>
-                  
+
                   {formErrors.pagePermissions && (
                     <div style={{ marginTop: 'var(--space-2)', fontSize: 12, color: '#dc2626' }}>
                       {formErrors.pagePermissions}
