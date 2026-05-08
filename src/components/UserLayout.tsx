@@ -10,7 +10,7 @@ import styles from '@/app/dashboard.module.css';
 interface UserLayoutProps {
   children: ReactNode;
   title: string;
-  activePage?: 'home' | 'available-shifts' | 'my-profile';
+  activePage?: 'home' | 'available-shifts' | 'judge-requests' | 'my-profile';
   sidebarOpen?: boolean;
   onSidebarToggle?: (open: boolean) => void;
 }
@@ -69,7 +69,7 @@ export function UserLayout({
           </div>
 
           {/* Available Shifts */}
-          <div 
+          <div
             className={`${styles.sidebarLink} ${activePage === 'available-shifts' ? styles.active : ''}`}
             onClick={() => { router.push('/available-shifts'); handleSidebarToggle(false); }}
           >
@@ -78,6 +78,19 @@ export function UserLayout({
               <polyline points="12 6 12 12 16 14" />
             </svg>
             Ca trực khả dụng
+          </div>
+
+          {/* Judge Requests */}
+          <div
+            className={`${styles.sidebarLink} ${activePage === 'judge-requests' ? styles.active : ''}`}
+            onClick={() => { router.push('/judge-requests'); handleSidebarToggle(false); }}
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M12 2L2 7l10 5 10-5-10-5z" />
+              <path d="M2 17l10 5 10-5" />
+              <path d="M2 12l10 5 10-5" />
+            </svg>
+            Giám khảo cuối khoá
           </div>
 
           <div className={styles.sidebarDivider} />

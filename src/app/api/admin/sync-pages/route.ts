@@ -28,6 +28,13 @@ const REQUIRED_PAGES = [
     description: 'Xem và đăng ký ca trực khả dụng',
     display_order: 2,
   },
+  {
+    key: 'judge-requests',
+    page_name: 'Giám khảo cuối khoá',
+    path: '/judge-requests',
+    description: 'Yêu cầu làm giám khảo cho buổi cuối khoá',
+    display_order: 3,
+  },
   // ── Trang quản trị ──
   {
     key: 'dashboard',

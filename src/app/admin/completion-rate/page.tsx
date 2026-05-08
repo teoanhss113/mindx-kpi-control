@@ -340,6 +340,19 @@ export default function DashboardPage() {
     return { normalClasses: norm, cancelledClasses: canc, availableCourseLines: Array.from(clSet).sort(), courseOptions: cOptions, reasonCounts: rCounts, demoCount };
   }, [classes, includedReasons, excludedCourses]);
 
+  // Centre IDs that appear in loaded data (for table-level filter)
+  const tableCentreIds = useMemo(() => {
+    const ids = new Set(normalClasses.map((c: any) => c.centre?.id).filter(Boolean));
+    return Array.from(ids);
+  }, [normalClasses]);
+
+  const tableReasonOptions: SelectOption[] = useMemo(() =>
+    Object.entries(reasonCounts).filter(([, c]) => c > 0).sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([r, count]) => ({ value: r, label: `${REASON_LABELS[r] || r} (${count})` })), [reasonCounts]);
+
+  const courseLineOptions: SelectOption[] = useMemo(
+    () => availableCourseLines.map(cl => ({ value: cl, label: cl })), [availableCourseLines]);
+
   // ─── Filter + Sort ───────────────────────────────────────────────────────
   const filteredNormalClasses = useMemo(() => {
     let filtered = normalClasses.filter(c => {
@@ -492,19 +505,6 @@ export default function DashboardPage() {
     defaultSortKey: 'name' as ModalStudentSortKey,
     defaultSortOrder: 'asc'
   });
-
-  // Centre IDs that appear in loaded data (for table-level filter)
-  const tableCentreIds = useMemo(() => {
-    const ids = new Set(normalClasses.map((c: any) => c.centre?.id).filter(Boolean));
-    return Array.from(ids);
-  }, [normalClasses]);
-
-  const tableReasonOptions: SelectOption[] = useMemo(() =>
-    Object.entries(reasonCounts).filter(([, c]) => c > 0).sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([r, count]) => ({ value: r, label: `${REASON_LABELS[r] || r} (${count})` })), [reasonCounts]);
-
-  const courseLineOptions: SelectOption[] = useMemo(
-    () => availableCourseLines.map(cl => ({ value: cl, label: cl })), [availableCourseLines]);
 
   const hasTableFilter = selectedCourseLines.length > 0 || filterCentres.length > 0 || filterReasons.length > 0
     || showDemoOnly || rateRange[0] > 0 || rateRange[1] < 100 || search.trim().length > 0;
