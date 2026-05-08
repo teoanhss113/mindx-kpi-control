@@ -30,8 +30,8 @@ import {
   StandardXAxis, StandardYAxisCategory, ChartLegend, VerticalBarChartConfig, CustomTooltip,
   CentreSelect, QuickFilterChips, ExportButton,
   CSVExportSettings, type CSVColumnConfig,
+  Icon,
 } from '@/components/ui';
-import { ClipboardCheck, Target, Settings, AlertTriangle, Bell, Clock } from 'lucide-react';
 import { useFilterOptions } from '@/hooks/useFilterOptions';
 import { useQuickFilterChips } from '@/hooks/useUserPreferences';
 import { useCSVExportPreferences } from '@/hooks/useCSVExportPreferences';
@@ -1410,7 +1410,7 @@ export default function ClassQualityPage() {
                             <div className={styles.summaryBlock}>
                               <div className={styles.summaryBlockHeader}>
                                 <div className={styles.summaryBlockTitle}>
-                                  <ClipboardCheck size={16} /> Điểm Checkpoint (CP1 & CP2)
+                                  <Icon.ClipboardCheck size={16} /> Điểm Checkpoint (CP1 & CP2)
                                 </div>
                                 <CopyButton content={generateCheckpointContent(selectedCentreData)} label="Checkpoint" />
                               </div>
@@ -1446,7 +1446,7 @@ export default function ClassQualityPage() {
                           <div className={styles.summaryBlock}>
                             <div className={styles.summaryBlockHeader}>
                               <div className={styles.summaryBlockTitle}>
-                                <Target size={16} /> Tiêu chí Cuối khoá (Demo & Xếp loại TBCK)
+                                <Icon.Target size={16} /> Tiêu chí Cuối khoá (Demo & Xếp loại TBCK)
                               </div>
                               <CopyButton content={generateDemoContent(selectedCentreData)} label="Demo" />
                             </div>
@@ -1481,7 +1481,7 @@ export default function ClassQualityPage() {
                           <div className={styles.summaryBlock}>
                             <div className={styles.summaryBlockHeader}>
                               <div className={styles.summaryBlockTitle}>
-                                <Settings size={16} /> Tiêu chí Vận hành (Ổn định & Rủi ro)
+                                <Icon.Settings size={16} /> Tiêu chí Vận hành (Ổn định & Rủi ro)
                               </div>
                               <CopyButton content={generateOperationsContent(selectedCentreData)} label="Operations" />
                             </div>
@@ -1599,7 +1599,7 @@ export default function ClassQualityPage() {
                       />
                     )}
                     <button className={`${styles.filterChip} ${quickFilterC === 'commentIssues' ? styles.chipActive : ''}`} onClick={() => setQuickFilterC(q => q === 'commentIssues' ? null : 'commentIssues')}>
-                      <AlertTriangle size={12} /> Vi phạm nhận xét
+                      <Icon.AlertTriangle size={12} /> Vi phạm nhận xét
                       {quickFilterC === 'commentIssues' && filteredCommentClasses.filter(c => (c.commentAnalysis.emptyCount + c.commentAnalysis.briefCount + c.commentAnalysis.duplicateCount + c.commentAnalysis.overdueCount) > 0).length > 0 && (
                         <span className={styles.chipBadge}>{filteredCommentClasses.filter(c => (c.commentAnalysis.emptyCount + c.commentAnalysis.briefCount + c.commentAnalysis.duplicateCount + c.commentAnalysis.overdueCount) > 0).length}</span>
                       )}
@@ -1710,7 +1710,7 @@ export default function ClassQualityPage() {
                       />
                     )}
                     <button className={`${styles.filterChip} ${quickFilterA === 'attendanceAlerts' ? styles.chipActive : ''}`} onClick={() => setQuickFilterA(q => q === 'attendanceAlerts' ? null : 'attendanceAlerts')}>
-                      <Bell size={12} /> Báo động vắng mặt
+                      <Icon.Bell size={12} /> Báo động vắng mặt
                       {quickFilterA === 'attendanceAlerts' && filteredAttendanceClasses.filter(c => c.attendanceAnalysis.totalAlerts > 0).length > 0 && (
                         <span className={styles.chipBadge}>{filteredAttendanceClasses.filter(c => c.attendanceAnalysis.totalAlerts > 0).length}</span>
                       )}
@@ -1827,7 +1827,7 @@ export default function ClassQualityPage() {
                       />
                     )}
                     <button className={`${styles.filterChip} ${quickFilterR === 'hasRescheduling' ? styles.chipActive : ''}`} onClick={() => setQuickFilterR(q => q === 'hasRescheduling' ? null : 'hasRescheduling')}>
-                      <Clock size={12} /> Có thay đổi lịch
+                      <Icon.Clock size={12} /> Có thay đổi lịch
                       {quickFilterR === 'hasRescheduling' && filteredReschedulingClasses.filter(c => c.reschedulingAnalysis.rescheduledSessions > 0).length > 0 && (
                         <span className={styles.chipBadge}>{filteredReschedulingClasses.filter(c => c.reschedulingAnalysis.rescheduledSessions > 0).length}</span>
                       )}
@@ -2010,7 +2010,7 @@ export default function ClassQualityPage() {
                       />
                     )}
                     <button className={`${styles.filterChip} ${quickFilterCP === 'hasIssues' ? styles.chipActive : ''}`} onClick={() => setQuickFilterCP(q => q === 'hasIssues' ? null : 'hasIssues')}>
-                      <AlertTriangle size={12} /> Có vấn đề điểm
+                      <Icon.AlertTriangle size={12} /> Có vấn đề điểm
                       {quickFilterCP === 'hasIssues' && filteredCheckpointClasses.filter(c => c.cp1Analysis.issueType || c.cp2Analysis.issueType || c.demoAnalysis.issueType).length > 0 && (
                         <span className={styles.chipBadge}>{filteredCheckpointClasses.filter(c => c.cp1Analysis.issueType || c.cp2Analysis.issueType || c.demoAnalysis.issueType).length}</span>
                       )}

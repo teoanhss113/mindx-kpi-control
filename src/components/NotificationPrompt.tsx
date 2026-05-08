@@ -5,7 +5,7 @@
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Bell, X } from 'lucide-react';
+import { Icon } from '@/components/ui';
 import { useNotifications } from '@/hooks/useNotifications';
 import styles from './NotificationPrompt.module.css';
 
@@ -62,7 +62,7 @@ export function NotificationPrompt() {
         >
           <div className={styles.content}>
             <div className={styles.icon}>
-              <Bell size={20} />
+              <Icon.Bell size={20} />
             </div>
             <div className={styles.text}>
               <h4>Bật thông báo</h4>
@@ -81,7 +81,7 @@ export function NotificationPrompt() {
                 className={styles.dismissButton}
                 aria-label="Đóng"
               >
-                <X size={18} />
+                <Icon.X size={18} />
               </button>
             </div>
           </div>

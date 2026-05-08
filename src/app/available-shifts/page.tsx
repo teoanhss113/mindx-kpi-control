@@ -4,8 +4,8 @@ import { useState, useEffect, useMemo } from 'react';
 import { AuthenticatedPage } from '@/components/AuthenticatedPage';
 import { UserLayout } from '@/components/UserLayout';
 import { useAuth } from '@/lib/AuthContext';
-import { useToast, ToastContainer, Toolbar, TableGroupHeader, EmptyState, Modal, ModalHeader } from '@/components/ui';
-import { getTeacherConfirmations, confirmOfficeHour, rejectOfficeHour } from '@/lib/teacher-confirmation-actions';
+import { useToast, ToastContainer, Toolbar, TableGroupHeader, EmptyState, Modal, ModalHeader, ModalFooter } from '@/components/ui';
+import { getTeacherConfirmations, confirmOfficeHour } from '@/lib/teacher-confirmation-actions';
 import { createShiftRequest, hasRequestedShift } from '@/lib/shift-request-actions';
 import { fetchOfficeHours, searchTeachers, type Teacher } from '@/services/officeHoursService';
 import type { TeacherConfirmation } from '@/lib/teacher-confirmation-actions';
@@ -20,8 +20,15 @@ const DOW_VI = ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Th�
 const CATEGORY_ORDER: Record<string, number> = { Coding: 0, Robotics: 1, Art: 2, Others: 3 };
 const SESSION_ORDER: Record<string, number> = { 'Sáng': 0, 'Chiều': 1, 'Tối': 2 };
 
-// Category palette — matches the convention used in /admin/teacher-schedule:
+// Category palette — emerald/indigo/amber for Coding/Robotics/Art:
 // Coding → emerald, Robotics → indigo, Art → amber.
+const CATEGORY_COLORS: Record<string, string> = {
+  Coding:   '#059669',
+  Robotics: 'var(--brand-indigo, #3b82f6)',
+  Art:      '#d97706',
+  Others:   'var(--border)',
+};
+
 const CATEGORY_STYLES: Record<string, React.CSSProperties> = {
   Coding:   { background: 'rgba(5, 150, 105, 0.10)',  color: '#047857', borderLeft: '3px solid var(--status-emerald, #059669)' },
   Robotics: { background: 'rgba(94, 106, 210, 0.10)', color: '#1e40af', borderLeft: '3px solid var(--brand-indigo)' },
@@ -83,16 +90,13 @@ export default function AvailableShiftsPage() {
   const [selectedCentres, setSelectedCentres] = useState<string[]>([]);
   
   // Modal states
-  const [showRejectModal, setShowRejectModal] = useState(false);
-  const [selectedOfficeHour, setSelectedOfficeHour] = useState<OfficeHourWithConfirmation | null>(null);
-  const [rejectionReason, setRejectionReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
   
   // Table visibility
   const [showTable, setShowTable] = useState(true);
 
   // Detail modal state
-  const [detailOfficeHour, setDetailOfficeHour] = useState<OfficeHour | null>(null);
+  const [detailItem, setDetailItem] = useState<OfficeHourWithConfirmation | null>(null);
 
   // Initialize date range based on current time
   useEffect(() => {
@@ -100,12 +104,12 @@ export default function AvailableShiftsPage() {
     const vnTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Ho_Chi_Minh' }));
     const hour = vnTime.getHours();
     const minute = vnTime.getMinutes();
-    
-    // If before 17:30, use today; if after 17:30, use yesterday
-    const targetDate = (hour < 17 || (hour === 17 && minute < 30)) 
-      ? vnTime 
-      : new Date(vnTime.setDate(vnTime.getDate() - 1));
-    
+
+    // If before 17:30, use today; if after 17:30, use tomorrow
+    const targetDate = (hour < 17 || (hour === 17 && minute < 30))
+      ? vnTime
+      : new Date(vnTime.setDate(vnTime.getDate() + 1));
+
     const dateStr = targetDate.toISOString().split('T')[0];
     setTimeFrom(dateStr);
     setTimeTo(dateStr);
@@ -387,12 +391,6 @@ export default function AvailableShiftsPage() {
     }
   }
 
-  function openRejectModal(item: OfficeHourWithConfirmation) {
-    setSelectedOfficeHour(item);
-    setRejectionReason('');
-    setShowRejectModal(true);
-  }
-
   function toOHInfo(oh: OfficeHour) {
     return {
       id: oh.id,
@@ -420,32 +418,6 @@ export default function AvailableShiftsPage() {
     }
   }
 
-  async function handleReject() {
-    if (!selectedOfficeHour || !session?.email) return;
-
-    try {
-      setSubmitting(true);
-      await rejectOfficeHour(
-        selectedOfficeHour.officeHour.id,
-        session.email,
-        rejectionReason,
-        toOHInfo(selectedOfficeHour.officeHour),
-      );
-      
-      addToast('Đã từ chối ca trực', 'success');
-      setShowRejectModal(false);
-      setSelectedOfficeHour(null);
-      setRejectionReason('');
-      
-      // Reload data
-      await handleFetch();
-    } catch (error) {
-      console.error('Error rejecting:', error);
-      addToast('Không thể từ chối ca trực', 'error');
-    } finally {
-      setSubmitting(false);
-    }
-  }
 
   // Sort items by Date → Centre → Khối → Buổi → start time, then compute
   // rowspan info so consecutive rows with the same value are merged.
@@ -664,14 +636,18 @@ export default function AvailableShiftsPage() {
                           }
 
                           const isNewDate = row.dateSpan > 0;
+                          const isAssignedPending = item.isAssignedToMe && (item.confirmation?.status === 'pending' || !item.confirmation);
+                          const hasNoTeacher = !oh.teacher;
+
+                          const confirmationHighlight = isAssignedPending ? { backgroundColor: 'rgba(59, 130, 246, 0.15)' } : {};
+                          const noTeacherHighlight = hasNoTeacher && !isAssignedPending ? { backgroundColor: 'rgba(217, 119, 6, 0.12)' } : {};
+                          const highlightStyle = { ...confirmationHighlight, ...noTeacherHighlight };
 
                           return (
                             <tr
                               key={oh.id}
-                              onClick={() => setDetailOfficeHour(oh)}
                               style={{
                                 borderTop: isNewDate ? '2px solid var(--border)' : '1px solid var(--border-subtle)',
-                                cursor: 'pointer',
                               }}
                             >
                               {row.dateSpan > 0 && (
@@ -701,7 +677,12 @@ export default function AvailableShiftsPage() {
                                 <td
                                   rowSpan={row.categorySpan}
                                   className={styles.mergedCell}
-                                  style={{ ...(CATEGORY_STYLES[row.category] || CATEGORY_STYLES.Others), fontWeight: 600 }}
+                                  style={{
+                                    fontWeight: 700,
+                                    backgroundColor: CATEGORY_COLORS[row.category] || 'var(--border)',
+                                    color: 'white',
+                                    borderLeft: 'none',
+                                  }}
                                 >
                                   {row.category}
                                 </td>
@@ -711,11 +692,11 @@ export default function AvailableShiftsPage() {
                                   {row.session}
                                 </td>
                               )}
-                              <td>{formatTime(oh.startTime)} - {formatTime(oh.endTime)}</td>
-                              <td>
+                              <td onClick={() => setDetailItem(item)} style={{ cursor: 'pointer', ...highlightStyle }}>{formatTime(oh.startTime)} - {formatTime(oh.endTime)}</td>
+                              <td onClick={() => setDetailItem(item)} style={{ cursor: 'pointer', ...highlightStyle }}>
                                 <span className={`${styles.reasonTag} ${oh.type === 'Trial' ? styles.demoTag : ''}`}>{oh.type || '—'}</span>
                               </td>
-                              <td>
+                              <td onClick={() => setDetailItem(item)} style={{ cursor: 'pointer', ...highlightStyle }}>
                                 {oh.courses && oh.courses.length > 0 ? (
                                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                                     {oh.courses.map(course => (
@@ -726,33 +707,23 @@ export default function AvailableShiftsPage() {
                                   <span style={{ color: 'var(--text-tertiary)' }}>—</span>
                                 )}
                               </td>
-                              <td style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                              <td onClick={() => setDetailItem(item)} style={{ fontSize: 13, color: 'var(--text-secondary)', cursor: 'pointer', ...highlightStyle }}>
                                 {oh.teacher?.fullName || <span style={{ color: 'var(--text-tertiary)', fontStyle: 'italic' }}>Chưa có GV</span>}
                               </td>
-                              <td style={{ textAlign: 'center' }}>{totalAppointments}</td>
-                              <td>{confirmationStatusDisplay}</td>
-                              <td>
+                              <td onClick={() => setDetailItem(item)} style={{ textAlign: 'center', cursor: 'pointer', ...highlightStyle }}>{totalAppointments}</td>
+                              <td onClick={() => setDetailItem(item)} style={{ cursor: 'pointer', ...highlightStyle }}>{confirmationStatusDisplay}</td>
+                              <td onClick={(e) => e.stopPropagation()} style={highlightStyle}>
                                 <div style={{ display: 'flex', gap: 'var(--space-2)', justifyContent: 'center' }}>
                                   {item.isAssignedToMe ? (
                                     item.confirmation?.status === 'pending' || !item.confirmation ? (
-                                      <>
-                                        <button
-                                          onClick={(e) => { e.stopPropagation(); handleConfirm(item); }}
-                                          disabled={submitting}
-                                          className={styles.primaryBtn}
-                                          style={{ padding: '6px 12px', fontSize: 12, minWidth: 'auto' }}
-                                        >
-                                          {submitting ? 'Đang xử lý...' : 'Xác nhận'}
-                                        </button>
-                                        <button
-                                          onClick={(e) => { e.stopPropagation(); openRejectModal(item); }}
-                                          disabled={submitting}
-                                          className={styles.clearCacheBtn}
-                                          style={{ padding: '6px 12px', fontSize: 12, minWidth: 'auto' }}
-                                        >
-                                          Từ chối
-                                        </button>
-                                      </>
+                                      <button
+                                        onClick={(e) => { e.stopPropagation(); handleConfirm(item); }}
+                                        disabled={submitting}
+                                        className={styles.primaryBtn}
+                                        style={{ padding: '6px 12px', fontSize: 12, minWidth: 'auto' }}
+                                      >
+                                        {submitting ? 'Đang xử lý...' : 'Xác nhận'}
+                                      </button>
                                     ) : item.confirmation?.status === 'confirmed' ? (
                                       <span style={{ color: 'var(--text-tertiary)', fontSize: 12 }}>Đã xử lý</span>
                                     ) : (
@@ -791,62 +762,41 @@ export default function AvailableShiftsPage() {
         )}
 
         {/* Detail Modal — read-only office hour view */}
-        <Modal open={!!detailOfficeHour} onClose={() => setDetailOfficeHour(null)}>
-          {detailOfficeHour && (
-            <>
-              <ModalHeader
-                title={`Ca ${detailOfficeHour.type} – ${formatTime(detailOfficeHour.startTime)} - ${formatTime(detailOfficeHour.endTime)}`}
-                subtitle={`${detailOfficeHour.centre?.name || ''}${detailOfficeHour.courses?.length ? ' · ' + detailOfficeHour.courses.map(c => c.shortName).join(', ') : ''}`}
-                onClose={() => setDetailOfficeHour(null)}
-              />
-              <OfficeHourDetailsView oh={detailOfficeHour} />
-            </>
-          )}
+        <Modal open={!!detailItem} onClose={() => setDetailItem(null)}>
+          {detailItem && (() => {
+            const oh = detailItem.officeHour;
+            const isPending = detailItem.isAssignedToMe && (detailItem.confirmation?.status === 'pending' || !detailItem.confirmation);
+            return (
+              <>
+                <ModalHeader
+                  title={`Ca ${oh.type} – ${formatTime(oh.startTime)} - ${formatTime(oh.endTime)}`}
+                  subtitle={`${oh.centre?.name || ''}${oh.courses?.length ? ' · ' + oh.courses.map(c => c.shortName).join(', ') : ''}`}
+                  onClose={() => setDetailItem(null)}
+                />
+                <OfficeHourDetailsView oh={oh} />
+                {isPending && (
+                  <ModalFooter
+                    primaryButton={{
+                      label: submitting ? 'Đang xử lý...' : 'Xác nhận tham gia',
+                      variant: 'primary',
+                      disabled: submitting,
+                      onClick: async () => {
+                        await handleConfirm(detailItem);
+                        setDetailItem(null);
+                      },
+                    }}
+                    secondaryButton={{
+                      label: 'Đóng',
+                      variant: 'secondary',
+                      onClick: () => setDetailItem(null),
+                    }}
+                  />
+                )}
+              </>
+            );
+          })()}
         </Modal>
 
-        {/* Reject Modal */}
-        {showRejectModal && selectedOfficeHour && (
-          <Modal open={showRejectModal} onClose={() => setShowRejectModal(false)}>
-            <ModalHeader
-              title="Từ chối ca trực"
-              onClose={() => setShowRejectModal(false)}
-            />
-            <div style={{ padding: 'var(--space-5)' }}>
-              <p style={{ marginBottom: 'var(--space-4)', lineHeight: 1.6, color: 'var(--text-secondary)' }}>
-                Vui lòng cho biết lý do từ chối ca trực tại <strong>{selectedOfficeHour.officeHour.centre?.name}</strong>:
-              </p>
-              <textarea
-                value={rejectionReason}
-                onChange={(e) => setRejectionReason(e.target.value)}
-                placeholder="Nhập lý do từ chối..."
-                rows={4}
-                className={styles.textarea}
-                style={{ marginBottom: 'var(--space-4)' }}
-              />
-              <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
-                <button
-                  onClick={() => setShowRejectModal(false)}
-                  disabled={submitting}
-                  className={styles.clearCacheBtn}
-                  style={{ flex: 1 }}
-                >
-                  Huỷ
-                </button>
-                <button
-                  onClick={handleReject}
-                  disabled={submitting || !rejectionReason.trim()}
-                  className={styles.primaryBtn}
-                  style={{ 
-                    flex: 1,
-                    opacity: !rejectionReason.trim() ? 0.5 : 1,
-                  }}
-                >
-                  {submitting ? 'Đang xử lý...' : 'Xác nhận từ chối'}
-                </button>
-              </div>
-            </div>
-          </Modal>
-        )}
       </UserLayout>
     </AuthenticatedPage>
   );

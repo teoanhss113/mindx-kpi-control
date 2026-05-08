@@ -4,7 +4,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Bell } from 'lucide-react';
+import { Icon } from '@/components/ui';
 import { useNotifications } from '@/hooks/useNotifications';
 import { authFetch } from '@/lib/auth/clientAuth';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -159,7 +159,7 @@ export function NotificationBell() {
         className={styles.bellButton}
         aria-label="Thông báo"
       >
-        <Bell size={18} />
+        <Icon.Bell size={18} />
         {unreadCount > 0 && (
           <span className={styles.badge}>
             {unreadCount > 9 ? '9+' : unreadCount}
@@ -222,7 +222,7 @@ export function NotificationBell() {
             <div className={styles.notificationsList}>
               {notifications.length === 0 ? (
                 <div className={styles.emptyState}>
-                  <Bell size={32} />
+                  <Icon.Bell size={32} />
                   <p>Không có thông báo</p>
                 </div>
               ) : (

@@ -1,5 +1,5 @@
-// Utility to send push notifications
-// Use this from server-side code to send notifications to users
+// Utility to send push notifications (client-safe)
+import { formatOHLabel, type OHInfo } from '@/lib/notificationFormat';
 
 interface NotificationOptions {
   title: string;
@@ -195,6 +195,23 @@ export const NotificationTemplates = {
     body: `Ca trải nghiệm ${time} tại ${location} sắp bắt đầu`,
     tag: 'office-hours-reminder',
     url: '/office-hours'
+  }),
+
+  // Admin assigns/updates teacher for office hour
+  officeHourAssigned: (info: OHInfo) => ({
+    title: 'Bạn được phân công ca trực',
+    body: formatOHLabel(info),
+    tag: 'office-hour-assigned',
+    url: '/available-shifts',
+    requireInteraction: true,
+  }),
+
+  // Admin approves office hour — notify assigned teacher
+  officeHourApproved: (info: OHInfo) => ({
+    title: 'Ca trực đã được phê duyệt',
+    body: formatOHLabel(info),
+    tag: 'office-hour-approved',
+    url: '/available-shifts',
   }),
 
   // Generic notification

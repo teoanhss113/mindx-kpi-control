@@ -14,6 +14,7 @@ import { fetchAllCentres, Centre } from '@/services/centresService';
 import { searchUsers } from '@/services/ticketService';
 import { getCache, setCache, clearCache } from '@/lib/idb';
 import { getOfficeHourCategory } from '@/lib/courseCategories';
+import { sendNotification, NotificationTemplates } from '@/lib/sendNotification';
 import { OfficeHour, OFFICE_HOUR_STATUS, OFFICE_HOUR_TYPE } from '@/types/officeHours';
 import { useToast, ToastContainer, initials, EmptyState, Toolbar, SelectOption, TableGroupHeader, Modal, ModalHeader, MultiSelect, TableToolbar, ChartSectionHeader, StandardXAxis, StandardYAxisCategory, StandardYAxisNumber, ChartLegend, ComposedChartConfig, CustomTooltip, UserSearchInput, type UserSearchResult, ModalFooter, CentreSelect, QuickFilterChips, ShiftRequestSuggestions, type ShiftRequest } from '@/components/ui';
 import { useQuickFilterChips } from '@/hooks/useUserPreferences';
@@ -458,9 +459,22 @@ function OfficeHoursPageInner() {
       const approvedOfficeHour = await approveOfficeHour(officeHourId);
 
       // Update the office hour in the list
-      setOfficeHours(prev => 
+      setOfficeHours(prev =>
         prev.map(oh => oh.id === officeHourId ? approvedOfficeHour : oh)
       );
+
+      // Notify assigned teacher
+      if (approvedOfficeHour.teacher?.email) {
+        sendNotification({
+          userId: approvedOfficeHour.teacher.email,
+          notification: NotificationTemplates.officeHourApproved({
+            centreName: approvedOfficeHour.centre?.name,
+            startTime: approvedOfficeHour.startTime,
+            endTime: approvedOfficeHour.endTime,
+            courses: approvedOfficeHour.courses?.map(c => c.shortName),
+          }),
+        }).catch(() => {});
+      }
 
       addToast('Phê duyệt ca trực thành công', 'success');
     } catch (error: any) {
@@ -523,9 +537,22 @@ function OfficeHoursPageInner() {
       });
 
       // Update the office hour in the list
-      setOfficeHours(prev => 
+      setOfficeHours(prev =>
         prev.map(oh => oh.id === officeHourId ? updatedOfficeHour : oh)
       );
+
+      // Notify assigned teacher
+      if (updatedOfficeHour.teacher?.email) {
+        sendNotification({
+          userId: updatedOfficeHour.teacher.email,
+          notification: NotificationTemplates.officeHourAssigned({
+            centreName: updatedOfficeHour.centre?.name,
+            startTime: updatedOfficeHour.startTime,
+            endTime: updatedOfficeHour.endTime,
+            courses: updatedOfficeHour.courses?.map(c => c.shortName),
+          }),
+        }).catch(() => {});
+      }
 
       addToast('Cập nhật ca trực thành công', 'success');
     } catch (error: any) {

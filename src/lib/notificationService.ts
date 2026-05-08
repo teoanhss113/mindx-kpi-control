@@ -165,59 +165,9 @@ export async function getAdminEmailsForPage(pageKey: string): Promise<string[]> 
 
 // ─── Office hour info helper ──────────────────────────────────────────────────
 
-export interface OfficeHourInfo {
-  id?: string;
-  startTime?: string;
-  endTime?: string;
-  centreId?: string;
-  centreName?: string;
-  courses?: string[];
-  type?: string;
-}
+import { formatOHLabel, type OHInfo } from '@/lib/notificationFormat';
 
-const DOW_VI = ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
-
-function sessionLabel(endIso: string): string {
-  const h = parseInt(
-    new Intl.DateTimeFormat('vi-VN', { hour: 'numeric', timeZone: 'Asia/Ho_Chi_Minh', hour12: false }).format(new Date(endIso)),
-    10,
-  );
-  if (h <= 12) return 'Sáng';
-  if (h <= 18) return 'Chiều';
-  return 'Tối';
-}
-
-function formatOHLabel(info?: OfficeHourInfo): string {
-  if (!info) return '';
-  const parts: string[] = [];
-
-  if (info.startTime) {
-    try {
-      const fmtTime = (iso: string) =>
-        new Intl.DateTimeFormat('vi-VN', {
-          hour: '2-digit', minute: '2-digit',
-          timeZone: 'Asia/Ho_Chi_Minh', hour12: false,
-        }).format(new Date(iso));
-
-      const d = new Date(info.startTime);
-      // Get local VN date for day-of-week and DD/MM
-      const vnDate = new Date(d.toLocaleString('en-US', { timeZone: 'Asia/Ho_Chi_Minh' }));
-      const dow = DOW_VI[vnDate.getDay()];
-      const ddmm = `${String(vnDate.getDate()).padStart(2, '0')}/${String(vnDate.getMonth() + 1).padStart(2, '0')}`;
-      const session = info.endTime ? sessionLabel(info.endTime) : '';
-      const timeRange = info.endTime
-        ? `${fmtTime(info.startTime)}–${fmtTime(info.endTime)}`
-        : fmtTime(info.startTime);
-
-      parts.push(`${dow} ${ddmm} ${session} ${timeRange}`.trim());
-    } catch { /* ignore invalid dates */ }
-  }
-
-  if (info.centreName) parts.push(info.centreName);
-  if (info.courses?.length) parts.push(info.courses.slice(0, 2).join(', '));
-
-  return parts.join(' · ');
-}
+export type OfficeHourInfo = OHInfo;
 
 function buildOHUrl(info?: OfficeHourInfo): string {
   if (!info?.startTime) return '/admin/office-hours';

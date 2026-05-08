@@ -22,13 +22,6 @@ const REQUIRED_PAGES = [
     display_order: 0,
   },
   {
-    key: 'my-schedule',
-    page_name: 'Lịch trực của tôi',
-    path: '/my-schedule',
-    description: 'Xem lịch trực ca trải nghiệm cá nhân',
-    display_order: 1,
-  },
-  {
     key: 'available-shifts',
     page_name: 'Ca trực khả dụng',
     path: '/available-shifts',

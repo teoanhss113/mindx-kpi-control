@@ -9,6 +9,24 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import {
+  Menu as _Menu, RefreshCw, Trash2, BarChart2, X as _X,
+  ChevronDown as _ChevronDown, ChevronLeft as _ChevronLeft, ChevronRight as _ChevronRight,
+  Search as _Search, Filter as _Filter, Table2,
+  Users as _Users, PieChart as _PieChart, User as _User,
+  Monitor as _Monitor, Building2, MapPin as _MapPin,
+  CheckCircle as _CheckCircle, XCircle as _XCircle,
+  ArrowUpDown, ArrowUp, ArrowDown,
+  AlertTriangle as _AlertTriangle, AlertCircle as _AlertCircle,
+  Pencil, Plus as _Plus, Repeat2, UsersRound,
+  Bell as _Bell, BellOff as _BellOff,
+  TrendingDown as _TrendingDown, TrendingUp as _TrendingUp,
+  Clock as _Clock, Check as _Check, Eye as _Eye,
+  Download as _Download, Settings as _Settings, Info as _Info,
+  GripVertical as _GripVertical,
+  FileText as _FileText, Calendar as _Calendar, CalendarDays as _CalendarDays,
+  ClipboardCheck as _ClipboardCheck, Target as _Target,
+} from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import styles from '@/app/dashboard.module.css'
 import { CentreSelect as CentreSelectComponent } from './CentreSelect'
@@ -34,572 +52,58 @@ export { Badge, StatusBadge, CountBadge, TopicBadge, RoleBadge } from './Badge'
 export type { BadgeVariant, BadgeSize, BadgeShape, BadgeProps } from './Badge'
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ICONS  — single canonical set; import from here, never inline per-page
+// ICONS  — single canonical set backed by lucide-react
+// import from here, never inline per-page and never import lucide directly
 // ─────────────────────────────────────────────────────────────────────────────
+type P = { size?: number; color?: string }
+
 export const Icon = {
-  /** ≡ Hamburger / menu */
-  Menu: () => (
-    <svg
-      width="18"
-      height="18"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <line x1="3" y1="6" x2="21" y2="6" />
-      <line x1="3" y1="12" x2="21" y2="12" />
-      <line x1="3" y1="18" x2="21" y2="18" />
-    </svg>
-  ),
-  /** Reload / refresh — used by fetch button */
-  Refresh: () => (
-    <svg
-      width="13"
-      height="13"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.5"
-    >
-      <polyline points="23 4 23 10 17 10" />
-      <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
-    </svg>
-  ),
-  /** Trash / clear cache */
-  Trash: (props?: { size?: number }) => (
-    <svg
-      width={props?.size ?? 13}
-      height={props?.size ?? 13}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <polyline points="3 6 5 6 21 6" />
-      <path d="M19 6l-1 14H6L5 6" />
-      <path d="M10 11v6M14 11v6" />
-      <path d="M9 6V4h6v2" />
-    </svg>
-  ),
-  /** Bar chart — chart section header */
-  BarChart: () => (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <line x1="18" y1="20" x2="18" y2="10" />
-      <line x1="12" y1="20" x2="12" y2="4" />
-      <line x1="6" y1="20" x2="6" y2="14" />
-    </svg>
-  ),
-  /** Close × */
-  Close: () => (
-    <svg
-      width="12"
-      height="12"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.5"
-    >
-      <line x1="18" y1="6" x2="6" y2="18" />
-      <line x1="6" y1="6" x2="18" y2="18" />
-    </svg>
-  ),
-  /** Chevron down */
-  ChevronDown: () => (
-    <svg
-      width="11"
-      height="11"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.5"
-    >
-      <polyline points="6 9 12 15 18 9" />
-    </svg>
-  ),
-  /** Chevron left */
-  ChevronLeft: ({ size = 16 }: { size?: number }) => (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.5"
-    >
-      <polyline points="15 18 9 12 15 6" />
-    </svg>
-  ),
-  /** Chevron right */
-  ChevronRight: ({ size = 16 }: { size?: number }) => (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.5"
-    >
-      <polyline points="9 18 15 12 9 6" />
-    </svg>
-  ),
-  /** Search */
-  Search: (props: { size?: number; color?: string }) => (
-    <svg
-      width={props.size ?? 14}
-      height={props.size ?? 14}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke={props.color ?? 'var(--text-quaternary)'}
-      strokeWidth="2"
-    >
-      <circle cx="11" cy="11" r="8" />
-      <line x1="21" y1="21" x2="16.65" y2="16.65" />
-    </svg>
-  ),
-  /** Filter sliders */
-  Filter: () => (
-    <svg
-      width="12"
-      height="12"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <line x1="4" y1="6" x2="11" y2="6" />
-      <line x1="13" y1="6" x2="20" y2="6" />
-      <line x1="4" y1="12" x2="20" y2="12" />
-      <line x1="4" y1="18" x2="20" y2="18" />
-    </svg>
-  ),
-  /** Table grid */
-  Table: () => (
-    <svg
-      width="15"
-      height="15"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <rect x="3" y="3" width="18" height="18" rx="2" />
-      <line x1="3" y1="9" x2="21" y2="9" />
-      <line x1="9" y1="21" x2="9" y2="9" />
-    </svg>
-  ),
-  /** People / teacher group */
-  People: () => (
-    <svg
-      width="15"
-      height="15"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-      <circle cx="9" cy="7" r="4" />
-      <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-    </svg>
-  ),
-  /** Pie chart */
-  PieChart: () => (
-    <svg
-      width="15"
-      height="15"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <path d="M21.21 15.89A10 10 0 1 1 8 2.83" />
-      <path d="M22 12A10 10 0 0 0 12 2v10z" />
-    </svg>
-  ),
-  /** User / person icon */
-  User: (props?: { size?: number }) => (
-    <svg
-      width={props?.size ?? 12}
-      height={props?.size ?? 12}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-      <circle cx="12" cy="7" r="4" />
-    </svg>
-  ),
-  /** Monitor / online icon */
-  Monitor: (props?: { size?: number }) => (
-    <svg
-      width={props?.size ?? 12}
-      height={props?.size ?? 12}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
-      <line x1="8" y1="21" x2="16" y2="21" />
-      <line x1="12" y1="17" x2="12" y2="21" />
-    </svg>
-  ),
-  /** Building / offline icon */
-  Building: (props?: { size?: number }) => (
-    <svg
-      width={props?.size ?? 12}
-      height={props?.size ?? 12}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <rect x="4" y="2" width="16" height="20" rx="2" ry="2" />
-      <path d="M9 22v-4h6v4" />
-      <path d="M8 6h.01M16 6h.01M12 6h.01M12 10h.01M12 14h.01M16 10h.01M16 14h.01M8 10h.01M8 14h.01" />
-    </svg>
-  ),
-  /** Users / students icon */
-  Users: (props?: { size?: number }) => (
-    <svg
-      width={props?.size ?? 12}
-      height={props?.size ?? 12}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-      <circle cx="9" cy="7" r="4" />
-      <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-    </svg>
-  ),
-  /** MapPin / location icon */
-  MapPin: (props?: { size?: number }) => (
-    <svg
-      width={props?.size ?? 12}
-      height={props?.size ?? 12}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
-      <circle cx="12" cy="10" r="3" />
-    </svg>
-  ),
-  /** CheckCircle / success icon */
-  CheckCircle: (props?: { size?: number }) => (
-    <svg
-      width={props?.size ?? 14}
-      height={props?.size ?? 14}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <circle cx="12" cy="12" r="10" />
-      <polyline points="9 12 11 14 15 10" />
-    </svg>
-  ),
-  /** XCircle / error icon */
-  XCircle: (props?: { size?: number }) => (
-    <svg
-      width={props?.size ?? 14}
-      height={props?.size ?? 14}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <circle cx="12" cy="12" r="10" />
-      <line x1="15" y1="9" x2="9" y2="15" />
-      <line x1="9" y1="9" x2="15" y2="15" />
-    </svg>
-  ),
-  /** Sort arrows */
-  SortBoth: () => <span style={{ opacity: 0.3, fontSize: 10 }}>↕</span>,
-  SortAsc: () => <span style={{ opacity: 1, fontSize: 10 }}>↑</span>,
-  SortDesc: () => <span style={{ opacity: 1, fontSize: 10 }}>↓</span>,
-
-  /** Alert Triangle / Warning */
-  AlertTriangle: (props?: { size?: number }) => (
-    <svg
-      width={props?.size ?? 14}
-      height={props?.size ?? 14}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-      <line x1="12" y1="9" x2="12" y2="13" />
-      <line x1="12" y1="17" x2="12.01" y2="17" />
-    </svg>
-  ),
-
-  /** Alert Circle / Alert */
-  AlertCircle: (props?: { size?: number }) => (
-    <svg
-      width={props?.size ?? 14}
-      height={props?.size ?? 14}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <circle cx="12" cy="12" r="10" />
-      <line x1="12" y1="8" x2="12" y2="12" />
-      <line x1="12" y1="16" x2="12.01" y2="16" />
-    </svg>
-  ),
-
-  /** Edit / Pencil */
-  Edit: (props?: { size?: number }) => (
-    <svg
-      width={props?.size ?? 14}
-      height={props?.size ?? 14}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-    </svg>
-  ),
-
-  /** Plus / Add */
-  Plus: (props?: { size?: number }) => (
-    <svg
-      width={props?.size ?? 14}
-      height={props?.size ?? 14}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <line x1="12" y1="5" x2="12" y2="19" />
-      <line x1="5" y1="12" x2="19" y2="12" />
-    </svg>
-  ),
-
-  /** Repeat / Refresh / Change */
-  Repeat: (props?: { size?: number }) => (
-    <svg
-      width={props?.size ?? 14}
-      height={props?.size ?? 14}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <polyline points="17 1 21 5 17 9" />
-      <path d="M3 11V9a4 4 0 0 1 4-4h14" />
-      <polyline points="7 23 3 19 7 15" />
-      <path d="M21 13v2a4 4 0 0 1-4 4H3" />
-    </svg>
-  ),
-
-  /** Users Group / Multiple People */
-  UsersGroup: (props?: { size?: number }) => (
-    <svg
-      width={props?.size ?? 14}
-      height={props?.size ?? 14}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-      <circle cx="9" cy="7" r="4" />
-      <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-    </svg>
-  ),
-
-  /** Bell / Notification / Alert */
-  Bell: (props?: { size?: number }) => (
-    <svg
-      width={props?.size ?? 14}
-      height={props?.size ?? 14}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
-      <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-    </svg>
-  ),
-
-  /** TrendingDown / Declining */
-  TrendingDown: (props?: { size?: number }) => (
-    <svg
-      width={props?.size ?? 14}
-      height={props?.size ?? 14}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <polyline points="23 18 13.5 8.5 8.5 13.5 1 6" />
-      <polyline points="17 18 23 18 23 12" />
-    </svg>
-  ),
-
-  /** TrendingUp / Rising */
-  TrendingUp: (props?: { size?: number }) => (
-    <svg
-      width={props?.size ?? 14}
-      height={props?.size ?? 14}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <polyline points="23 6 13.5 15.5 8.5 10.5 1 18" />
-      <polyline points="17 6 23 6 23 12" />
-    </svg>
-  ),
-
-  /** Clock / Time */
-  Clock: (props?: { size?: number }) => (
-    <svg
-      width={props?.size ?? 14}
-      height={props?.size ?? 14}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <circle cx="12" cy="12" r="10" />
-      <polyline points="12 6 12 12 16 14" />
-    </svg>
-  ),
-
-  /** Check / Checkmark */
-  Check: (props?: { size?: number }) => (
-    <svg
-      width={props?.size ?? 14}
-      height={props?.size ?? 14}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.5"
-    >
-      <polyline points="20 6 9 17 4 12" />
-    </svg>
-  ),
-
-  /** X / Close small */
-  X: (props?: { size?: number }) => (
-    <svg
-      width={props?.size ?? 12}
-      height={props?.size ?? 12}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.5"
-    >
-      <line x1="18" y1="6" x2="6" y2="18" />
-      <line x1="6" y1="6" x2="18" y2="18" />
-    </svg>
-  ),
-
-  /** Eye / View */
-  Eye: (props?: { size?: number }) => (
-    <svg
-      width={props?.size ?? 14}
-      height={props?.size ?? 14}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-      <circle cx="12" cy="12" r="3" />
-    </svg>
-  ),
-
-  /** Download / Export */
-  Download: (props?: { size?: number }) => (
-    <svg
-      width={props?.size ?? 14}
-      height={props?.size ?? 14}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-      <polyline points="7 10 12 15 17 10" />
-      <line x1="12" y1="15" x2="12" y2="3" />
-    </svg>
-  ),
-
-  /** Settings / Gear */
-  Settings: (props?: { size?: number }) => (
-    <svg
-      width={props?.size ?? 14}
-      height={props?.size ?? 14}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
-      <circle cx="12" cy="12" r="3" />
-    </svg>
-  ),
-
-  /** Info / Information circle */
-  Info: (props?: { size?: number }) => (
-    <svg
-      width={props?.size ?? 14}
-      height={props?.size ?? 14}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <circle cx="12" cy="12" r="10" />
-      <line x1="12" y1="16" x2="12" y2="12" />
-      <line x1="12" y1="8" x2="12.01" y2="8" />
-    </svg>
-  ),
-
-  /** GripVertical / Drag handle */
-  GripVertical: (props?: { size?: number }) => (
-    <svg
-      width={props?.size ?? 16}
-      height={props?.size ?? 16}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <line x1="9" y1="6" x2="9" y2="6.01" />
-      <line x1="15" y1="6" x2="15" y2="6.01" />
-      <line x1="9" y1="12" x2="9" y2="12.01" />
-      <line x1="15" y1="12" x2="15" y2="12.01" />
-      <line x1="9" y1="18" x2="9" y2="18.01" />
-      <line x1="15" y1="18" x2="15" y2="18.01" />
-    </svg>
-  ),
+  Menu:           (p?: P) => <_Menu            size={p?.size ?? 18} color={p?.color} />,
+  Refresh:        (p?: P) => <RefreshCw         size={p?.size ?? 13} color={p?.color} />,
+  Trash:          (p?: P) => <Trash2            size={p?.size ?? 13} color={p?.color} />,
+  BarChart:       (p?: P) => <BarChart2         size={p?.size ?? 14} color={p?.color} />,
+  Close:          (p?: P) => <_X               size={p?.size ?? 12} color={p?.color} />,
+  ChevronDown:    (p?: P) => <_ChevronDown     size={p?.size ?? 11} color={p?.color} />,
+  ChevronLeft:    (p?: P) => <_ChevronLeft     size={p?.size ?? 16} color={p?.color} />,
+  ChevronRight:   (p?: P) => <_ChevronRight    size={p?.size ?? 16} color={p?.color} />,
+  Search:         (p?: P) => <_Search          size={p?.size ?? 14} color={p?.color ?? 'var(--text-quaternary)'} />,
+  Filter:         (p?: P) => <_Filter          size={p?.size ?? 12} color={p?.color} />,
+  Table:          (p?: P) => <Table2           size={p?.size ?? 15} color={p?.color} />,
+  People:         (p?: P) => <_Users           size={p?.size ?? 15} color={p?.color} />,
+  PieChart:       (p?: P) => <_PieChart        size={p?.size ?? 15} color={p?.color} />,
+  User:           (p?: P) => <_User            size={p?.size ?? 12} color={p?.color} />,
+  Monitor:        (p?: P) => <_Monitor         size={p?.size ?? 12} color={p?.color} />,
+  Building:       (p?: P) => <Building2        size={p?.size ?? 12} color={p?.color} />,
+  Users:          (p?: P) => <_Users           size={p?.size ?? 12} color={p?.color} />,
+  MapPin:         (p?: P) => <_MapPin          size={p?.size ?? 12} color={p?.color} />,
+  CheckCircle:    (p?: P) => <_CheckCircle     size={p?.size ?? 14} color={p?.color} />,
+  XCircle:        (p?: P) => <_XCircle         size={p?.size ?? 14} color={p?.color} />,
+  SortBoth:       (p?: P) => <ArrowUpDown      size={p?.size ?? 10} color={p?.color} style={{ opacity: 0.3 }} />,
+  SortAsc:        (p?: P) => <ArrowUp          size={p?.size ?? 10} color={p?.color} />,
+  SortDesc:       (p?: P) => <ArrowDown        size={p?.size ?? 10} color={p?.color} />,
+  AlertTriangle:  (p?: P) => <_AlertTriangle   size={p?.size ?? 14} color={p?.color} />,
+  AlertCircle:    (p?: P) => <_AlertCircle     size={p?.size ?? 14} color={p?.color} />,
+  Edit:           (p?: P) => <Pencil           size={p?.size ?? 14} color={p?.color} />,
+  Plus:           (p?: P) => <_Plus            size={p?.size ?? 14} color={p?.color} />,
+  Repeat:         (p?: P) => <Repeat2          size={p?.size ?? 14} color={p?.color} />,
+  UsersGroup:     (p?: P) => <UsersRound       size={p?.size ?? 14} color={p?.color} />,
+  Bell:           (p?: P) => <_Bell            size={p?.size ?? 14} color={p?.color} />,
+  BellOff:        (p?: P) => <_BellOff         size={p?.size ?? 14} color={p?.color} />,
+  TrendingDown:   (p?: P) => <_TrendingDown    size={p?.size ?? 14} color={p?.color} />,
+  TrendingUp:     (p?: P) => <_TrendingUp      size={p?.size ?? 14} color={p?.color} />,
+  Clock:          (p?: P) => <_Clock           size={p?.size ?? 14} color={p?.color} />,
+  Check:          (p?: P) => <_Check           size={p?.size ?? 14} color={p?.color} />,
+  X:              (p?: P) => <_X               size={p?.size ?? 12} color={p?.color} />,
+  Eye:            (p?: P) => <_Eye             size={p?.size ?? 14} color={p?.color} />,
+  Download:       (p?: P) => <_Download        size={p?.size ?? 14} color={p?.color} />,
+  Settings:       (p?: P) => <_Settings        size={p?.size ?? 14} color={p?.color} />,
+  Info:           (p?: P) => <_Info            size={p?.size ?? 14} color={p?.color} />,
+  GripVertical:   (p?: P) => <_GripVertical    size={p?.size ?? 16} color={p?.color} />,
+  FileText:       (p?: P) => <_FileText        size={p?.size ?? 15} color={p?.color} />,
+  Calendar:       (p?: P) => <_Calendar        size={p?.size ?? 15} color={p?.color} />,
+  CalendarDays:   (p?: P) => <_CalendarDays    size={p?.size ?? 15} color={p?.color} />,
+  ClipboardCheck: (p?: P) => <_ClipboardCheck  size={p?.size ?? 16} color={p?.color} />,
+  Target:         (p?: P) => <_Target          size={p?.size ?? 16} color={p?.color} />,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

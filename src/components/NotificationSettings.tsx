@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Bell, BellOff } from 'lucide-react';
+import { Icon } from '@/components/ui';
 import { useNotifications } from '@/hooks/useNotifications';
 import { authFetch } from '@/lib/auth/clientAuth';
 import styles from './NotificationSettings.module.css';
@@ -58,7 +58,7 @@ export function NotificationSettings() {
     return (
       <div className={styles.container}>
         <div className={styles.unsupported}>
-          <BellOff size={24} />
+          <Icon.BellOff size={24} />
           <p>{message}</p>
         </div>
       </div>
@@ -69,7 +69,7 @@ export function NotificationSettings() {
     <div className={styles.container}>
       <div className={styles.header}>
         <div className={styles.headerIcon}>
-          <Bell size={20} />
+          <Icon.Bell size={20} />
         </div>
         <div className={styles.headerText}>
           <h3>Thông báo đẩy</h3>
