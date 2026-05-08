@@ -28,6 +28,7 @@ import {
   StandardXAxis, StandardYAxisCategory, CustomTooltip, VerticalBarChartConfig,
   SortableHeader, CentreSelect, QuickFilterChips, ExportButton,
   CSVExportSettings, type CSVColumnConfig,
+  COMPLETION_STATUS_LABELS, CompletionStatusBadge, type CompletionStatusKind,
 } from '@/components/ui';
 import { useTableSort } from '@/hooks/useTableSort';
 import { useQuickFilterChips } from '@/hooks/useUserPreferences';
@@ -479,12 +480,14 @@ export default function DashboardPage() {
       });
       const info = st.completionInfo;
       const isPassed = info?.status === 'PASSED' || info?.status === 'COMPLETED' || info?.status === 'FINISHED';
-      const statusLabel = exempt ? 'Miễn trừ' : isPassed ? 'Hoàn thành' : 'Chưa hoàn thành';
+      const statusKind: CompletionStatusKind = exempt ? 'exempt' : isPassed ? 'completed' : 'incomplete';
+      const statusLabel = COMPLETION_STATUS_LABELS[statusKind];
       
       return {
         ...st,
         name: st.student.fullName || st.student.customer?.fullName || '',
         statusLabel,
+        statusKind,
         statusOrder: exempt ? 0 : isPassed ? 1 : 2,
         reason: info?.reason || '',
         absentCount,
@@ -1017,12 +1020,11 @@ export default function DashboardPage() {
                       });
                       const info = st.completionInfo;
                       const isPassed = info?.status === 'PASSED' || info?.status === 'COMPLETED' || info?.status === 'FINISHED';
-                      const isFailed = info?.status === 'UNCOMPLETED';
-                      const pill = st.exempt ? styles.exempt : isPassed ? styles.passed : isFailed ? styles.failed : '';
+                      const statusKind: CompletionStatusKind = st.exempt ? 'exempt' : isPassed ? 'completed' : 'incomplete';
                       return (
                         <tr key={st._id}>
                           <td style={{ fontWeight: 510 }}>{st.name}</td>
-                          <td><span className={`${styles.statusPill} ${pill}`}>{st.statusLabel}</span></td>
+                          <td><CompletionStatusBadge status={statusKind} /></td>
                           <td style={{ fontSize: 12, color: info?.reason === DEMO_REASON_KEY ? 'var(--status-dark-orange)' : 'var(--text-tertiary)' }}>
                             {st.exempt ? <em style={{ color: 'var(--text-quaternary)' }}>Chưa phát sinh buổi học</em>
                               : info?.reason ? (REASON_LABELS[info.reason] || info.reason) : '—'}

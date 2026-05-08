@@ -52,13 +52,13 @@ export function ConfirmDialog({
   const getIconColor = () => {
     switch (variant) {
       case 'danger':
-        return '#dc2626'; // Red
+        return 'var(--status-error)';
       case 'warning':
-        return '#f59e0b'; // Orange
+        return 'var(--status-warning)';
       case 'info':
-        return '#3b82f6'; // Blue
+        return 'var(--brand-indigo)';
       default:
-        return '#dc2626';
+        return 'var(--status-error)';
     }
   };
 
@@ -66,13 +66,13 @@ export function ConfirmDialog({
     switch (variant) {
       case 'danger':
         return {
-          background: '#dc2626',
+          background: 'var(--status-error)',
           color: 'white',
           border: 'none',
         };
       case 'warning':
         return {
-          background: '#f59e0b',
+          background: 'var(--status-warning)',
           color: 'white',
           border: 'none',
         };
@@ -84,7 +84,7 @@ export function ConfirmDialog({
         };
       default:
         return {
-          background: '#dc2626',
+          background: 'var(--status-error)',
           color: 'white',
           border: 'none',
         };

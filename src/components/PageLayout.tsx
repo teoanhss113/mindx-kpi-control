@@ -11,7 +11,7 @@ import styles from '@/app/dashboard.module.css';
 interface PageLayoutProps {
   children: ReactNode;
   title: string;
-  activePage?: 'dashboard' | 'completion' | 'teacher-change' | 'tickets' | 'class-quality' | 'office-hours' | 'teacher-schedule' | 'teachers' | 'admin' | 'admin-users' | 'admin-regions' | 'admin-roles';
+  activePage?: 'dashboard' | 'completion' | 'teacher-change' | 'tickets' | 'class-quality' | 'office-hours' | 'teacher-schedule' | 'teachers' | 'final-sessions' | 'admin' | 'admin-users' | 'admin-regions' | 'admin-roles';
   sidebarOpen?: boolean;
   onSidebarToggle?: (open: boolean) => void;
 }
@@ -168,6 +168,19 @@ export function PageLayout({ children, title, activePage, sidebarOpen = false, o
                 <line x1="3" y1="10" x2="21" y2="10" />
               </svg>
               Ca Trải nghiệm
+            </div>
+          )}
+          {!permissionsLoading && canView('final-sessions') && (
+            <div
+              className={`${styles.sidebarLink} ${activePage === 'final-sessions' ? styles.active : ''}`}
+              onClick={() => { router.push('/admin/final-sessions'); handleSidebarToggle(false); }}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M12 2L2 7l10 5 10-5-10-5z" />
+                <path d="M2 17l10 5 10-5" />
+                <path d="M2 12l10 5 10-5" />
+              </svg>
+              Giám khảo Cuối khoá
             </div>
           )}
           {!permissionsLoading && canView('teacher-schedule') && (

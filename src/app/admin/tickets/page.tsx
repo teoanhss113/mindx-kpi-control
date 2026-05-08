@@ -26,7 +26,7 @@ import {
   useToast,
   StandardXAxis, StandardYAxisCategory, ChartLegend, VerticalBarChartConfig, CustomTooltip,
   SortableHeader, TopicBadge, UserSearchInput, type UserSearchResult, ModalFooter,
-  CentreSelect, QuickFilterChips,
+  CentreSelect, CourseCategoryBadge, QuickFilterChips, TicketStatusBadge, getPriorityMeta, getTicketStatusMeta,
 } from '@/components/ui';
 import { useTableSort } from '@/hooks/useTableSort';
 import { useFilterOptions } from '@/hooks/useFilterOptions';
@@ -39,19 +39,11 @@ import styles from '@/app/dashboard.module.css';
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 function getPriorityColor(priority: string) {
-  const p = (priority || '').toUpperCase();
-  if (p === 'HIGH') return 'var(--status-error)';
-  if (p === 'MEDIUM') return 'var(--status-warning)';
-  if (p === 'LOW') return 'var(--brand-indigo)';
-  return 'var(--text-quaternary)';
+  return getPriorityMeta(priority).color;
 }
 
 function getStatusColor(status: string) {
-  const s = (status || '').toUpperCase();
-  if (s === 'CLOSED' || s === 'RESOLVED') return 'var(--text-tertiary)';
-  if (s === 'IN_PROGRESS' || s === 'PROCESSING') return 'var(--brand-indigo)';
-  if (s === 'NEW' || s === 'OPEN') return 'var(--status-emerald)';
-  return 'var(--text-secondary)';
+  return getTicketStatusMeta(status).color;
 }
 
 export default function TicketsDashboard() {
@@ -1156,7 +1148,7 @@ export default function TicketsDashboard() {
                                   {t.ticketSource?.studentName || t.ticketSource?.studentId || 'Chưa định danh'}
                                 </div>
                                 <div className={styles.centreName} style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', whiteSpace: 'nowrap', overflow: 'hidden' }}>
-                                  <span className={styles.groupBadge} style={{ padding: '0 var(--space-1)', fontSize: 10 }}>{t.courseCategory}</span>
+                                  <CourseCategoryBadge category={t.courseCategory} size="sm" style={{ fontSize: 10, padding: '0 var(--space-1)' }} />
                                   <span style={{ textOverflow: 'ellipsis', overflow: 'hidden' }}>{t.ticketSource?.className || '—'}</span>
                                 </div>
                                 <div style={{ paddingTop: 4, fontSize: 11, color: 'var(--text-quaternary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -1188,8 +1180,8 @@ export default function TicketsDashboard() {
                               </div>
   
                               {/* Status */}
-                              <div style={{ fontSize: 12, fontWeight: 600, color: getStatusColor(t.status), paddingTop: 2 }}>
-                                {t.status}
+                              <div style={{ paddingTop: 2 }}>
+                                <TicketStatusBadge status={t.status} />
                               </div>
   
                               {/* Meta */}
@@ -1490,17 +1482,7 @@ export default function TicketsDashboard() {
                               {(t as any)._safeDate}
                             </td>
                             <td>
-                              <span style={{ 
-                                fontSize: 11, 
-                                padding: '3px 8px', 
-                                borderRadius: "var(--radius-standard)", 
-                                fontWeight: 600,
-                                color: getStatusColor(t.status),
-                                background: `${getStatusColor(t.status)}15`,
-                                border: `1px solid ${getStatusColor(t.status)}30`
-                              }}>
-                                {t.status}
-                              </span>
+                              <TicketStatusBadge status={t.status} />
                             </td>
                             <td style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
                               {t.ticketCode || '—'}

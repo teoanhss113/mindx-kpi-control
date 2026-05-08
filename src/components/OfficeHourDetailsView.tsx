@@ -2,15 +2,8 @@
 
 import React from 'react';
 import type { OfficeHour } from '@/types/officeHours';
+import { OfficeHourStatusBadge, OfficeHourTypeBadge } from '@/components/ui';
 import styles from '@/app/dashboard.module.css';
-
-const OFFICE_HOUR_TYPE_LABELS: Record<string, string> = {
-  Office: 'Trực tại cơ sở',
-  Trial: 'Trực trực tuyến',
-  Event: 'Sự kiện',
-  Makeup: 'Bù học',
-  Tutor: 'Dạy kèm',
-};
 
 function fmtTime(iso: string) {
   if (!iso) return '—';
@@ -35,15 +28,6 @@ function fmtTimestamp(ts: number | undefined) {
     timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit',
     hour: '2-digit', minute: '2-digit',
   }).format(d);
-}
-
-function statusClass(status: string) {
-  switch (status) {
-    case 'APPROVED': return styles.passed;
-    case 'REJECTED':
-    case 'ABANDONED': return styles.failed;
-    default: return styles.exempt;
-  }
 }
 
 const Label: React.FC<{ children: React.ReactNode }> = ({ children }) => (
@@ -93,14 +77,12 @@ export function OfficeHourDetailsView({ oh }: { oh: OfficeHour }) {
 
         <div>
           <Label>Trạng thái</Label>
-          <span className={`${styles.statusPill} ${statusClass(oh.status)}`}>{oh.status}</span>
+          <OfficeHourStatusBadge status={oh.status} />
         </div>
 
         <div>
           <Label>Loại ca</Label>
-          <span className={`${styles.reasonTag} ${oh.type === 'Trial' ? styles.demoTag : ''}`}>
-            {OFFICE_HOUR_TYPE_LABELS[oh.type] || oh.type}
-          </span>
+          <OfficeHourTypeBadge type={oh.type} />
         </div>
 
         <div>

@@ -32,14 +32,14 @@ import {
   StandardXAxis, StandardYAxisCategory, CustomTooltip, VerticalBarChartConfig,
   SortableColumn, SortableHeader,
   CentreSelect, QuickFilterChips, ExportButton,
-  CSVExportSettings, type CSVColumnConfig,
+  CSVExportSettings, RoleBadge as SharedRoleBadge, TeacherAssignmentStatusBadge, type CSVColumnConfig,
 } from '@/components/ui';
 import { PageLayout } from '@/components/PageLayout';
 import { useTableSort } from '@/hooks/useTableSort';
 import { useFilterOptions } from '@/hooks/useFilterOptions';
 import { useQuickFilterChips } from '@/hooks/useUserPreferences';
 import { useCSVExportPreferences } from '@/hooks/useCSVExportPreferences';
-import { CACHE_KEYS, LABELS, MESSAGES, ENTITIES, FORMAT } from '@/constants';
+import { CACHE_KEYS, LABELS, MESSAGES, ENTITIES, FORMAT, CLASS_INACTIVE_STATUSES } from '@/constants';
 import { useSharedDateRange, useSharedCentres } from '@/hooks/useSharedFilterState';
 import { exportToCSV, CSVColumn, CSVFormatters } from '@/lib/csvExport';
 import styles from '@/app/dashboard.module.css';
@@ -48,7 +48,6 @@ import styles from '@/app/dashboard.module.css';
 // Linear Design System: Import chart colors from constants
 import { CHART_COLORS as CHART_COLOR_CONSTANTS } from '@/constants';
 const CHART_COLORS = CHART_COLOR_CONSTANTS.PALETTE;
-const INACTIVE_STATUSES = new Set(['ABANDONED', 'REJECTED', 'CANCELLED']);
 
 // Role shortName constants
 const ROLE_LEC    = 'LEC';
@@ -193,20 +192,6 @@ function ChartTooltip({ active, payload, label }: any) {
   );
 }
 
-// ─── Role badge ───────────────────────────────────────────────────────────────
-function RoleBadge({ role }: { role: string }) {
-  const isSupply = role === ROLE_SUPPLY;
-  return (
-    <span style={{
-      fontSize: 9, fontWeight: 590, padding: '1px 5px', borderRadius: "var(--radius-standard)", marginLeft: 'var(--space-1)',
-      verticalAlign: 'middle',
-      background: isSupply ? 'rgba(245,158,11,0.15)' : 'rgba(0,113,227,0.12)',  // Apple Blue for regular teachers
-      color: isSupply ? 'var(--status-warning)' : '#0071e3',  // Apple Blue
-      border: `1px solid ${isSupply ? 'rgba(245,158,11,0.3)' : 'rgba(0,113,227,0.2)'}`,  // Apple Blue border
-    }}>{role}</span>
-  );
-}
-
 // ─── Teacher chip ─────────────────────────────────────────────────────────────
 function TeacherChip({ name, role }: { name: string; role: string }) {
   const isSupply = role === ROLE_SUPPLY;
@@ -218,7 +203,7 @@ function TeacherChip({ name, role }: { name: string; role: string }) {
       display: 'inline-flex', alignItems: 'center', gap: 'var(--space-1)',
     }}>
       {name}
-      <RoleBadge role={role} />
+      <SharedRoleBadge role={role} shape="rounded" style={{ marginLeft: 'var(--space-1)', verticalAlign: 'middle' }} />
     </span>
   );
 }
@@ -383,7 +368,7 @@ export default function TeacherChangePage() {
       const analysis = analyzeTeacherChanges(cls);
       const courseLineName = getCourseCategory(cls);
       const entry: ClassAnalyzed = { cls, ...analysis, courseLineName };
-      (INACTIVE_STATUSES.has(cls.status?.toUpperCase?.()) ? inactive : active).push(entry);
+      (CLASS_INACTIVE_STATUSES.has(cls.status?.toUpperCase?.()) ? inactive : active).push(entry);
     });
     return { activeClasses: active, inactiveClasses: inactive };
   }, [classes]);
@@ -999,7 +984,7 @@ export default function TeacherChangePage() {
                                 return (
                                   <span key={t.id} className={`${styles.reasonTag} ${chipClass}`}>
                                     {t.name}
-                                    <RoleBadge role={t.role} />
+                                    <SharedRoleBadge role={t.role} shape="rounded" />
                                   </span>
                                 );
                               })
@@ -1207,21 +1192,12 @@ export default function TeacherChangePage() {
                             }}>
                               {displayName}
                             </span>
-                            {displayRole && <RoleBadge role={displayRole} />}
+                            {displayRole && <SharedRoleBadge role={displayRole} shape="rounded" style={{ marginLeft: 'var(--space-1)' }} />}
                           </td>
                           <td>
-                            <span
-                              className={`${styles.statusPill} ${
-                                isLECChange ? styles.failed
-                                : isSubstitute ? styles.substituteStatus
-                                : noTeacher ? styles.noTeacherStatus
-                                : styles.passed
-                              }`}>
-                              {noTeacher ? 'Không rõ'
-                                : isLECChange ? 'Thay GV chính'
-                                : isSubstitute ? 'Có SUPPLY'
-                                : 'Đúng lịch'}
-                            </span>
+                            <TeacherAssignmentStatusBadge
+                              status={noTeacher ? 'unknown' : isLECChange ? 'main_changed' : isSubstitute ? 'supply' : 'on_schedule'}
+                            />
                           </td>
                         </tr>
                       );

@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { ProtectedPage } from '@/components/ProtectedPage';
 import { ErrorBanner } from '@/components/ErrorBanner';
 import { AdminPageWrapper } from '@/components/AdminPageWrapper';
-import { AdminToolbar, AdminTableSection, Icon, SortableHeader, EmptyState, ConfirmDialog, useToast, ToastContainer } from '@/components/ui';
+import { ActiveStatusBadge, AdminToolbar, AdminTableSection, Icon, SortableHeader, EmptyState, ConfirmDialog, useToast, ToastContainer } from '@/components/ui';
 import { useTableSort } from '@/hooks/useTableSort';
 import { LABELS, MESSAGES, ENTITIES } from '@/constants';
 import {
@@ -464,9 +464,7 @@ export default function RolesPage() {
                       {getPermissionsSummary(role)}
                     </td>
                     <td>
-                      <span className={`${styles.statusPill} ${role.is_active ? styles.passed : styles.failed}`}>
-                        {role.is_active ? 'Hoạt động' : 'Tạm dừng'}
-                      </span>
+                      <ActiveStatusBadge active={role.is_active} />
                     </td>
                     <td style={{ color: 'var(--text-tertiary)', fontSize: 13 }}>
                       {new Date(role.created_at).toLocaleDateString('vi-VN')}

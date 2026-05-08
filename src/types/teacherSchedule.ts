@@ -16,6 +16,7 @@ export interface TeacherScheduleSlot {
   startTime: string; // ISO-8601
   endTime: string;   // ISO-8601
   className?: string;
+  officeHourType?: string; // raw type from API: Office, Trial, Makeup, Fixed, etc.
   classId?: string;
   centreId: string;
   centreName: string;

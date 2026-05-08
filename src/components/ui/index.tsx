@@ -25,7 +25,7 @@ import {
   Download as _Download, Settings as _Settings, Info as _Info,
   GripVertical as _GripVertical,
   FileText as _FileText, Calendar as _Calendar, CalendarDays as _CalendarDays,
-  ClipboardCheck as _ClipboardCheck, Target as _Target,
+  ClipboardCheck as _ClipboardCheck, Target as _Target, BookOpen as _BookOpen
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import styles from '@/app/dashboard.module.css'
@@ -48,8 +48,69 @@ export {
 // ─────────────────────────────────────────────────────────────────────────────
 // BADGE COMPONENTS — Reusable badge system
 // ─────────────────────────────────────────────────────────────────────────────
-export { Badge, StatusBadge, CountBadge, TopicBadge, RoleBadge } from './Badge'
+export { Badge, StatusBadge, CountBadge, TopicBadge, RoleBadge, CourseCategoryBadge } from './Badge'
 export type { BadgeVariant, BadgeSize, BadgeShape, BadgeProps } from './Badge'
+export {
+  ATTENDANCE_STATUS_STYLES,
+  AttendanceSessionCell,
+  AttendanceStatusBadge,
+  getAttendanceStatusKind,
+  getAttendanceStatusMeta,
+  isAttendanceStatus,
+  normalizeAttendanceStatus,
+} from './AttendanceStatus'
+export type { AttendanceStatusKind, AttendanceStatusMeta } from './AttendanceStatus'
+export {
+  COMMENT_STATUS_COUNT_LABELS,
+  COMMENT_STATUS_GROUP_LABELS,
+  COMMENT_STATUS_LABELS,
+  CommentStatusBadge,
+  getCommentStatusVariant,
+} from './CommentStatus'
+export type { CommentQualityStatus } from './CommentStatus'
+export {
+  ACTIVE_STATUS_LABELS,
+  ACTIVE_STATUS_OPTIONS,
+  ActiveStatusBadge,
+  ATTENDANCE_ALERT_LABELS,
+  COMPLETION_STATUS_LABELS,
+  AttendanceAlertBadge,
+  BATCH_STATUS_LABELS,
+  BatchStatusBadge,
+  CompletionStatusBadge,
+  DATE_MARKER_LABELS,
+  DateMarkerBadge,
+  OFFICE_HOUR_STATUS_LABELS,
+  OFFICE_HOUR_TYPE_LABELS,
+  OfficeHourStatusBadge,
+  OfficeHourTypeBadge,
+  RESCHEDULE_STATUS_LABELS,
+  RescheduleStatusBadge,
+  TEACHER_ASSIGNMENT_STATUS_LABELS,
+  TEACHER_CONFIRMATION_STATUS_LABELS,
+  TeacherAssignmentStatusBadge,
+  TeacherConfirmationStatusBadge,
+  TicketStatusBadge,
+  getActiveStatusLabel,
+  getActiveStatusVariant,
+  getCompletionStatusVariant,
+  getOfficeHourStatusMeta,
+  getOfficeHourTypeLabel,
+  getPriorityMeta,
+  getTicketStatusMeta,
+  normalizeStatusValue,
+} from './StatusMeta'
+export type {
+  AttendanceAlertKind,
+  CompletionStatusKind,
+  DateMarkerStatus,
+  PriorityKind,
+  RescheduleStatus,
+  TeacherAssignmentStatus,
+  TeacherConfirmationStatus,
+  TicketStatusKind,
+  TicketStatusMeta,
+} from './StatusMeta'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ICONS  — single canonical set backed by lucide-react
@@ -104,6 +165,7 @@ export const Icon = {
   CalendarDays:   (p?: P) => <_CalendarDays    size={p?.size ?? 15} color={p?.color} />,
   ClipboardCheck: (p?: P) => <_ClipboardCheck  size={p?.size ?? 16} color={p?.color} />,
   Target:         (p?: P) => <_Target          size={p?.size ?? 16} color={p?.color} />,
+  BookOpen:       (p?: P) => <_BookOpen        size={p?.size ?? 15} color={p?.color} />,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

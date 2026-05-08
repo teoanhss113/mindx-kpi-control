@@ -101,6 +101,7 @@ const GET_CLASSES_QUERY = /* graphql */ `
           }
           studentAttendance {
             _id status comment sendCommentStatus
+            commentByAreas { content }
             student { id fullName phoneNumber email gender imageUrl }
           }
         }

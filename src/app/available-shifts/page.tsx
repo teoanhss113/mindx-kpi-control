@@ -1,10 +1,13 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { AuthenticatedPage } from '@/components/AuthenticatedPage';
 import { UserLayout } from '@/components/UserLayout';
 import { useAuth } from '@/lib/AuthContext';
-import { useToast, ToastContainer, Toolbar, TableGroupHeader, EmptyState, Modal, ModalHeader, ModalFooter } from '@/components/ui';
+import {
+  useToast, ToastContainer, Toolbar, TableGroupHeader, EmptyState, Modal, ModalHeader, ModalFooter,
+  OfficeHourTypeBadge, TeacherConfirmationStatusBadge, getOfficeHourTypeLabel,
+} from '@/components/ui';
 import { getTeacherConfirmations, confirmOfficeHour } from '@/lib/teacher-confirmation-actions';
 import { createShiftRequest, hasRequestedShift } from '@/lib/shift-request-actions';
 import { fetchOfficeHours, searchTeachers, type Teacher } from '@/services/officeHoursService';
@@ -12,29 +15,12 @@ import type { TeacherConfirmation } from '@/lib/teacher-confirmation-actions';
 import type { OfficeHour } from '@/types/officeHours';
 import { getOfficeHourCategory } from '@/lib/courseCategories';
 import { OfficeHourDetailsView } from '@/components/OfficeHourDetailsView';
-import { MESSAGES } from '@/constants';
+import { COURSE_CATEGORY_COLORS, COURSE_CATEGORY_ORDER, MESSAGES } from '@/constants';
 import { motion, AnimatePresence } from 'framer-motion';
 import styles from '@/app/dashboard.module.css';
 
 const DOW_VI = ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
-const CATEGORY_ORDER: Record<string, number> = { Coding: 0, Robotics: 1, Art: 2, Others: 3 };
 const SESSION_ORDER: Record<string, number> = { 'Sáng': 0, 'Chiều': 1, 'Tối': 2 };
-
-// Category palette — emerald/indigo/amber for Coding/Robotics/Art:
-// Coding → emerald, Robotics → indigo, Art → amber.
-const CATEGORY_COLORS: Record<string, string> = {
-  Coding:   '#059669',
-  Robotics: 'var(--brand-indigo, #3b82f6)',
-  Art:      '#d97706',
-  Others:   'var(--border)',
-};
-
-const CATEGORY_STYLES: Record<string, React.CSSProperties> = {
-  Coding:   { background: 'rgba(5, 150, 105, 0.10)',  color: '#047857', borderLeft: '3px solid var(--status-emerald, #059669)' },
-  Robotics: { background: 'rgba(94, 106, 210, 0.10)', color: '#1e40af', borderLeft: '3px solid var(--brand-indigo)' },
-  Art:      { background: 'rgba(217, 119, 6, 0.10)',  color: '#b45309', borderLeft: '3px solid var(--status-warning, #d97706)' },
-  Others:   { background: 'var(--bg-secondary)',      color: 'var(--text-secondary)', borderLeft: '3px solid var(--border)' },
-};
 
 function vnDateParts(iso: string) {
   const d = new Date(iso);
@@ -77,6 +63,8 @@ export default function AvailableShiftsPage() {
   const { session } = useAuth();
   const { toasts, addToast, removeToast } = useToast();
   
+  const abortRef = useRef<AbortController | null>(null);
+
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState({ loaded: 0, total: 0 });
   const [officeHours, setOfficeHours] = useState<OfficeHourWithConfirmation[]>([]);
@@ -223,10 +211,23 @@ export default function AvailableShiftsPage() {
     }
   }, [regionCentres]);
 
+  function handleCancelFetch() {
+    if (abortRef.current) {
+      abortRef.current.abort();
+      abortRef.current = null;
+      setLoading(false);
+      addToast(MESSAGES.LOADING.STOPPED, 'info');
+    }
+  }
+
   async function handleFetch() {
     if (!teacherInfo || regionCentres.length === 0) {
       return;
     }
+
+    if (abortRef.current) abortRef.current.abort();
+    abortRef.current = new AbortController();
+    const signal = abortRef.current.signal;
 
     // Use selected centres from filter, fallback to all region centres
     const centresToFetch = selectedCentres.length > 0 ? selectedCentres : regionCentres;
@@ -248,6 +249,7 @@ export default function AvailableShiftsPage() {
       const response = await fetchOfficeHours(
         params,
         async (loaded, total, chunk) => {
+          if (signal.aborted) return;
           setProgress({ loaded, total });
           accumulated = [...accumulated, ...chunk];
           
@@ -320,21 +322,23 @@ export default function AvailableShiftsPage() {
             }));
             setOfficeHours([...combined]);
           }
-        }
+        },
+        signal,
       );
-      
-      removeToast(tid);
-      addToast(MESSAGES.LOADING.SUCCESS(response.data.length, 'ca trực'), 'success');
-    } catch (error: any) {
-      if (error.message === 'Aborted' || error.name === 'AbortError') {
+
+      if (!signal.aborted) {
         removeToast(tid);
-        addToast(MESSAGES.LOADING.STOPPED, 'info');
+        addToast(MESSAGES.LOADING.SUCCESS(response.data.length, 'ca trực'), 'success');
+      }
+    } catch (error: any) {
+      if (signal.aborted || error.message === 'Aborted' || error.name === 'AbortError') {
+        removeToast(tid);
       } else {
         removeToast(tid);
         addToast('Không thể tải danh sách ca trực', 'error');
       }
     } finally {
-      setLoading(false);
+      if (!signal.aborted) setLoading(false);
     }
   }
 
@@ -437,8 +441,8 @@ export default function AvailableShiftsPage() {
     enriched.sort((a, b) => {
       if (a.dKey !== b.dKey) return a.dKey.localeCompare(b.dKey);
       if (a.centreLabel !== b.centreLabel) return a.centreLabel.localeCompare(b.centreLabel, 'vi');
-      const ca = CATEGORY_ORDER[a.category] ?? 99;
-      const cb = CATEGORY_ORDER[b.category] ?? 99;
+      const ca = COURSE_CATEGORY_ORDER[a.category as keyof typeof COURSE_CATEGORY_ORDER] ?? 99;
+      const cb = COURSE_CATEGORY_ORDER[b.category as keyof typeof COURSE_CATEGORY_ORDER] ?? 99;
       if (ca !== cb) return ca - cb;
       const sa = SESSION_ORDER[a.session] ?? 99;
       const sb = SESSION_ORDER[b.session] ?? 99;
@@ -540,6 +544,7 @@ export default function AvailableShiftsPage() {
           onDateFromChange={setTimeFrom}
           onDateToChange={setTimeTo}
           onFetch={handleFetch}
+          onCancel={handleCancelFetch}
           onClearCache={async () => {
             setOfficeHours([]);
             addToast('Đã xoá dữ liệu', 'success');
@@ -611,28 +616,18 @@ export default function AvailableShiftsPage() {
                           let confirmationStatusDisplay: React.ReactNode = null;
                           if (item.isAssignedToMe) {
                             if (item.confirmation?.status === 'confirmed') {
-                              confirmationStatusDisplay = (
-                                <span style={{ padding: '4px 10px', borderRadius: 'var(--radius-pill)', fontSize: 12, fontWeight: 510, background: '#d1fae5', color: '#065f46', border: '1px solid #6ee7b7' }}>Đã xác nhận</span>
-                              );
+                              confirmationStatusDisplay = <TeacherConfirmationStatusBadge status="confirmed" />;
                             } else if (item.confirmation?.status === 'rejected') {
-                              confirmationStatusDisplay = (
-                                <span style={{ padding: '4px 10px', borderRadius: 'var(--radius-pill)', fontSize: 12, fontWeight: 510, background: '#fee2e2', color: '#991b1b', border: '1px solid #fecaca' }}>Đã từ chối</span>
-                              );
+                              confirmationStatusDisplay = <TeacherConfirmationStatusBadge status="rejected" />;
                             } else {
-                              confirmationStatusDisplay = (
-                                <span style={{ padding: '4px 10px', borderRadius: 'var(--radius-pill)', fontSize: 12, fontWeight: 510, background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a' }}>Chờ xác nhận</span>
-                              );
+                              confirmationStatusDisplay = <TeacherConfirmationStatusBadge status="pending" />;
                             }
                           } else if (hasConfirmedTeacher) {
-                            confirmationStatusDisplay = (
-                              <span style={{ padding: '4px 10px', borderRadius: 'var(--radius-pill)', fontSize: 12, fontWeight: 510, background: '#d1fae5', color: '#065f46', border: '1px solid #6ee7b7' }}>Đã có GV xác nhận</span>
-                            );
+                            confirmationStatusDisplay = <TeacherConfirmationStatusBadge status="confirmed_by_other" />;
                           } else if (hasTeacherOnLMS) {
-                            confirmationStatusDisplay = (
-                              <span style={{ padding: '4px 10px', borderRadius: 'var(--radius-pill)', fontSize: 12, fontWeight: 510, background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a' }}>Chờ xác nhận</span>
-                            );
+                            confirmationStatusDisplay = <TeacherConfirmationStatusBadge status="pending" />;
                           } else {
-                            confirmationStatusDisplay = <span style={{ color: 'var(--text-tertiary)', fontSize: 12 }}>—</span>;
+                            confirmationStatusDisplay = <TeacherConfirmationStatusBadge status="none" />;
                           }
 
                           const isNewDate = row.dateSpan > 0;
@@ -679,7 +674,7 @@ export default function AvailableShiftsPage() {
                                   className={styles.mergedCell}
                                   style={{
                                     fontWeight: 700,
-                                    backgroundColor: CATEGORY_COLORS[row.category] || 'var(--border)',
+                                    backgroundColor: COURSE_CATEGORY_COLORS[row.category as keyof typeof COURSE_CATEGORY_COLORS] || 'var(--border)',
                                     color: 'white',
                                     borderLeft: 'none',
                                   }}
@@ -694,7 +689,7 @@ export default function AvailableShiftsPage() {
                               )}
                               <td onClick={() => setDetailItem(item)} style={{ cursor: 'pointer', ...highlightStyle }}>{formatTime(oh.startTime)} - {formatTime(oh.endTime)}</td>
                               <td onClick={() => setDetailItem(item)} style={{ cursor: 'pointer', ...highlightStyle }}>
-                                <span className={`${styles.reasonTag} ${oh.type === 'Trial' ? styles.demoTag : ''}`}>{oh.type || '—'}</span>
+                                <OfficeHourTypeBadge type={oh.type} />
                               </td>
                               <td onClick={() => setDetailItem(item)} style={{ cursor: 'pointer', ...highlightStyle }}>
                                 {oh.courses && oh.courses.length > 0 ? (
@@ -769,7 +764,7 @@ export default function AvailableShiftsPage() {
             return (
               <>
                 <ModalHeader
-                  title={`Ca ${oh.type} – ${formatTime(oh.startTime)} - ${formatTime(oh.endTime)}`}
+                  title={`Ca ${getOfficeHourTypeLabel(oh.type)} - ${formatTime(oh.startTime)} - ${formatTime(oh.endTime)}`}
                   subtitle={`${oh.centre?.name || ''}${oh.courses?.length ? ' · ' + oh.courses.map(c => c.shortName).join(', ') : ''}`}
                   onClose={() => setDetailItem(null)}
                 />

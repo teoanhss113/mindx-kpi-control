@@ -16,7 +16,7 @@ import { getCache, setCache, clearCache } from '@/lib/idb';
 import { getOfficeHourCategory } from '@/lib/courseCategories';
 import { sendNotification, NotificationTemplates } from '@/lib/sendNotification';
 import { OfficeHour, OFFICE_HOUR_STATUS, OFFICE_HOUR_TYPE } from '@/types/officeHours';
-import { useToast, ToastContainer, initials, EmptyState, Toolbar, SelectOption, TableGroupHeader, Modal, ModalHeader, MultiSelect, TableToolbar, ChartSectionHeader, StandardXAxis, StandardYAxisCategory, StandardYAxisNumber, ChartLegend, ComposedChartConfig, CustomTooltip, UserSearchInput, type UserSearchResult, ModalFooter, CentreSelect, QuickFilterChips, ShiftRequestSuggestions, type ShiftRequest } from '@/components/ui';
+import { useToast, ToastContainer, initials, EmptyState, Toolbar, SelectOption, TableGroupHeader, Modal, ModalHeader, MultiSelect, TableToolbar, ChartSectionHeader, StandardXAxis, StandardYAxisCategory, StandardYAxisNumber, ChartLegend, ComposedChartConfig, CustomTooltip, UserSearchInput, type UserSearchResult, ModalFooter, CentreSelect, QuickFilterChips, ShiftRequestSuggestions, type ShiftRequest, OFFICE_HOUR_STATUS_LABELS, OfficeHourStatusBadge, OfficeHourTypeBadge, getOfficeHourTypeLabel } from '@/components/ui';
 import { useQuickFilterChips } from '@/hooks/useUserPreferences';
 import { PageLayout } from '@/components/PageLayout';
 import { getNavItemsWithRouter } from '@/lib/navigation';
@@ -26,18 +26,6 @@ import { CACHE_KEYS, MESSAGES, ENTITIES, LABELS, CHART_COLORS } from '@/constant
 import { useSharedDateRange, useSharedCentres } from '@/hooks/useSharedFilterState';
 import { conversionColor, KPI_COLORS, CONVERSION_LEGEND } from '@/lib/kpiScoring';
 import styles from '../../dashboard.module.css';
-
-// Helper function to get Vietnamese label for office hour type
-function getOfficeHourTypeLabel(type: string): string {
-  const labels: Record<string, string> = {
-    'Office': 'Trực tại cơ sở',
-    'Trial': 'Trực trực tuyến',
-    'Event': 'Sự kiện',
-    'Makeup': 'Bù học',
-    'Tutor': 'Dạy kèm',
-  };
-  return labels[type] || type;
-}
 
 // Helper function to parse teacher note from custom field
 function parseTeacherNote(customField: string | null | undefined): string {
@@ -218,7 +206,7 @@ function OfficeHoursPageInner() {
         statuses.add(oh.status);
       }
     });
-    return Array.from(statuses).sort().map(status => ({ value: status, label: status }));
+    return Array.from(statuses).sort().map(status => ({ value: status, label: OFFICE_HOUR_STATUS_LABELS[status] || status }));
   }, [officeHours]);
 
   // Type options (based on actual data, not just enum)
@@ -856,16 +844,6 @@ function OfficeHoursPageInner() {
       .sort((a, b) => b['Số ca'] - a['Số ca']);
   }, [filteredOfficeHours, exemptTypes, exemptStatuses, exemptAppointmentStatuses]);
 
-  // Status badge color
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case OFFICE_HOUR_STATUS.APPROVED: return styles.passed;
-      case OFFICE_HOUR_STATUS.REJECTED: return styles.failed;
-      case OFFICE_HOUR_STATUS.ABANDONED: return styles.failed;
-      default: return styles.exempt;
-    }
-  };
-
   // Format date/time
   const formatDateTime = (isoString: string) => {
     const date = new Date(isoString);
@@ -1476,9 +1454,7 @@ function OfficeHoursPageInner() {
                       </div>
 
                       <div className={styles.sizeCol}>
-                        <span className={`${styles.reasonTag} ${oh.type === OFFICE_HOUR_TYPE.TRIAL ? styles.demoTag : ''}`}>
-                          {getOfficeHourTypeLabel(oh.type)}
-                        </span>
+	                        <OfficeHourTypeBadge type={oh.type} />
                       </div>
 
                       <div className={styles.reasonsPreview}>
@@ -1498,9 +1474,7 @@ function OfficeHoursPageInner() {
                       <div className={styles.sizeCol}>{totalAppointments}</div>
 
                       <div className={styles.sizeCol}>
-                        <span className={`${styles.statusPill} ${getStatusColor(oh.status)}`}>
-                          {oh.status}
-                        </span>
+                        <OfficeHourStatusBadge status={oh.status} />
                       </div>
 
                       {/* Cột Đã xác nhận */}
@@ -2029,7 +2003,7 @@ function OfficeHoursPageInner() {
                                     }}
                                   />
                                   <div className={styles.reasonLabel}>
-                                    <span>{status}</span>
+                                    <span>{OFFICE_HOUR_STATUS_LABELS[status] || status}</span>
                                     <span className={styles.reasonCount}>{exemptionCounts.statusCounts[status] || 0}</span>
                                   </div>
                                 </label>
@@ -2114,16 +2088,12 @@ function OfficeHoursPageInner() {
 
                   <div>
                     <div style={{ fontSize: 11, fontWeight: 590, color: 'var(--text-quaternary)', textTransform: 'uppercase', marginBottom: 'var(--space-2)' }}>Trạng thái</div>
-                    <span className={`${styles.statusPill} ${getStatusColor(selectedEntry.status)}`}>
-                      {selectedEntry.status}
-                    </span>
+                    <OfficeHourStatusBadge status={selectedEntry.status} />
                   </div>
 
                   <div>
                     <div style={{ fontSize: 11, fontWeight: 590, color: 'var(--text-quaternary)', textTransform: 'uppercase', marginBottom: 'var(--space-2)' }}>Loại ca</div>
-                    <span className={`${styles.reasonTag} ${selectedEntry.type === OFFICE_HOUR_TYPE.TRIAL ? styles.demoTag : ''}`}>
-                      {getOfficeHourTypeLabel(selectedEntry.type)}
-                    </span>
+	                    <OfficeHourTypeBadge type={selectedEntry.type} />
                   </div>
 
                   <div>
@@ -2712,9 +2682,7 @@ function OfficeHoursPageInner() {
                         </div>
 
                         <div className={styles.sizeCol}>
-                          <span className={`${styles.reasonTag} ${oh.type === OFFICE_HOUR_TYPE.TRIAL ? styles.demoTag : ''}`}>
-                            {getOfficeHourTypeLabel(oh.type)}
-                          </span>
+	                          <OfficeHourTypeBadge type={oh.type} />
                         </div>
 
                         <div className={styles.reasonsPreview}>
@@ -2730,9 +2698,7 @@ function OfficeHoursPageInner() {
                         <div className={styles.sizeCol}>{totalAppointments}</div>
 
                         <div className={styles.sizeCol}>
-                          <span className={`${styles.statusPill} ${getStatusColor(oh.status)}`}>
-                            {oh.status}
-                          </span>
+                          <OfficeHourStatusBadge status={oh.status} />
                         </div>
 
                         <div className={styles.sizeCol}>

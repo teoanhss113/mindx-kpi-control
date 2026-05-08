@@ -7,7 +7,7 @@ import { Icon, ToastContainer, useToast, EmptyState, Toolbar, StatCard } from '@
 import { KPICard } from '@/components/dashboard/KPICard';
 import { ActionableInsight } from '@/components/dashboard/ActionableInsight';
 import { getCache, setCache, clearCache } from '@/lib/idb';
-import { CACHE_KEYS, LABELS, FORMAT, ANIMATION, DATE_UTILS, MESSAGES } from '@/constants';
+import { CACHE_KEYS, LABELS, FORMAT, ANIMATION, DATE_UTILS, MESSAGES, CLASS_INACTIVE_STATUSES } from '@/constants';
 import { useSharedFilterState } from '@/hooks/useSharedFilterState';
 import { analyzeComments, analyzeAttendance } from '@/lib/classQualityAnalysis';
 import { 
@@ -405,9 +405,8 @@ export default function DashboardPage() {
   const teacherChangeRate = useMemo(() => {
     if (!teacherChangeData?.classes) return null;
     try {
-      const INACTIVE_STATUSES = new Set(['ABANDONED', 'REJECTED', 'CANCELLED']);
       const activeClasses = teacherChangeData.classes.filter((cls: any) => 
-        !INACTIVE_STATUSES.has(cls.status?.toUpperCase?.())
+        !CLASS_INACTIVE_STATUSES.has(cls.status?.toUpperCase?.())
       );
       
       // Use EXACT logic from teacher-change page
@@ -460,9 +459,8 @@ export default function DashboardPage() {
   // Count active classes for teacher change (excluding ABANDONED/REJECTED/CANCELLED)
   const activeTeacherChangeClassesCount = useMemo(() => {
     if (!teacherChangeData?.classes) return 0;
-    const INACTIVE_STATUSES = new Set(['ABANDONED', 'REJECTED', 'CANCELLED']);
     return teacherChangeData.classes.filter((cls: any) => 
-      !INACTIVE_STATUSES.has(cls.status?.toUpperCase?.())
+      !CLASS_INACTIVE_STATUSES.has(cls.status?.toUpperCase?.())
     ).length;
   }, [teacherChangeData]);
 
@@ -547,9 +545,8 @@ export default function DashboardPage() {
   const multiTeacherRate = useMemo(() => {
     if (!teacherChangeData?.classes) return null;
     try {
-      const INACTIVE_STATUSES = new Set(['ABANDONED', 'REJECTED', 'CANCELLED']);
       const activeClasses = teacherChangeData.classes.filter((cls: any) => 
-        !INACTIVE_STATUSES.has(cls.status?.toUpperCase?.())
+        !CLASS_INACTIVE_STATUSES.has(cls.status?.toUpperCase?.())
       );
       
       // Use EXACT logic from teacher-change page
@@ -601,9 +598,8 @@ export default function DashboardPage() {
   const commentViolationsCount = useMemo(() => {
     if (!classQualityData?.classes) return null;
     try {
-      const INACTIVE_STATUSES = new Set(['ABANDONED', 'REJECTED', 'CANCELLED']);
       const activeClasses = classQualityData.classes.filter((cls: any) => 
-        !INACTIVE_STATUSES.has(cls.status?.toUpperCase?.())
+        !CLASS_INACTIVE_STATUSES.has(cls.status?.toUpperCase?.())
       );
       
       // Use EXACT logic from class-quality page - use analyzeComments function
@@ -625,9 +621,8 @@ export default function DashboardPage() {
   const attendanceAlertsCount = useMemo(() => {
     if (!classQualityData?.classes) return null;
     try {
-      const INACTIVE_STATUSES = new Set(['ABANDONED', 'REJECTED', 'CANCELLED']);
       const activeClasses = classQualityData.classes.filter((cls: any) => 
-        !INACTIVE_STATUSES.has(cls.status?.toUpperCase?.())
+        !CLASS_INACTIVE_STATUSES.has(cls.status?.toUpperCase?.())
       );
       
       // Use EXACT logic from class-quality page - use analyzeAttendance function

@@ -21,6 +21,8 @@ import {
   TableToolbar,
   TableGroupHeader,
   QuickFilterChips,
+  ACTIVE_STATUS_OPTIONS,
+  ActiveStatusBadge,
 } from '@/components/ui';
 import { LABELS, MESSAGES, ENTITIES, FORMAT, ANIMATION, CACHE_KEYS } from '@/constants';
 import { getTeachers } from '@/services/teacherService';
@@ -264,10 +266,7 @@ export default function TeachersPage() {
   }, [teachers]);
 
   // Status options for Toolbar (API level)
-  const statusOptions = [
-    { value: 'active', label: 'Hoạt động' },
-    { value: 'inactive', label: 'Không hoạt động' },
-  ];
+  const statusOptions = [...ACTIVE_STATUS_OPTIONS];
 
   // Get unique statuses from loaded teachers for Table Toolbar
   const tableStatusOptions = useMemo(() => {
@@ -277,7 +276,7 @@ export default function TeachersPage() {
     });
     return Array.from(statuses).map(status => ({
       value: status,
-      label: status === 'active' ? 'Hoạt động' : 'Không hoạt động',
+      label: status === 'active' ? ACTIVE_STATUS_OPTIONS[0].label : ACTIVE_STATUS_OPTIONS[1].label,
     }));
   }, [teachers]);
 
@@ -543,17 +542,18 @@ export default function TeachersPage() {
                     <SortableHeader label="Điểm GV" sortKey="teacherPoint" currentSortKey={sortBy} sortOrder={sortOrder} onSort={(key) => handleSort(key as TeacherSortKey)} />
                     <SortableHeader label="Trạng thái" sortKey="isActive" currentSortKey={sortBy} sortOrder={sortOrder} onSort={(key) => handleSort(key as TeacherSortKey)} />
                     <SortableHeader label="Ngày tham gia" sortKey="joinedDate" currentSortKey={sortBy} sortOrder={sortOrder} onSort={(key) => handleSort(key as TeacherSortKey)} />
-                    <th style={{ width: 80 }}></th>
                   </tr>
                 </thead>
                 <tbody>
                   {sortedData.map((teacher, idx) => (
-                    <tr 
-                      key={teacher.id}
-                      style={{
-                        animation: `fadeInUp ${ANIMATION.FADE_DURATION}s ease-out ${Math.min(idx * ANIMATION.TABLE_ROW_DELAY, ANIMATION.TABLE_ROW_MAX_DELAY)}s both`
-                      }}
-                    >
+	                    <tr 
+	                      key={teacher.id}
+	                      onClick={() => openDetailModal(teacher)}
+	                      style={{
+	                        animation: `fadeInUp ${ANIMATION.FADE_DURATION}s ease-out ${Math.min(idx * ANIMATION.TABLE_ROW_DELAY, ANIMATION.TABLE_ROW_MAX_DELAY)}s both`,
+	                        cursor: 'pointer',
+	                      }}
+	                    >
                       <td style={{ fontWeight: 510, color: 'var(--text-primary)' }}>{teacher.code}</td>
                       <td style={{ fontWeight: 510 }}>{teacher.fullName}</td>
                       <td style={{ color: 'var(--text-secondary)', fontSize: 13 }}>{teacher.email}</td>
@@ -582,24 +582,12 @@ export default function TeachersPage() {
                         </span>
                       </td>
                       <td>
-                        <span className={`${styles.statusPill} ${teacher.isActive ? styles.passed : styles.failed}`}>
-                          {teacher.isActive ? 'Hoạt động' : 'Không hoạt động'}
-                        </span>
+                        <ActiveStatusBadge active={teacher.isActive} />
                       </td>
                       <td style={{ color: 'var(--text-tertiary)', fontSize: 13 }}>
                         {formatDate(teacher.joinedDate)}
                       </td>
-                      <td>
-                        <button
-                          className={styles.clearCacheBtn}
-                          onClick={() => openDetailModal(teacher)}
-                          title="Xem chi tiết"
-                          style={{ padding: 'var(--space-2)', minWidth: 'auto' }}
-                        >
-                          <Icon.Eye size={16} />
-                        </button>
-                      </td>
-                    </tr>
+	                    </tr>
                   ))}
                 </tbody>
               </table>
@@ -739,9 +727,7 @@ export default function TeachersPage() {
                     Trạng thái
                   </label>
                   <div>
-                    <span className={`${styles.statusPill} ${selectedTeacher.isActive ? styles.passed : styles.failed}`}>
-                      {selectedTeacher.isActive ? 'Hoạt động' : 'Không hoạt động'}
-                    </span>
+                    <ActiveStatusBadge active={selectedTeacher.isActive} />
                   </div>
                 </div>
                 <div>

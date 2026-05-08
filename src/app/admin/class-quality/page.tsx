@@ -31,6 +31,9 @@ import {
   CentreSelect, QuickFilterChips, ExportButton,
   CSVExportSettings, type CSVColumnConfig,
   Icon,
+  ATTENDANCE_ALERT_LABELS, AttendanceAlertBadge, Badge, AttendanceSessionCell, AttendanceStatusBadge, CommentStatusBadge,
+  COMMENT_STATUS_COUNT_LABELS, COMMENT_STATUS_GROUP_LABELS,
+  RESCHEDULE_STATUS_LABELS, RescheduleStatusBadge,
 } from '@/components/ui';
 import { useFilterOptions } from '@/hooks/useFilterOptions';
 import { useQuickFilterChips } from '@/hooks/useUserPreferences';
@@ -170,8 +173,8 @@ function generateOperationsContent(data: any): string {
   lines.push('');
   
   lines.push(`**Vi phạm nhận xét giáo viên:**`);
-  lines.push(`- ${data.classesWithCommentIssues}/${data.totalClasses} lớp (${commentRate}%) có nhận xét sơ xài/để trống.`);
-  lines.push(`- *Vi phạm: Nhận xét trống, <20 ký tự, trùng lặp, hoặc quá hạn >48h.*`);
+  lines.push(`- ${data.classesWithCommentIssues}/${data.totalClasses} lớp (${commentRate}%) có nhận xét ${COMMENT_STATUS_COUNT_LABELS.brief}/${COMMENT_STATUS_COUNT_LABELS.empty}.`);
+  lines.push(`- *Vi phạm: Nhận xét ${COMMENT_STATUS_COUNT_LABELS.empty}, <20 ký tự, ${COMMENT_STATUS_COUNT_LABELS.duplicate}, hoặc ${COMMENT_STATUS_COUNT_LABELS.overdue} >48h.*`);
   lines.push('');
   
   lines.push(`**Cảnh báo chuyên cần:**`);
@@ -231,6 +234,7 @@ export default function ClassQualityPage() {
   const [quickFilterR, setQuickFilterR] = useState<string | null>(null);
 
   const [selectedClassForComment, setSelectedClassForComment] = useState<AnalyzedClassForQuality | null>(null);
+  const [commentModalSessionIndex, setCommentModalSessionIndex] = useState<number | null>(null);
   const [selectedClassForAttendance, setSelectedClassForAttendance] = useState<AnalyzedClassForQuality | null>(null);
   const [selectedClassForRescheduling, setSelectedClassForRescheduling] = useState<AnalyzedClassForQuality | null>(null);
 
@@ -1353,7 +1357,7 @@ export default function ClassQualityPage() {
               {(analyzedClasses.length > 0 || loading) && (
                 <motion.div id="section-stats" className={styles.statsGrid} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
                   <StatCard label="NHẬN XÉT HỢP LỆ" value={`${stats.commentOkRate.toFixed(1)}%`} desc="Trên tổng số buổi đã học" valueColor={stats.commentOkRate >= 90 ? 'var(--status-success)' : (stats.commentOkRate >= 70 ? 'var(--status-warning)' : 'var(--status-error)')} delay={0.0} />
-                  <StatCard label="VI PHẠM NHẬN XÉT" value={String(stats.classesWithCommentIssues)} desc="Số lớp có nhận xét sơ xài / để trống" delay={0.07} />
+                  <StatCard label="VI PHẠM NHẬN XÉT" value={String(stats.classesWithCommentIssues)} desc={`Số lớp có nhận xét ${COMMENT_STATUS_COUNT_LABELS.brief} / ${COMMENT_STATUS_COUNT_LABELS.empty}`} delay={0.07} />
                   <StatCard label="CẢNH BÁO CHUYÊN CẦN" value={`${stats.attendanceAlertRate.toFixed(1)}%`} desc="Tỉ lệ học viên có cảnh báo" valueColor={stats.attendanceAlertRate <= 5 ? 'var(--status-success)' : 'var(--status-error)'} delay={0.14} />
                   <StatCard label="LỚP BÁO ĐỘNG" value={String(stats.classesWithAttendanceAlerts)} desc="Số lớp có học viên vi phạm chuyên cần" delay={0.21} />
                   <StatCard label="BUỔI HỌC BỊ DỜI" value={`${stats.reschedulingRate.toFixed(1)}%`} desc="Tỉ lệ buổi học bị thay đổi lịch" valueColor={stats.reschedulingRate <= 10 ? 'var(--status-success)' : (stats.reschedulingRate <= 20 ? 'var(--status-warning)' : 'var(--status-error)')} delay={0.28} />
@@ -1650,9 +1654,9 @@ export default function ClassQualityPage() {
                         <div className={`${styles.sortableCol} ${sortKeyC === 'name' ? styles.activeSort : ''}`} onClick={() => handleSortC('name')} style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>Lớp học <SortIcon col="name" sortKey={sortKeyC} sortDir={sortDirC} /></div>
                         <div className={`${styles.sortableCol} ${sortKeyC === 'teacher' ? styles.activeSort : ''}`} onClick={() => handleSortC('teacher')} style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>Giáo viên <SortIcon col="teacher" sortKey={sortKeyC} sortDir={sortDirC} /></div>
                         <div className={`${styles.sortableCol} ${sortKeyC === 'progress' ? styles.activeSort : ''}`} onClick={() => handleSortC('progress')} style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>Tiến độ <SortIcon col="progress" sortKey={sortKeyC} sortDir={sortDirC} /></div>
-                        <div className={`${styles.sortableCol} ${sortKeyC === 'brief' ? styles.activeSort : ''}`} onClick={() => handleSortC('brief')} style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>Sơ xài <SortIcon col="brief" sortKey={sortKeyC} sortDir={sortDirC} /></div>
-                        <div className={`${styles.sortableCol} ${sortKeyC === 'empty' ? styles.activeSort : ''}`} onClick={() => handleSortC('empty')} style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>Để trống / Quá hạn <SortIcon col="empty" sortKey={sortKeyC} sortDir={sortDirC} /></div>
-                        <div className={`${styles.sortableCol} ${sortKeyC === 'duplicate' ? styles.activeSort : ''}`} onClick={() => handleSortC('duplicate')} style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>Trùng lặp <SortIcon col="duplicate" sortKey={sortKeyC} sortDir={sortDirC} /></div>
+                        <div className={`${styles.sortableCol} ${sortKeyC === 'brief' ? styles.activeSort : ''}`} onClick={() => handleSortC('brief')} style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>{COMMENT_STATUS_GROUP_LABELS.brief} <SortIcon col="brief" sortKey={sortKeyC} sortDir={sortDirC} /></div>
+                        <div className={`${styles.sortableCol} ${sortKeyC === 'empty' ? styles.activeSort : ''}`} onClick={() => handleSortC('empty')} style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>{COMMENT_STATUS_GROUP_LABELS.emptyOrOverdue} <SortIcon col="empty" sortKey={sortKeyC} sortDir={sortDirC} /></div>
+                        <div className={`${styles.sortableCol} ${sortKeyC === 'duplicate' ? styles.activeSort : ''}`} onClick={() => handleSortC('duplicate')} style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>{COMMENT_STATUS_GROUP_LABELS.duplicate} <SortIcon col="duplicate" sortKey={sortKeyC} sortDir={sortDirC} /></div>
                         <div className={`${styles.sortableCol} ${sortKeyC === 'commentIssues' ? styles.activeSort : ''}`} onClick={() => handleSortC('commentIssues')} style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>Tổng Vi phạm <SortIcon col="commentIssues" sortKey={sortKeyC} sortDir={sortDirC} /></div>
                       </div>
 
@@ -1667,7 +1671,7 @@ export default function ClassQualityPage() {
                             borderBottom: '1px solid var(--border-primary)',
                             alignItems: 'center', cursor: 'pointer',
                             background: 'var(--bg-surface)'
-                          }} onClick={() => setSelectedClassForComment(a)}>
+	                          }} onClick={() => { setSelectedClassForComment(a); setCommentModalSessionIndex(null); }}>
                             <div>
                                <div style={{ fontWeight: 590, color: 'var(--text-primary)' }}>{a.cls.name}</div>
                                <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{a.cls.centre?.shortName}</div>
@@ -1761,9 +1765,9 @@ export default function ClassQualityPage() {
                         <div className={`${styles.sortableCol} ${sortKeyA === 'name' ? styles.activeSort : ''}`} onClick={() => handleSortA('name')} style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>Lớp học <SortIcon col="name" sortKey={sortKeyA} sortDir={sortDirA} /></div>
                         <div className={`${styles.sortableCol} ${sortKeyA === 'teacher' ? styles.activeSort : ''}`} onClick={() => handleSortA('teacher')} style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>Giáo viên <SortIcon col="teacher" sortKey={sortKeyA} sortDir={sortDirA} /></div>
                         <div className={`${styles.sortableCol} ${sortKeyA === 'totalStudents' ? styles.activeSort : ''}`} onClick={() => handleSortA('totalStudents')} style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>Tổng Học viên <SortIcon col="totalStudents" sortKey={sortKeyA} sortDir={sortDirA} /></div>
-                        <div className={`${styles.sortableCol} ${sortKeyA === 'frequent' ? styles.activeSort : ''}`} onClick={() => handleSortA('frequent')} style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>Vắng nhiều (3+) <SortIcon col="frequent" sortKey={sortKeyA} sortDir={sortDirA} /></div>
-                        <div className={`${styles.sortableCol} ${sortKeyA === 'consecutive' ? styles.activeSort : ''}`} onClick={() => handleSortA('consecutive')} style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>Vắng liên tiếp (2+) <SortIcon col="consecutive" sortKey={sortKeyA} sortDir={sortDirA} /></div>
-                        <div className={`${styles.sortableCol} ${sortKeyA === 'lateStage' ? styles.activeSort : ''}`} onClick={() => handleSortA('lateStage')} style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>Vắng cuối khoá (Buổi 10+) <SortIcon col="lateStage" sortKey={sortKeyA} sortDir={sortDirA} /></div>
+                        <div className={`${styles.sortableCol} ${sortKeyA === 'frequent' ? styles.activeSort : ''}`} onClick={() => handleSortA('frequent')} style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>{ATTENDANCE_ALERT_LABELS.frequent_absent} <SortIcon col="frequent" sortKey={sortKeyA} sortDir={sortDirA} /></div>
+                        <div className={`${styles.sortableCol} ${sortKeyA === 'consecutive' ? styles.activeSort : ''}`} onClick={() => handleSortA('consecutive')} style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>{ATTENDANCE_ALERT_LABELS.consecutive_absent} (2+) <SortIcon col="consecutive" sortKey={sortKeyA} sortDir={sortDirA} /></div>
+                        <div className={`${styles.sortableCol} ${sortKeyA === 'lateStage' ? styles.activeSort : ''}`} onClick={() => handleSortA('lateStage')} style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>{ATTENDANCE_ALERT_LABELS.late_stage_absent} (Buổi 10+) <SortIcon col="lateStage" sortKey={sortKeyA} sortDir={sortDirA} /></div>
                         <div className={`${styles.sortableCol} ${sortKeyA === 'attendanceAlerts' ? styles.activeSort : ''}`} onClick={() => handleSortA('attendanceAlerts')} style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>Tổng Cảnh báo <SortIcon col="attendanceAlerts" sortKey={sortKeyA} sortDir={sortDirA} /></div>
                       </div>
 
@@ -1905,16 +1909,9 @@ export default function ClassQualityPage() {
                             </div>
                             <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{teacherName}</div>
                             <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-                              <span style={{ 
-                                padding: '2px 8px', 
-                                borderRadius: '4px', 
-                                background: a.reschedulingAnalysis.classType === 'regular' ? 'rgba(5, 150, 105, 0.08)' : 'rgba(59, 130, 246, 0.08)',
-                                color: a.reschedulingAnalysis.classType === 'regular' ? 'var(--status-success)' : '#3b82f6',
-                                fontSize: 11,
-                                fontWeight: 600
-                              }}>
-                                {classTypeLabel}
-                              </span>
+	                              <Badge variant={a.reschedulingAnalysis.classType === 'regular' ? 'passed' : 'info'} size="sm" shape="rounded">
+	                                {classTypeLabel}
+	                              </Badge>
                             </div>
                             <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{a.reschedulingAnalysis.averageDaysBetweenSessions.toFixed(1)} ngày</div>
                             <div style={{ fontSize: 13, color: a.reschedulingAnalysis.rescheduledSessions > 0 ? 'var(--status-warning)' : 'var(--text-secondary)' }}>
@@ -2694,75 +2691,203 @@ export default function ClassQualityPage() {
             />
           )}
 
-      <Modal open={!!selectedClassForComment} onClose={() => setSelectedClassForComment(null)}>
-        {selectedClassForComment && (
+      <Modal open={!!selectedClassForComment} onClose={() => { setSelectedClassForComment(null); setCommentModalSessionIndex(null); }}>
+        {selectedClassForComment && (() => {
+          const commentSlots = (selectedClassForComment.cls.slots || [])
+            .filter(slot => slot.date)
+            .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+          const commentStudents = selectedClassForComment.commentAnalysis.students;
+          const firstIssueSessionIndex = commentStudents
+            .flatMap(st => st.comments.filter(c => c.status !== 'ok').map(c => c.sessionIndex))
+            .sort((a, b) => a - b)[0];
+          const defaultSessionIndex = firstIssueSessionIndex ?? Math.max(Math.min(selectedClassForComment.commentAnalysis.passedSlots - 1, commentSlots.length - 1), 0);
+          const activeSessionIndex = commentModalSessionIndex !== null && commentModalSessionIndex >= 0 && commentModalSessionIndex < commentSlots.length
+            ? commentModalSessionIndex
+            : defaultSessionIndex;
+          const activeSlot = commentSlots[activeSessionIndex];
+          const commentSessionStats = commentSlots.map((slot, sessionIndex) => {
+            const comments = commentStudents.map(st => st.comments.find(c => c.sessionIndex === sessionIndex)).filter(Boolean);
+            const ok = comments.filter(c => c?.status === 'ok').length;
+            const brief = comments.filter(c => c?.status === 'brief').length;
+            const empty = comments.filter(c => c?.status === 'empty' || c?.status === 'overdue').length;
+            const duplicate = comments.filter(c => c?.status === 'duplicate_self' || c?.status === 'duplicate_other').length;
+            const hasIssues = brief > 0 || empty > 0 || duplicate > 0;
+            return { slot, sessionIndex, ok, brief, empty, duplicate, hasIssues };
+          });
+
+          return (
            <>
              <ModalHeader title={`Nhận xét Giáo viên: ${selectedClassForComment.cls.name}`} 
-                          subtitle={`${selectedClassForComment.cls.centre?.shortName}`}
-                          onClose={() => setSelectedClassForComment(null)} />
+                          subtitle={`${selectedClassForComment.cls.centre?.shortName} • ${selectedClassForComment.commentAnalysis.totalSlots} buổi`}
+                          onClose={() => { setSelectedClassForComment(null); setCommentModalSessionIndex(null); }} />
              <div className={styles.modalBody} style={{ padding: '16px 20px 20px' }}>
-                 {selectedClassForComment.commentAnalysis.students.filter(st => st.comments.some(c => c.status !== 'ok')).length === 0 ? (
-                    <div style={{ textAlign: 'center', padding: '20px', color: 'var(--text-quaternary)' }}>Toàn bộ nhận xét đều hợp lệ!</div>
-                 ) : (
-                    <div className={styles.tableScrollWrapper}>
-                      <table className={styles.studentTable}>
-                       <thead>
-                          <tr>
+               <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+                 <div style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap', padding: '12px 16px', background: 'var(--bg-elevated)', border: '1px solid var(--border-primary)', borderRadius: 6 }}>
+                   {([
+                     [COMMENT_STATUS_GROUP_LABELS.ok, selectedClassForComment.commentAnalysis.okCount, 'var(--status-success)'],
+                     [COMMENT_STATUS_GROUP_LABELS.brief, selectedClassForComment.commentAnalysis.briefCount, 'var(--status-warning)'],
+                     [COMMENT_STATUS_GROUP_LABELS.emptyOrOverdue, selectedClassForComment.commentAnalysis.emptyCount + selectedClassForComment.commentAnalysis.overdueCount, 'var(--status-error)'],
+                     [COMMENT_STATUS_GROUP_LABELS.duplicate, selectedClassForComment.commentAnalysis.duplicateCount, 'var(--status-dark-orange)'],
+                   ] as [string, number, string][]).map(([label, value, color]) => (
+                     <div key={label} style={{ minWidth: 110 }}>
+                       <div className={styles.statLabel}>{label}</div>
+                       <div style={{ fontSize: 14, fontWeight: 590, color }}>{value}</div>
+                     </div>
+                   ))}
+                 </div>
+
+                 <div className={styles.tableScrollWrapper}>
+                   <table className={styles.studentTable}>
+                     <thead>
+                       <tr>
+                         <th style={{ minWidth: 160 }}>Học viên</th>
+                         <th>Tổng quan</th>
+                         {commentSessionStats.map(stat => (
+                           <th
+                             key={stat.slot._id}
+                             onClick={() => setCommentModalSessionIndex(stat.sessionIndex)}
+                             style={{
+                               minWidth: 82,
+                               textAlign: 'center',
+                               cursor: 'pointer',
+                               background: stat.sessionIndex === activeSessionIndex ? 'rgba(59,130,246,0.08)' : undefined,
+                             }}
+                           >
+                             <div>Buổi {stat.sessionIndex + 1}</div>
+                             <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 2, textTransform: 'none', letterSpacing: 0 }}>
+                               {new Date(stat.slot.date).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })}
+                             </div>
+                           </th>
+                         ))}
+                       </tr>
+                     </thead>
+                     <tbody>
+                       {commentStudents.map(st => {
+                         const visibleStatuses = commentSessionStats.map(stat => (
+                           st.comments.find(c => c.sessionIndex === stat.sessionIndex)?.status ?? 'not_required'
+                         ));
+                         const missingCount = visibleStatuses.filter(status => status === 'empty' || status === 'overdue').length;
+                         const briefCount = visibleStatuses.filter(status => status === 'brief').length;
+                         const duplicateCount = visibleStatuses.filter(status => status === 'duplicate_self' || status === 'duplicate_other').length;
+                         const totalIssues = missingCount + briefCount + duplicateCount;
+                         return (
+                           <tr key={st.studentId}>
+                             <td style={{ fontWeight: 510, fontSize: 13 }}>{st.studentName}</td>
+                             <td>
+                               {totalIssues === 0 ? (
+                                 <CommentStatusBadge status="ok" />
+                               ) : (
+                                 <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                                   {missingCount > 0 && <CommentStatusBadge status="empty">{missingCount} {COMMENT_STATUS_COUNT_LABELS.empty}</CommentStatusBadge>}
+                                   {briefCount > 0 && <CommentStatusBadge status="brief">{briefCount} {COMMENT_STATUS_COUNT_LABELS.brief}</CommentStatusBadge>}
+                                   {duplicateCount > 0 && <CommentStatusBadge status="duplicate_self">{duplicateCount} {COMMENT_STATUS_COUNT_LABELS.duplicate}</CommentStatusBadge>}
+                                 </div>
+                               )}
+                             </td>
+                             {commentSessionStats.map(stat => {
+                               const comment = st.comments.find(c => c.sessionIndex === stat.sessionIndex);
+                               const status = comment?.status ?? 'not_required';
+                               return (
+                                 <td
+                                   key={`${st.studentId}-${stat.sessionIndex}`}
+                                   onClick={() => setCommentModalSessionIndex(stat.sessionIndex)}
+                                   style={{
+                                     textAlign: 'center',
+                                     cursor: 'pointer',
+                                     background: stat.sessionIndex === activeSessionIndex ? 'rgba(59,130,246,0.06)' : undefined,
+                                   }}
+                                 >
+                                   <CommentStatusBadge status={status} />
+                                 </td>
+                               );
+                             })}
+                           </tr>
+                         );
+                       })}
+                     </tbody>
+                   </table>
+                 </div>
+
+                 {activeSlot && (
+                   <div style={{ border: '1px solid var(--border-primary)', borderRadius: 6, overflow: 'hidden' }}>
+                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-3)', padding: '10px 12px', background: 'var(--bg-elevated)', borderBottom: '1px solid var(--border-primary)', flexWrap: 'wrap' }}>
+                       <div>
+                         <div style={{ fontWeight: 590, color: 'var(--text-primary)', fontSize: 13 }}>Nhận xét buổi {activeSessionIndex + 1}</div>
+                         <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>
+                           {new Date(activeSlot.date).toLocaleDateString('vi-VN')} • {commentSessionStats[activeSessionIndex]?.ok || 0} {COMMENT_STATUS_COUNT_LABELS.ok} • {commentSessionStats[activeSessionIndex]?.brief || 0} {COMMENT_STATUS_COUNT_LABELS.brief} • {commentSessionStats[activeSessionIndex]?.empty || 0} {COMMENT_STATUS_COUNT_LABELS.empty} • {commentSessionStats[activeSessionIndex]?.duplicate || 0} {COMMENT_STATUS_COUNT_LABELS.duplicate}
+                         </div>
+                       </div>
+                       {commentSessionStats[activeSessionIndex]?.hasIssues ? (
+                         <Badge variant="warning" size="sm" shape="rounded">Có vấn đề</Badge>
+                       ) : (
+                         <Badge variant="passed" size="sm" shape="rounded">Ổn</Badge>
+                       )}
+                     </div>
+                     <div className={styles.tableScrollWrapper}>
+                       <table className={styles.studentTable}>
+                         <thead>
+                           <tr>
+                             <th style={{ width: 28 }}>#</th>
                              <th>Học viên</th>
-                             <th>Buổi</th>
-                             <th>Ngày</th>
                              <th>Giáo viên</th>
                              <th>Trạng thái</th>
                              <th>Nội dung nhận xét</th>
-                          </tr>
-                       </thead>
-                       <tbody>
-                          {selectedClassForComment.commentAnalysis.students
-                             .filter(st => st.comments.some(c => c.status !== 'ok'))
-                             .map(st => 
-                                st.comments
-                                   .filter(c => c.status !== 'ok')
-                                   .map((c, idx) => (
-                                      <tr key={`${st.studentId}-${idx}`}>
-                                         {idx === 0 && (
-                                            <td rowSpan={st.comments.filter(c => c.status !== 'ok').length} style={{ fontWeight: 510 }}>
-                                               {st.studentName}
-                                            </td>
-                                         )}
-                                         <td style={{ textAlign: 'center', fontWeight: 510 }}>Buổi {c.sessionIndex + 1}</td>
-                                         <td style={{ whiteSpace: 'nowrap' }}>{new Date(c.date).toLocaleDateString('vi-VN')}</td>
-                                         <td style={{ fontSize: 12 }}>{c.teacherName}</td>
-                                         <td>
-                                            <span className={`${styles.statusPill} ${
-                                               c.status === 'brief' ? styles.briefStatusChip
-                                                  : c.status === 'duplicate_self' || c.status === 'duplicate_other' ? styles.duplicateStatusChip
-                                                  : styles.failed
-                                            }`}>
-                                               {c.status === 'brief' ? 'Sơ xài' : 
-                                                c.status === 'empty' ? 'Để trống' : 
-                                                c.status === 'duplicate_self' ? 'Trùng (bản thân)' : 
-                                                c.status === 'duplicate_other' ? 'Trùng (HV khác)' : 
-                                                'Quá hạn'}
-                                               {c.isOverdue && c.overdueHours !== undefined && (
-                                                  <span style={{ fontSize: 10, marginLeft: 4 }}>
-                                                     ({Math.floor(c.overdueHours / 24)}d)
-                                                  </span>
-                                               )}
-                                            </span>
-                                         </td>
-                                         <td style={{ fontSize: 12, maxWidth: 300 }}>
-                                            {c.text || <span style={{ color: 'var(--text-quaternary)', fontStyle: 'italic' }}>Không có nội dung</span>}
-                                         </td>
-                                      </tr>
-                                   ))
-                             )}
-                       </tbody>
-                    </table>
-                    </div>
+                           </tr>
+                         </thead>
+                         <tbody>
+                           {commentStudents.map((st, idx) => {
+                             const c = st.comments.find(comment => comment.sessionIndex === activeSessionIndex);
+                             const status = c?.status ?? 'not_required';
+                             return (
+                               <tr key={`${st.studentId}-${activeSessionIndex}`}>
+                                 <td style={{ color: 'var(--text-quaternary)', fontSize: 11 }}>{idx + 1}</td>
+                                 <td style={{ fontWeight: 510 }}>{st.studentName}</td>
+                                 <td style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{c?.teacherName || '—'}</td>
+                                 <td>
+                                   <CommentStatusBadge status={status}>
+                                     {status === 'duplicate_self' ? 'Trùng bản thân' : status === 'duplicate_other' ? 'Trùng HV khác' : undefined}
+                                   </CommentStatusBadge>
+                                   {c?.isOverdue && c.overdueHours !== undefined && (
+                                     <span style={{ fontSize: 10, marginLeft: 6, color: 'var(--text-tertiary)' }}>
+                                       {Math.floor(c.overdueHours / 24)}d
+                                     </span>
+                                   )}
+                                 </td>
+	                                 <td style={{ fontSize: 12, color: c?.text ? 'var(--text-primary)' : 'var(--text-quaternary)', minWidth: 360, maxWidth: 640, lineHeight: 1.45 }}>
+	                                   {c ? (
+	                                     <div>
+	                                       {c.text ? (
+	                                         <div style={{ color: 'var(--text-primary)' }}>{c.text}</div>
+	                                       ) : (
+	                                         <em>Không có nội dung</em>
+	                                       )}
+	                                       {(c.status === 'duplicate_self' || c.status === 'duplicate_other' || c.isOverdue) && (
+	                                         <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 6 }}>
+	                                           {c.status === 'duplicate_self' && <CommentStatusBadge status="duplicate_self">Trùng với nhận xét trước của học viên</CommentStatusBadge>}
+	                                           {c.status === 'duplicate_other' && <CommentStatusBadge status="duplicate_other">Trùng với học viên khác</CommentStatusBadge>}
+	                                           {c.isOverdue && c.overdueHours !== undefined && (
+	                                             <CommentStatusBadge status="overdue">Quá hạn {Math.floor(c.overdueHours / 24)} ngày</CommentStatusBadge>
+	                                           )}
+	                                         </div>
+	                                       )}
+	                                     </div>
+	                                   ) : (
+	                                     <em>Không yêu cầu nhận xét / không có dữ liệu điểm danh</em>
+	                                   )}
+	                                 </td>
+                               </tr>
+                             );
+                           })}
+                         </tbody>
+                       </table>
+                     </div>
+                   </div>
                  )}
+               </div>
              </div>
            </>
-        )}
+          );
+        })()}
       </Modal>
 
       <Modal open={!!selectedClassForAttendance} onClose={() => setSelectedClassForAttendance(null)}>
@@ -2790,41 +2915,28 @@ export default function ClassQualityPage() {
                                 <td style={{ fontWeight: 510 }}>{st.studentName}</td>
                                 <td>
                                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                                      {st.alerts.includes('frequent_absent') && (
-                                         <span style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '4px', background: 'rgba(245, 158, 11, 0.08)', color: 'var(--status-warning)', fontWeight: 600, border: '1px solid rgba(217,119,6,0.2)' }}>
-                                            Vắng 3+ buổi
-                                         </span>
-                                      )}
-                                      {st.alerts.includes('consecutive_absent') && (
-                                         <span style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '4px', background: 'rgba(194, 65, 12, 0.08)', color: 'var(--status-dark-orange)', fontWeight: 600, border: '1px solid rgba(194,65,12,0.2)' }}>
-                                            Vắng liên tiếp
-                                         </span>
-                                      )}
-                                      {st.alerts.includes('late_stage_absent') && (
-                                         <span style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '4px', background: 'rgba(220, 38, 38, 0.08)', color: 'var(--status-error)', fontWeight: 600, border: '1px solid rgba(220,38,38,0.2)' }}>
-                                            Vắng cuối khoá
-                                         </span>
-                                      )}
+	                                      {st.alerts.includes('frequent_absent') && (
+	                                         <AttendanceAlertBadge type="frequent_absent" />
+	                                      )}
+	                                      {st.alerts.includes('consecutive_absent') && (
+	                                         <AttendanceAlertBadge type="consecutive_absent" />
+	                                      )}
+	                                      {st.alerts.includes('late_stage_absent') && (
+	                                         <AttendanceAlertBadge type="late_stage_absent" />
+	                                      )}
                                    </div>
                                 </td>
                                 <td>
                                    <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-                                      {st.sessions.map((sess, idx) => {
-                                         const isAbsent = ['ABSENT', 'ABSENT_UNEXCUSED'].includes(sess.status?.toUpperCase() || '');
-                                         const isPresent = ['PRESENT', 'LATE', 'EXCUSED'].includes(sess.status?.toUpperCase() || '');
-                                         const color = isAbsent ? 'var(--status-error)' : (isPresent ? 'var(--status-success)' : 'var(--text-quaternary)');
-                                         return (
-                                            <span key={idx} style={{ 
-                                                display: 'inline-block', width: '28px', height: '28px', lineHeight: '28px', textAlign: 'center', 
-                                                borderRadius: '4px', fontSize: '11px', fontWeight: 600, 
-                                                background: isAbsent ? 'rgba(220, 38, 38, 0.08)' : (isPresent ? 'rgba(5, 150, 105, 0.08)' : 'var(--bg-surface)'),
-                                                color,
-                                                border: `1px solid ${isAbsent ? 'rgba(220, 38, 38, 0.25)' : (isPresent ? 'rgba(5, 150, 105, 0.25)' : 'var(--border-secondary)')}`
-                                            }} title={`${new Date(sess.date).toLocaleDateString('vi-VN')} - ${sess.status}`}>
-                                                {idx + 1}
-                                            </span>
-                                         );
-                                      })}
+                                      {st.sessions.map((sess, idx) => (
+                                         <AttendanceSessionCell
+                                            key={idx}
+                                            status={sess.status}
+                                            index={idx}
+                                            date={sess.date}
+                                            size={28}
+                                         />
+                                      ))}
                                    </div>
                                 </td>
                              </tr>
@@ -2950,7 +3062,7 @@ export default function ClassQualityPage() {
                                   <td style={{ textAlign: 'center' }}>
                                     {sess.daysSincePrevious !== null ? (
                                       isSameDay ? (
-                                        <span style={{ color: '#3b82f6', fontWeight: 600 }}>Cùng ngày</span>
+	                                        <span style={{ color: 'var(--brand-indigo)', fontWeight: 600 }}>{RESCHEDULE_STATUS_LABELS.same_day}</span>
                                       ) : (
                                         `${sess.daysSincePrevious} ngày`
                                       )
@@ -2959,37 +3071,17 @@ export default function ClassQualityPage() {
                                   <td style={{ textAlign: 'center', color: 'var(--text-tertiary)' }}>
                                     {sess.sessionIndex > 0 ? `${sess.expectedDays} ngày` : '—'}
                                   </td>
-                                  <td style={{ textAlign: 'center', fontWeight: 600, color: sess.isRescheduled ? (sess.deviation < 0 ? '#3b82f6' : 'var(--status-warning)') : isSameDay ? '#3b82f6' : 'var(--text-tertiary)' }}>
+	                                  <td style={{ textAlign: 'center', fontWeight: 600, color: sess.isRescheduled ? (sess.deviation < 0 ? 'var(--brand-indigo)' : 'var(--status-warning)') : isSameDay ? 'var(--brand-indigo)' : 'var(--text-tertiary)' }}>
                                     {sess.sessionIndex > 0 ? (sess.deviation > 0 ? `+${sess.deviation}` : sess.deviation) : '—'}
                                   </td>
                                   <td>
                                      {isSameDay ? (
-                                       <span style={{ 
-                                         fontSize: '11px', 
-                                         padding: '3px 8px', 
-                                         borderRadius: '4px', 
-                                         background: 'rgba(59, 130, 246, 0.08)',
-                                         color: '#3b82f6', 
-                                         fontWeight: 600,
-                                         border: '1px solid rgba(59, 130, 246, 0.2)'
-                                       }}>
-                                         Cùng ngày
-                                       </span>
-                                     ) : sess.isRescheduled ? (
-                                       <span style={{ 
-                                         fontSize: '11px', 
-                                         padding: '3px 8px', 
-                                         borderRadius: '4px', 
-                                         background: sess.reschedulingType === 'early' ? 'rgba(59, 130, 246, 0.08)' : 'rgba(245, 158, 11, 0.08)',
-                                         color: sess.reschedulingType === 'early' ? '#3b82f6' : 'var(--status-warning)', 
-                                         fontWeight: 600,
-                                         border: `1px solid ${sess.reschedulingType === 'early' ? 'rgba(59, 130, 246, 0.2)' : 'rgba(217,119,6,0.2)'}`
-                                       }}>
-                                         {sess.reschedulingType === 'early' ? 'Học sớm' : 'Học muộn'}
-                                       </span>
-                                     ) : (
-                                       <span style={{ fontSize: 11, color: 'var(--text-quaternary)' }}>Đúng lịch</span>
-                                     )}
+	                                       <RescheduleStatusBadge status="same_day" />
+	                                     ) : sess.isRescheduled ? (
+	                                       <RescheduleStatusBadge status={sess.reschedulingType === 'early' ? 'early' : 'late'} />
+	                                     ) : (
+	                                       <RescheduleStatusBadge status="on_schedule" />
+	                                     )}
                                   </td>
                                </tr>
                             )})}
@@ -3232,7 +3324,7 @@ export default function ClassQualityPage() {
                           return (
                             <tr key={st.studentId}>
                               <td style={{ fontWeight: 510 }}>{st.studentName}</td>
-                              <td style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{st.attendanceStatus}</td>
+                              <td><AttendanceStatusBadge status={st.attendanceStatus} /></td>
                               {checkpointView !== 'demo' ? (
                                 <>
                                   <td style={{ textAlign: 'center' }}>{st.theoryScore !== null ? st.theoryScore.toFixed(1) : '—'}</td>
@@ -3319,10 +3411,10 @@ function getDefaultCommentCSVColumns(): CSVColumnConfig[] {
     { id: 'teacher', label: 'Giáo viên', enabled: true },
     { id: 'sessionsCompleted', label: 'Buổi đã học', enabled: true },
     { id: 'totalSessions', label: 'Tổng buổi', enabled: true },
-    { id: 'briefCount', label: 'Nhận xét sơ sài', enabled: true },
-    { id: 'emptyCount', label: 'Nhận xét để trống', enabled: true },
-    { id: 'overdueCount', label: 'Nhận xét quá hạn', enabled: true },
-    { id: 'duplicateCount', label: 'Nhận xét trùng lặp', enabled: true },
+    { id: 'briefCount', label: `Nhận xét ${COMMENT_STATUS_COUNT_LABELS.brief}`, enabled: true },
+    { id: 'emptyCount', label: `Nhận xét ${COMMENT_STATUS_COUNT_LABELS.empty}`, enabled: true },
+    { id: 'overdueCount', label: `Nhận xét ${COMMENT_STATUS_COUNT_LABELS.overdue}`, enabled: true },
+    { id: 'duplicateCount', label: `Nhận xét ${COMMENT_STATUS_COUNT_LABELS.duplicate}`, enabled: true },
     { id: 'totalViolations', label: 'Tổng vi phạm', enabled: true },
   ];
 }
@@ -3335,10 +3427,10 @@ function getCommentCSVColumnsFromConfig(config: CSVColumnConfig[]): CSVColumn<An
     teacher: { header: 'Giáo viên', accessor: (row) => getPrimaryTeacher(row.cls) },
     sessionsCompleted: { header: 'Buổi đã học', accessor: (row) => row.commentAnalysis.passedSlots },
     totalSessions: { header: 'Tổng buổi', accessor: (row) => row.cls.numberOfSessions || row.cls.slots?.length || 0 },
-    briefCount: { header: 'Nhận xét sơ sài', accessor: (row) => row.commentAnalysis.briefCount },
-    emptyCount: { header: 'Nhận xét để trống', accessor: (row) => row.commentAnalysis.emptyCount },
-    overdueCount: { header: 'Nhận xét quá hạn', accessor: (row) => row.commentAnalysis.overdueCount },
-    duplicateCount: { header: 'Nhận xét trùng lặp', accessor: (row) => row.commentAnalysis.duplicateCount },
+    briefCount: { header: `Nhận xét ${COMMENT_STATUS_COUNT_LABELS.brief}`, accessor: (row) => row.commentAnalysis.briefCount },
+    emptyCount: { header: `Nhận xét ${COMMENT_STATUS_COUNT_LABELS.empty}`, accessor: (row) => row.commentAnalysis.emptyCount },
+    overdueCount: { header: `Nhận xét ${COMMENT_STATUS_COUNT_LABELS.overdue}`, accessor: (row) => row.commentAnalysis.overdueCount },
+    duplicateCount: { header: `Nhận xét ${COMMENT_STATUS_COUNT_LABELS.duplicate}`, accessor: (row) => row.commentAnalysis.duplicateCount },
     totalViolations: { 
       header: 'Tổng vi phạm', 
       accessor: (row) => 
@@ -3363,9 +3455,9 @@ function getDefaultAttendanceCSVColumns(): CSVColumnConfig[] {
     { id: 'centre', label: 'Cơ sở', enabled: true },
     { id: 'teacher', label: 'Giáo viên', enabled: true },
     { id: 'totalStudents', label: 'Tổng học viên', enabled: true },
-    { id: 'frequentAbsent', label: 'Vắng thường xuyên', enabled: true },
-    { id: 'consecutiveAbsent', label: 'Vắng liên tiếp', enabled: true },
-    { id: 'lateStageAbsent', label: 'Vắng cuối khóa', enabled: true },
+    { id: 'frequentAbsent', label: ATTENDANCE_ALERT_LABELS.frequent_absent, enabled: true },
+    { id: 'consecutiveAbsent', label: ATTENDANCE_ALERT_LABELS.consecutive_absent, enabled: true },
+    { id: 'lateStageAbsent', label: ATTENDANCE_ALERT_LABELS.late_stage_absent, enabled: true },
     { id: 'totalAlerts', label: 'Tổng cảnh báo', enabled: true },
   ];
 }
@@ -3378,15 +3470,15 @@ function getAttendanceCSVColumnsFromConfig(config: CSVColumnConfig[]): CSVColumn
     teacher: { header: 'Giáo viên', accessor: (row) => getPrimaryTeacher(row.cls) },
     totalStudents: { header: 'Tổng học viên', accessor: (row) => row.attendanceAnalysis.totalStudents },
     frequentAbsent: { 
-      header: 'Vắng thường xuyên', 
+      header: ATTENDANCE_ALERT_LABELS.frequent_absent, 
       accessor: (row) => row.attendanceAnalysis.studentsWithAlerts.filter(st => st.alerts.includes('frequent_absent')).length 
     },
     consecutiveAbsent: { 
-      header: 'Vắng liên tiếp', 
+      header: ATTENDANCE_ALERT_LABELS.consecutive_absent, 
       accessor: (row) => row.attendanceAnalysis.studentsWithAlerts.filter(st => st.alerts.includes('consecutive_absent')).length 
     },
     lateStageAbsent: { 
-      header: 'Vắng cuối khóa', 
+      header: ATTENDANCE_ALERT_LABELS.late_stage_absent, 
       accessor: (row) => row.attendanceAnalysis.studentsWithAlerts.filter(st => st.alerts.includes('late_stage_absent')).length 
     },
     totalAlerts: { header: 'Tổng cảnh báo', accessor: (row) => row.attendanceAnalysis.totalAlerts },

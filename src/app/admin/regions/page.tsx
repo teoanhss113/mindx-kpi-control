@@ -7,7 +7,7 @@ import { getRegions, createRegion, updateRegion, deleteRegion } from '@/lib/admi
 import { getAuthToken } from '@/lib/auth/clientAuth';
 import { AdminPageWrapper } from '@/components/AdminPageWrapper';
 import { useTableSort } from '@/hooks/useTableSort';
-import { SortableHeader, AdminToolbar, AdminTableSection, Icon, Spinner, EmptyState, CentreSelect } from '@/components/ui';
+import { ActiveStatusBadge, SortableHeader, AdminToolbar, AdminTableSection, Icon, Spinner, EmptyState, CentreSelect } from '@/components/ui';
 import { fetchAllCentres, type Centre } from '@/services/centresService';
 import { getCache, setCache } from '@/lib/idb';
 import { LABELS, MESSAGES, ENTITIES, CACHE_KEYS } from '@/constants';
@@ -315,9 +315,7 @@ export default function RegionsPage() {
                       </div>
                     </td>
                     <td>
-                      <span className={`${styles.statusPill} ${region.is_active ? styles.passed : styles.failed}`}>
-                        {region.is_active ? 'Hoạt động' : 'Vô hiệu'}
-                      </span>
+                      <ActiveStatusBadge active={region.is_active} />
                     </td>
                     <td style={{ color: 'var(--text-tertiary)', fontSize: 13 }}>
                       {new Date(region.created_at).toLocaleDateString('vi-VN')}

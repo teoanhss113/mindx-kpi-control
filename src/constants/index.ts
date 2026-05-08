@@ -293,6 +293,25 @@ export const DATE_UTILS = {
 export const COURSES = ['Coding', 'Robotics', 'Art', 'Others'] as const;
 export type Course = typeof COURSES[number];
 
+export const COURSE_CATEGORY_COLORS: Record<Course, string> = {
+  Coding: 'var(--status-success)',
+  Robotics: 'var(--brand-indigo)',
+  Art: 'var(--status-warning)',
+  Others: 'var(--border-primary)',
+};
+
+export const COURSE_CATEGORY_ORDER: Record<Course, number> = {
+  Coding: 0,
+  Robotics: 1,
+  Art: 2,
+  Others: 3,
+};
+
+/**
+ * CLASS STATUSES — Shared filtering rules for class-like LMS records
+ */
+export const CLASS_INACTIVE_STATUSES = new Set(['ABANDONED', 'REJECTED', 'CANCELLED']);
+
 /**
  * LINEAR DESIGN SYSTEM COLORS — Chart colors with Linear Indigo as primary
  * Linear Indigo (#5e6ad2) is the singular chromatic accent per DESIGN.md
@@ -308,4 +327,3 @@ export const CHART_COLORS = {
   /** Full palette for multi-series charts (Linear Indigo first) */
   PALETTE: ['#5e6ad2', '#06b6d4', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6'],
 } as const;
-

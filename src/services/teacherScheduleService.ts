@@ -60,12 +60,20 @@ function classToScheduleSlots(cls: Class): TeacherScheduleSlot[] {
 function officeHourToScheduleSlot(oh: OfficeHour): TeacherScheduleSlot | null {
   if (!oh.teacher || !oh.centre) return null;
   
+  const rawType = oh.type || '';
+  const typeUpper = rawType.toUpperCase();
+  
+  let displayName = 'Ca trực tại cơ sở';
+  if (typeUpper.includes('TRIAL')) displayName = 'Ca trực trực tuyến';
+  else if (typeUpper.includes('MAKEUP')) displayName = 'Dạy bù';
+  
   return {
     id: `office-hour-${oh.id}`,
     type: 'office-hour',
     startTime: oh.startTime,
     endTime: oh.endTime,
-    className: oh.type === 'Trial' ? 'Ca trực trực tuyến' : 'Ca trực tại cơ sở',
+    className: displayName,
+    officeHourType: rawType, // expose raw type for debugging
     classId: oh.class?.id,
     centreId: oh.centre.id,
     centreName: oh.centre.name,

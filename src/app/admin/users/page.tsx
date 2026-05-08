@@ -8,7 +8,7 @@ import { findUser, createDebouncedUserLookup, type LMSUser } from '@/services/us
 import { searchUsers } from '@/services/ticketService';
 import { AdminPageWrapper } from '@/components/AdminPageWrapper';
 import { useTableSort } from '@/hooks/useTableSort';
-import { SortableHeader, AdminToolbar, AdminTableSection, Icon, Spinner, MultiSelect, EmptyState, UserSearchInput, type UserSearchResult, ModalFooter, Modal, ModalHeader, ConfirmDialog, useToast, ToastContainer } from '@/components/ui';
+import { SortableHeader, AdminToolbar, AdminTableSection, Icon, Spinner, MultiSelect, EmptyState, UserSearchInput, type UserSearchResult, ModalFooter, Modal, ModalHeader, ConfirmDialog, useToast, ToastContainer, ActiveStatusBadge } from '@/components/ui';
 import { COURSES, LABELS, MESSAGES, ENTITIES } from '@/constants';
 import styles from '@/app/dashboard.module.css';
 import type { Role } from '@/lib/supabase/types';
@@ -466,9 +466,7 @@ export default function UsersPage() {
                       </span>
                     </td>
                     <td>
-                      <span className={`${styles.statusPill} ${user.is_active ? styles.passed : styles.failed}`}>
-                        {user.is_active ? 'Hoạt động' : 'Vô hiệu'}
-                      </span>
+                      <ActiveStatusBadge active={user.is_active} />
                     </td>
                     <td style={{ color: 'var(--text-tertiary)', fontSize: 13 }}>
                       {new Date(user.created_at).toLocaleDateString('vi-VN')}
@@ -536,9 +534,7 @@ export default function UsersPage() {
                   <tr key={user.id}>
                     <td style={{ fontWeight: 510 }}>{user.email}</td>
                     <td>
-                      <span className={`${styles.statusPill} ${user.is_active ? styles.passed : styles.failed}`}>
-                        {user.is_active ? 'Hoạt động' : 'Vô hiệu'}
-                      </span>
+                      <ActiveStatusBadge active={user.is_active} />
                     </td>
                     <td style={{ color: 'var(--text-tertiary)', fontSize: 13 }}>
                       {user.last_login_at ? new Date(user.last_login_at).toLocaleDateString('vi-VN') : '—'}

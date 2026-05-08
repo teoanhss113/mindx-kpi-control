@@ -19,7 +19,7 @@ export function ErrorBanner({ message }: ErrorBannerProps) {
         background: 'rgba(220, 38, 38, 0.08)',
         border: '1px solid rgba(220, 38, 38, 0.25)',
         borderRadius: 'var(--radius-comfortable)',
-        color: '#dc2626',
+        color: 'var(--status-error)',
         fontSize: 13,
         display: 'flex',
         alignItems: 'center',

@@ -1,6 +1,7 @@
 import { Class, Session } from '@/types/classes';
 import { getCourseCategory } from '@/lib/courseCategories';
 import { computeTBCK, determineRank } from '@/lib/courseGrading';
+import { getStudentAttendanceCommentContent } from '@/lib/commentContent';
 import { 
   ClassCommentAnalysis, 
   ClassAttendanceAnalysis, 
@@ -14,11 +15,6 @@ import {
   StudentCheckpointScore,
   StudentDemoScore
 } from '@/types/classQuality';
-
-function stripHtml(html: string): string {
-  if (!html) return '';
-  return html.replace(/<[^>]*>?/gm, '').trim();
-}
 
 // Checkpoint sessions where comments are required even if student is absent
 const CHECKPOINT_SESSIONS = [5, 9, 14]; // 1-indexed: session 5, 9, 14
@@ -70,7 +66,7 @@ export function analyzeComments(cls: Class, exemptSessions: number[] = CHECKPOIN
     // Pre-calculate frequencies of comments in THIS slot to detect 'duplicate_other'
     const slotCommentFreq = new Map<string, number>();
     (slot.studentAttendance ?? []).forEach(sa => {
-      const text = stripHtml(sa.comment || '');
+      const text = getStudentAttendanceCommentContent(sa);
       if (text.length > 0) {
         slotCommentFreq.set(text, (slotCommentFreq.get(text) || 0) + 1);
       }
@@ -91,8 +87,8 @@ export function analyzeComments(cls: Class, exemptSessions: number[] = CHECKPOIN
 
        if (isPast) st.totalCommentsExpected++;
 
-       const rawComment = sa.comment || '';
-       const text = stripHtml(rawComment);
+       const rawComment = getStudentAttendanceCommentContent(sa);
+       const text = rawComment;
        let status: CommentStatus = 'ok';
        let isOverdue = false;
        let overdueHours = 0;
@@ -622,9 +618,10 @@ function analyzeCheckpoint(cls: Class, sessionIndex: number): CheckpointAnalysis
   let missingScoreCount = 0;
 
   for (const attendance of students) {
-    const theory = parseScoreByLabel(attendance.comment || '', 'Điểm lý thuyết');
-    const practice = parseScoreByLabel(attendance.comment || '', 'Điểm thực hành');
-    const ability = parseScoreByLabel(attendance.comment || '', 'Điểm năng lực');
+    const commentContent = getStudentAttendanceCommentContent(attendance);
+    const theory = parseScoreByLabel(commentContent, 'Điểm lý thuyết');
+    const practice = parseScoreByLabel(commentContent, 'Điểm thực hành');
+    const ability = parseScoreByLabel(commentContent, 'Điểm năng lực');
     const cpScore = computeCpScore(theory, practice, ability);
     
     const studentScore: StudentCheckpointScore = {
@@ -637,7 +634,7 @@ function analyzeCheckpoint(cls: Class, sessionIndex: number): CheckpointAnalysis
       checkpointScore: cpScore,
       isPassed: cpScore !== null && cpScore >= 3.5,
       qualityBand: getCheckpointQualityBand(cpScore),
-      comment: attendance.comment || ''
+      comment: commentContent
     };
 
     studentScores.push(studentScore);
@@ -761,11 +758,12 @@ function analyzeDemo(cls: Class, sessionIndex: number = 13): CheckpointAnalysis 
 
   for (const attendance of students) {
     // Parse Demo score directly (matches reference script)
-    const demoScore = parseScoreByLabel(attendance.comment || '', 'Điểm Demo');
+    const commentContent = getStudentAttendanceCommentContent(attendance);
+    const demoScore = parseScoreByLabel(commentContent, 'Điểm Demo');
     
     // For backward compatibility, also try old label if not found
-    const productScore = demoScore !== null ? null : parseScoreByLabel(attendance.comment || '', 'Điểm sản phẩm cuối khoá');
-    const ability = parseScoreByLabel(attendance.comment || '', 'Điểm năng lực');
+    const productScore = demoScore !== null ? null : parseScoreByLabel(commentContent, 'Điểm sản phẩm cuối khoá');
+    const ability = parseScoreByLabel(commentContent, 'Điểm năng lực');
     
     // Use direct demo score if available, otherwise compute from product + ability
     const finalDemoScore = demoScore !== null ? demoScore : computeDemoScore(productScore, ability);
@@ -778,7 +776,7 @@ function analyzeDemo(cls: Class, sessionIndex: number = 13): CheckpointAnalysis 
       abilityScore: ability,
       demoScore: finalDemoScore,
       qualityBand: getDemoQualityBand(finalDemoScore),
-      comment: attendance.comment || ''
+      comment: commentContent
     };
 
     studentScores.push(studentScore);

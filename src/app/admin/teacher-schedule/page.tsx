@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo, useCallback, useRef, memo } from 'react';
+import { useEffect, useState, useMemo, useCallback, useRef, memo, Fragment } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -72,6 +72,7 @@ const TIME_SLOTS = [
   { time: '08:00 - 10:00', label: 'Sáng' },
   { time: '10:00 - 12:00', label: 'Sáng' },
   { time: '13:00 - 15:00', label: 'Chiều' },
+  { time: '14:00 - 16:00', label: 'Chiều' },
   { time: '15:00 - 17:00', label: 'Chiều' },
   { time: '16:00 - 18:00', label: 'Chiều' },
   { time: '18:00 - 20:00', label: 'Tối' },
@@ -437,9 +438,9 @@ const CalendarGrid = memo(({
             const isCollapsed = collapsedTimeSlots.has(timeSlot.time);
             
             return (
-            <>
+            <Fragment key={`fragment-${timeSlot.time}`}>
               {/* Time Label with Collapse Button */}
-              <div key={`time-${timeSlot.time}`} style={{ background: 'var(--bg-elevated)', padding: '12px', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', borderRight: '2px solid var(--border-primary)', position: 'relative' }}>
+              <div key={`time-${timeSlot.time}`} style={{ background: 'var(--bg-elevated)', padding: '24px 12px 12px 12px', display: 'flex', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'center', borderRight: '2px solid var(--border-primary)', position: 'relative' }}>
                 <button
                   onClick={() => onToggleCollapse(timeSlot.time)}
                   style={{
@@ -467,12 +468,125 @@ const CalendarGrid = memo(({
                 <div style={{ fontSize: 10, color: 'var(--text-quaternary)', marginTop: 2 }}>{timeSlot.label}</div>
               </div>
 
-              {/* Day Cells - Only render if not collapsed */}
-              {!isCollapsed && calendarData.map((day) => {
-                // O(1) lookup from pre-computed map instead of O(n) flatMap each cell
-                const [timeStart] = timeSlot.time.split(' - ')[0].split(':').map(Number);
-                const key = `${day.date}-${timeStart}`;
-                const daySlots = slotMap.get(key) || [];
+              {/* Day Cells */}
+              {isCollapsed ? (
+                calendarData.map((day) => {
+                  const key = `${day.date}-${timeSlot.time}`;
+                  const daySlots = slotMap.get(key) || [];
+                  
+                  const slotsByCentre = daySlots.reduce((acc, slot) => {
+                    const k = slot.centreShortName;
+                    if (!acc[k]) acc[k] = [];
+                    acc[k].push(slot);
+                    return acc;
+                  }, {} as Record<string, any[]>);
+                  
+                  Object.keys(slotsByCentre).forEach(centreName => {
+                    slotsByCentre[centreName].sort((a: any, b: any) => {
+                      if (a.type !== b.type) return a.type === 'class' ? -1 : 1;
+                      
+                      const getCourseOrder = (slot: any) => {
+                        if (!slot.courseLine) return 4;
+                        const line = slot.courseLine.toUpperCase();
+                        if (line.match(/C4K|C4T|JSA|JSI|PYA|WEB|GAME|PRO|CODING|PYTHON|CSB|CSI|1:1/)) return 1;
+                        if (line.includes('ROB')) return 2;
+                        if (line.includes('ART') || line.includes('XART')) return 3;
+                        return 4;
+                      };
+                      const orderA = getCourseOrder(a);
+                      const orderB = getCourseOrder(b);
+                      if (orderA !== orderB) return orderA - orderB;
+                      return (a.className || '').localeCompare(b.className || '');
+                    });
+                  });
+
+                  return (
+                    <div key={`${day.date}-${timeSlot.time}-collapsed`} style={{ 
+                      background: 'var(--bg-surface)', 
+                      padding: daySlots.length > 0 ? 'var(--space-2)' : '24px 0 0 0', 
+                      display: 'flex', 
+                      flexDirection: 'column', 
+                      alignItems: 'flex-start',
+                      justifyContent: daySlots.length > 0 ? 'flex-start' : 'center',
+                      gap: 8, 
+                      minHeight: 44,
+                    }}>
+                      {daySlots.length > 0 ? (
+                        Object.entries(slotsByCentre).map(([centreName, centreSlots]: [string, any]) => {
+                          return (
+                            <div key={centreName} style={{ display: 'flex', flexDirection: 'column', gap: 4, width: '100%' }}>
+                              <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-quaternary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                                {centreName}
+                              </div>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                                {centreSlots.map((slot: any, i: number) => {
+                                  const isOfficeHour = slot.type === 'office-hour';
+                                  let accentColor = 'var(--text-tertiary)';
+                                  let borderColor = 'var(--border-primary)';
+                                  let bgColor = 'var(--bg-elevated)';
+                                  
+                                  if (slot.status === 'ABANDONED') {
+                                    accentColor = 'var(--text-quaternary)';
+                                    borderColor = 'var(--border-secondary)';
+                                  } else if (slot.courseLine) {
+                                    const courseLineUpper = slot.courseLine.toUpperCase();
+                                    if (courseLineUpper.includes('ART') || courseLineUpper.includes('XART')) {
+                                      accentColor = isOfficeHour ? '#fbbf24' : '#b45309';
+                                      borderColor = isOfficeHour ? '#fde68a' : 'var(--status-warning)';
+                                    } else if (courseLineUpper.includes('ROB')) {
+                                      accentColor = isOfficeHour ? '#60a5fa' : '#1e40af';
+                                      borderColor = isOfficeHour ? 'rgba(94, 106, 210, 0.3)' : 'var(--brand-indigo)';
+                                    } else if (courseLineUpper.match(/C4K|C4T|JSA|JSI|PYA|WEB|GAME|PRO|CODING|PYTHON|CSB|CSI|1:1/)) {
+                                      accentColor = isOfficeHour ? '#34d399' : '#047857';
+                                      borderColor = isOfficeHour ? '#a7f3d0' : 'var(--status-emerald)';
+                                    }
+                                  }
+                                  
+                                  const name = slot.className || (isOfficeHour ? 'Ca trực' : 'Lớp học');
+                                  
+                                  return (
+                                    <div 
+                                      key={i} 
+                                      onClick={() => onCardClick(slot)}
+                                      style={{ 
+                                        fontSize: 9, 
+                                        fontWeight: 600, 
+                                        padding: '2px 5px', 
+                                        borderRadius: 'var(--radius-micro)', 
+                                        background: bgColor, 
+                                        border: `1px solid ${borderColor}`,
+                                        borderLeft: `3px solid ${accentColor}`,
+                                        color: 'var(--text-primary)',
+                                        whiteSpace: 'nowrap',
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                        maxWidth: '100%',
+                                        boxShadow: '0 1px 2px rgba(0,0,0,0.02)',
+                                        cursor: 'pointer'
+                                      }} 
+                                      title={name}
+                                    >
+                                      {name}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <div style={{ width: '100%', display: 'flex', justifyContent: 'center' }}>
+                          <span style={{ color: 'var(--text-quaternary)', fontSize: 11 }}>—</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              ) : (
+                calendarData.map((day) => {
+                  // O(1) lookup from pre-computed map instead of O(n) flatMap each cell
+                  const key = `${day.date}-${timeSlot.time}`;
+                  const daySlots = slotMap.get(key) || [];
 
                 // Group by centre, then sort by course line within each centre
                 const slotsByCentre = daySlots.reduce((acc, slot) => {
@@ -484,6 +598,8 @@ const CalendarGrid = memo(({
                 
                 Object.keys(slotsByCentre).forEach(centreName => {
                   slotsByCentre[centreName].sort((a: any, b: any) => {
+                    if (a.type !== b.type) return a.type === 'class' ? -1 : 1;
+                    
                     const getCourseOrder = (slot: typeof daySlots[0]) => {
                       if (!slot.courseLine) return 4;
                       const line = slot.courseLine.toUpperCase();
@@ -495,7 +611,6 @@ const CalendarGrid = memo(({
                     const orderA = getCourseOrder(a);
                     const orderB = getCourseOrder(b);
                     if (orderA !== orderB) return orderA - orderB;
-                    if (a.type !== b.type) return a.type === 'class' ? -1 : 1;
                     return (a.className || '').localeCompare(b.className || '');
                   });
                 });
@@ -550,14 +665,14 @@ const CalendarGrid = memo(({
                     
                     {/* Empty State */}
                     {daySlots.length === 0 && (
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-quaternary)', fontSize: 11 }}>
+                      <div style={{ display: 'flex', alignItems: 'flex-start', paddingTop: 24, justifyContent: 'center', height: '100%', color: 'var(--text-quaternary)', fontSize: 11 }}>
                         —
                       </div>
                     )}
                   </div>
                 );
-              })}
-            </>
+              }))}
+            </Fragment>
           );
           })}
         </div>
@@ -1334,7 +1449,12 @@ const ClassCard = memo(({ slot, onClick }: ClassCardProps) => {
       {/* Type label for office hours */}
       {slot.type === 'office-hour' && (
         <div style={{ fontSize: 9, color: 'var(--text-tertiary)', marginBottom: 'var(--space-1)', display: 'flex', alignItems: 'center', gap: 'var(--space-1)' }}>
-          {slot.className?.includes('trực tuyến') ? (
+          {slot.className?.includes('Dạy bù') ? (
+            <>
+              <Icon.BookOpen size={10} />
+              <span>Dạy bù</span>
+            </>
+          ) : slot.className?.includes('trực tuyến') ? (
             <>
               <Icon.Monitor size={10} />
               <span>Trực tuyến</span>
@@ -1744,6 +1864,64 @@ export default function TeacherSchedulePage() {
     setCurrentWeekIndex(0);
   }, [fromDate, toDate]);
 
+  /**
+   * Dynamically generate TIME_SLOTS from actual schedule data.
+   * Uses exact startTime-endTime pairs. Each unique time range gets its own row.
+   * Only scans slots that fall within the CURRENT WEEK to avoid empty rows.
+   */
+  const dynamicTimeSlots = useMemo(() => {
+    const timeRangeSet = new Set<string>();
+    
+    if (allWeeks.length === 0 || !allWeeks[currentWeekIndex]) return TIME_SLOTS;
+    
+    const currentWeekDates = allWeeks[currentWeekIndex];
+    const weekStart = new Date(currentWeekDates[0]);
+    weekStart.setHours(0, 0, 0, 0);
+    const weekEnd = new Date(currentWeekDates[6]);
+    weekEnd.setHours(23, 59, 59, 999);
+    
+    filteredSchedulesForCalendar.forEach(schedule => {
+      schedule.slots.forEach((slot: any) => {
+        const start = new Date(slot.startTime);
+        
+        // Skip slots not in this week
+        if (start < weekStart || start > weekEnd) return;
+        
+        const end = new Date(slot.endTime);
+        const startStr = start.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false });
+        const endStr = end.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false });
+        timeRangeSet.add(`${startStr} - ${endStr}`);
+      });
+    });
+    
+    const slots = Array.from(timeRangeSet)
+      .sort((a, b) => {
+        const [aStart] = a.split(' - ');
+        const [bStart] = b.split(' - ');
+        const [aH, aM] = aStart.split(':').map(Number);
+        const [bH, bM] = bStart.split(':').map(Number);
+        if (aH !== bH) return aH - bH;
+        if (aM !== bM) return aM - bM;
+        // Same start time: sort by end time
+        const [aEnd] = a.split(' - ').slice(1);
+        const [bEnd] = b.split(' - ').slice(1);
+        const [aeH, aeM] = aEnd.split(':').map(Number);
+        const [beH, beM] = bEnd.split(':').map(Number);
+        if (aeH !== beH) return aeH - beH;
+        return aeM - beM;
+      })
+      .map(time => {
+        const [startStr] = time.split(' - ');
+        const [h] = startStr.split(':').map(Number);
+        let label = 'Sáng';
+        if (h >= 13 && h < 18) label = 'Chiều';
+        else if (h >= 18) label = 'Tối';
+        return { time, label };
+      });
+    
+    return slots.length > 0 ? slots : TIME_SLOTS;
+  }, [filteredSchedulesForCalendar, allWeeks, currentWeekIndex]);
+
   const stats = useMemo(() => {
     if (viewMode === 'calendar') {
       // For calendar view, calculate stats based on current week only
@@ -1817,57 +1995,86 @@ export default function TeacherSchedulePage() {
 
   /**
    * Pre-compute slot lookup map for CalendarGrid.
-   * Key: `${date}-${timeSlotStart}` where timeSlotStart is the TIME_SLOT start hour
-   * Value: array of slots (with teacher injected) that fall within that time slot
-   * IMPORTANT: Only include slots that fall within the current week being displayed
+   * Key: `${date}-${startTimeStr}` where startTimeStr matches the start of the TIME_SLOT
+   * Value: array of slots (with teacher injected) that belong to that time row
+   * 
+   * DEDUPLICATION: Each class (className+teacherId+date) only appears in ONE row.
+   * Priority: type 'class' over 'office-hour', then longest duration.
+   * This prevents a class from showing up in both '18:30 - 19:30' and '18:30 - 20:30'.
    */
   const calendarSlotMap = useMemo(() => {
     const map = new Map<string, any[]>();
     
-    // Get the date range for the current week
     if (allWeeks.length === 0 || !allWeeks[currentWeekIndex]) return map;
     
     const currentWeekDates = allWeeks[currentWeekIndex];
     const weekStart = currentWeekDates[0];
     const weekEnd = currentWeekDates[6];
     
-    // Set to start of day for weekStart and end of day for weekEnd
     const weekStartTime = new Date(weekStart);
     weekStartTime.setHours(0, 0, 0, 0);
     const weekEndTime = new Date(weekEnd);
     weekEndTime.setHours(23, 59, 59, 999);
     
+    // Step 1: Collect all slot entries for this week, compute their time range key
+    type SlotEntry = { slot: any; teacher: any; slotDate: string; startStr: string; endStr: string; durationMs: number };
+    const allEntries: SlotEntry[] = [];
+    
     filteredSchedulesForCalendar.forEach(schedule => {
-      schedule.slots.forEach(slot => {
-        const slotStartTime = new Date(slot.startTime);
+      schedule.slots.forEach((slot: any) => {
+        const slotStart = new Date(slot.startTime);
+        const slotEnd = new Date(slot.endTime);
         
-        // Only include slots that fall within the current week
-        if (slotStartTime < weekStartTime || slotStartTime > weekEndTime) {
-          return; // Skip this slot
-        }
+        if (slotStart < weekStartTime || slotStart > weekEndTime) return;
         
-        const slotDate = slotStartTime.toISOString().split('T')[0];
-        const slotHour = slotStartTime.getHours();
+        const slotDate = slotStart.toISOString().split('T')[0];
+        const startStr = slotStart.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false });
+        const endStr = slotEnd.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false });
+        const durationMs = slotEnd.getTime() - slotStart.getTime();
         
-        // Find which TIME_SLOT this slot belongs to
-        // A slot belongs to a TIME_SLOT if its start hour falls within the TIME_SLOT range
-        TIME_SLOTS.forEach(timeSlot => {
-          const [startTime, endTime] = timeSlot.time.split(' - ');
-          const [startHour] = startTime.split(':').map(Number);
-          const [endHour] = endTime.split(':').map(Number);
-          
-          // Check if slot hour falls within this time slot range
-          if (slotHour >= startHour && slotHour < endHour) {
-            const key = `${slotDate}-${startHour}`;
-            if (!map.has(key)) map.set(key, []);
-            map.get(key)!.push({ ...slot, teacher: schedule.teacher });
-          }
+        allEntries.push({
+          slot: { ...slot, teacher: schedule.teacher },
+          teacher: schedule.teacher,
+          slotDate,
+          startStr,
+          endStr,
+          durationMs,
         });
       });
     });
     
+    // Step 2: Deduplicate — for each className+teacherId+date, keep only the best entry
+    // (prefer type 'class' over 'office-hour', then longest duration)
+    const bestEntryMap = new Map<string, SlotEntry>();
+    
+    allEntries.forEach(entry => {
+      const dedupeKey = `${entry.slot.className || entry.slot.id}-${entry.teacher.id}-${entry.slotDate}`;
+      const existing = bestEntryMap.get(dedupeKey);
+      
+      if (!existing) {
+        bestEntryMap.set(dedupeKey, entry);
+      } else {
+        // Prefer 'class' type over 'office-hour'
+        const entryIsClass = entry.slot.type === 'class';
+        const existingIsClass = existing.slot.type === 'class';
+        if (entryIsClass && !existingIsClass) {
+          bestEntryMap.set(dedupeKey, entry);
+        } else if (entryIsClass === existingIsClass && entry.durationMs > existing.durationMs) {
+          // Same type: prefer longer duration
+          bestEntryMap.set(dedupeKey, entry);
+        }
+      }
+    });
+    
+    // Step 3: Build the map from deduplicated entries
+    bestEntryMap.forEach(entry => {
+      const key = `${entry.slotDate}-${entry.startStr} - ${entry.endStr}`;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(entry.slot);
+    });
+    
     return map;
-  }, [filteredSchedulesForCalendar, allWeeks, currentWeekIndex]);
+  }, [filteredSchedulesForCalendar, allWeeks, currentWeekIndex, dynamicTimeSlots]);
 
   // Allowed pages (for navigation filtering)
   const { allowedPages } = useAllowedPages();
@@ -2118,9 +2325,47 @@ export default function TeacherSchedulePage() {
                     <div style={{
                       fontSize: 14,
                       fontWeight: 590,
-                      color: 'var(--text-primary)'
+                      color: 'var(--text-primary)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 'var(--space-2)'
                     }}>
                       Tuần {currentWeekIndex + 1} / {allWeeks.length}
+                      <button
+                        onClick={() => {
+                          const today = new Date();
+                          today.setHours(0,0,0,0);
+                          const idx = allWeeks.findIndex(w => {
+                            if (!w || !w[0] || !w[6]) return false;
+                            const start = new Date(w[0]); start.setHours(0,0,0,0);
+                            const end = new Date(w[6]); end.setHours(23,59,59,999);
+                            return today >= start && today <= end;
+                          });
+                          if (idx !== -1) setCurrentWeekIndex(idx);
+                        }}
+                        style={{
+                          fontSize: 11,
+                          padding: '2px 8px',
+                          background: 'var(--bg-surface)',
+                          border: '1px solid var(--border-primary)',
+                          borderRadius: 'var(--radius-standard)',
+                          color: 'var(--text-secondary)',
+                          cursor: 'pointer',
+                          fontWeight: 500,
+                          transition: 'all 0.15s ease'
+                        }}
+                        onMouseEnter={e => {
+                          e.currentTarget.style.background = 'var(--bg-elevated)';
+                          e.currentTarget.style.borderColor = 'var(--text-tertiary)';
+                        }}
+                        onMouseLeave={e => {
+                          e.currentTarget.style.background = 'var(--bg-surface)';
+                          e.currentTarget.style.borderColor = 'var(--border-primary)';
+                        }}
+                        title="Chuyển đến tuần hiện tại"
+                      >
+                        Hôm nay
+                      </button>
                     </div>
                     {allWeeks[currentWeekIndex] && (
                       <div style={{
@@ -2162,7 +2407,7 @@ export default function TeacherSchedulePage() {
               <CalendarGrid
                 calendarData={calendarData}
                 slotMap={calendarSlotMap}
-                TIME_SLOTS={TIME_SLOTS}
+                TIME_SLOTS={dynamicTimeSlots}
                 onCardClick={handleCardClick}
                 collapsedTimeSlots={collapsedTimeSlots}
                 onToggleCollapse={toggleTimeSlotCollapse}

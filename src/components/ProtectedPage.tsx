@@ -76,9 +76,9 @@ export function ProtectedPage({ children, pageKey, requireEdit = false }: Protec
         background: 'var(--bg-marketing)'
       }}>
         <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-          <circle cx="12" cy="12" r="10" stroke="#dc2626" />
-          <line x1="15" y1="9" x2="9" y2="15" stroke="#dc2626" />
-          <line x1="9" y1="9" x2="15" y2="15" stroke="#dc2626" />
+          <circle cx="12" cy="12" r="10" stroke="var(--status-error)" />
+          <line x1="15" y1="9" x2="9" y2="15" stroke="var(--status-error)" />
+          <line x1="9" y1="9" x2="15" y2="15" stroke="var(--status-error)" />
         </svg>
         <div style={{ textAlign: 'center' }}>
           <h2 style={{

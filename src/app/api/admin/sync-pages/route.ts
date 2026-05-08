@@ -37,6 +37,13 @@ const REQUIRED_PAGES = [
   },
   // ── Trang quản trị ──
   {
+    key: 'final-sessions',
+    page_name: 'Giám khảo Cuối khoá',
+    path: '/admin/final-sessions',
+    description: 'Quản lý batch giám khảo và chia sẻ link cho giáo viên JUDGE',
+    display_order: 9,
+  },
+  {
     key: 'dashboard',
     page_name: 'Tổng quan',
     path: '/admin/dashboard',

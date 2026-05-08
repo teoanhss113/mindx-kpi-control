@@ -1,5 +1,6 @@
 import React from 'react';
 import styles from '@/app/dashboard.module.css';
+import { COURSE_CATEGORY_COLORS, type Course } from '@/constants';
 
 // Badge variant types based on existing CSS classes
 export type BadgeVariant = 
@@ -70,17 +71,17 @@ const BADGE_COLORS = {
   },
   warning: {
     background: 'rgba(245, 158, 11, 0.08)',
-    color: '#f59e0b',
+    color: 'var(--status-warning)',
     border: 'rgba(245, 158, 11, 0.25)'
   },
   info: {
-    background: 'rgba(59, 130, 246, 0.08)',
-    color: '#3b82f6',
-    border: 'rgba(59, 130, 246, 0.25)'
+    background: 'rgba(94, 106, 210, 0.08)',
+    color: 'var(--brand-indigo)',
+    border: 'rgba(94, 106, 210, 0.25)'
   },
   purple: {
     background: 'rgba(139, 92, 246, 0.08)',
-    color: '#8b5cf6',
+    color: 'var(--brand-indigo)',
     border: 'rgba(139, 92, 246, 0.25)'
   }
 };
@@ -115,7 +116,7 @@ export function Badge({
   children,
   variant = 'default',
   size = 'md',
-  shape = 'pill',
+  shape = 'rounded',
   className = '',
   style = {},
   onClick,
@@ -195,12 +196,38 @@ export const TopicBadge = ({ topic, ...props }: { topic: string } & Omit<BadgePr
   );
 };
 
-export const RoleBadge = ({ role, ...props }: { role: string } & Omit<BadgeProps, 'variant' | 'customColors'>) => {
+export const RoleBadge = ({ role, ...props }: { role: string } & Omit<BadgeProps, 'variant' | 'customColors' | 'children'>) => {
   const variant = role === 'LEC' ? 'passed' : role === 'SUPPLY' ? 'warning' : 'default';
   
   return (
     <Badge variant={variant} size="sm" {...props}>
       {role}
+    </Badge>
+  );
+};
+
+export const CourseCategoryBadge = ({
+  category,
+  ...props
+}: {
+  category: string | null | undefined;
+} & Omit<BadgeProps, 'variant' | 'customColors' | 'children'>) => {
+  const label = category || '—';
+  const color = COURSE_CATEGORY_COLORS[label as Course] || 'var(--border-primary)';
+
+  return (
+    <Badge
+      variant="default"
+      shape="rounded"
+      {...props}
+      style={{
+        borderLeft: `3px solid ${color}`,
+        fontWeight: 600,
+        color: 'var(--text-secondary)',
+        ...(props.style || {}),
+      }}
+    >
+      {label}
     </Badge>
   );
 };

@@ -79,6 +79,9 @@ export interface StudentAttendance {
   _id: string;
   status: string;
   comment: string;
+  commentByAreas?: {
+    content: string;
+  }[];
   sendCommentStatus: string;
   student: {
     id: string;
