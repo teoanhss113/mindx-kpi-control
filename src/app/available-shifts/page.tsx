@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { AuthenticatedPage } from '@/components/AuthenticatedPage';
 import { UserLayout } from '@/components/UserLayout';
 import { useAuth } from '@/lib/AuthContext';
@@ -10,9 +10,53 @@ import { createShiftRequest, hasRequestedShift } from '@/lib/shift-request-actio
 import { fetchOfficeHours, searchTeachers, type Teacher } from '@/services/officeHoursService';
 import type { TeacherConfirmation } from '@/lib/teacher-confirmation-actions';
 import type { OfficeHour } from '@/types/officeHours';
+import { getOfficeHourCategory } from '@/lib/courseCategories';
+import { OfficeHourDetailsView } from '@/components/OfficeHourDetailsView';
 import { MESSAGES } from '@/constants';
 import { motion, AnimatePresence } from 'framer-motion';
 import styles from '@/app/dashboard.module.css';
+
+const DOW_VI = ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
+const CATEGORY_ORDER: Record<string, number> = { Coding: 0, Robotics: 1, Art: 2, Others: 3 };
+const SESSION_ORDER: Record<string, number> = { 'Sáng': 0, 'Chiều': 1, 'Tối': 2 };
+
+// Category palette — matches the convention used in /admin/teacher-schedule:
+// Coding → emerald, Robotics → indigo, Art → amber.
+const CATEGORY_STYLES: Record<string, React.CSSProperties> = {
+  Coding:   { background: 'rgba(5, 150, 105, 0.10)',  color: '#047857', borderLeft: '3px solid var(--status-emerald, #059669)' },
+  Robotics: { background: 'rgba(94, 106, 210, 0.10)', color: '#1e40af', borderLeft: '3px solid var(--brand-indigo)' },
+  Art:      { background: 'rgba(217, 119, 6, 0.10)',  color: '#b45309', borderLeft: '3px solid var(--status-warning, #d97706)' },
+  Others:   { background: 'var(--bg-secondary)',      color: 'var(--text-secondary)', borderLeft: '3px solid var(--border)' },
+};
+
+function vnDateParts(iso: string) {
+  const d = new Date(iso);
+  const v = new Date(d.toLocaleString('en-US', { timeZone: 'Asia/Ho_Chi_Minh' }));
+  return { year: v.getFullYear(), month: v.getMonth() + 1, day: v.getDate(), dow: v.getDay() };
+}
+
+function dateKey(iso: string) {
+  const p = vnDateParts(iso);
+  return `${p.year}-${String(p.month).padStart(2, '0')}-${String(p.day).padStart(2, '0')}`;
+}
+
+function dateLabelParts(iso: string): { dow: string; ymd: string } {
+  const p = vnDateParts(iso);
+  return {
+    dow: DOW_VI[p.dow],
+    ymd: `${String(p.day).padStart(2, '0')}/${String(p.month).padStart(2, '0')}/${p.year}`,
+  };
+}
+
+function sessionLabel(endIso: string): 'Sáng' | 'Chiều' | 'Tối' {
+  const h = parseInt(
+    new Intl.DateTimeFormat('vi-VN', { hour: 'numeric', timeZone: 'Asia/Ho_Chi_Minh', hour12: false }).format(new Date(endIso)),
+    10,
+  );
+  if (h <= 12) return 'Sáng';
+  if (h <= 18) return 'Chiều';
+  return 'Tối';
+}
 
 interface OfficeHourWithConfirmation {
   officeHour: OfficeHour;
@@ -46,6 +90,9 @@ export default function AvailableShiftsPage() {
   
   // Table visibility
   const [showTable, setShowTable] = useState(true);
+
+  // Detail modal state
+  const [detailOfficeHour, setDetailOfficeHour] = useState<OfficeHour | null>(null);
 
   // Initialize date range based on current time
   useEffect(() => {
@@ -400,6 +447,79 @@ export default function AvailableShiftsPage() {
     }
   }
 
+  // Sort items by Date → Centre → Khối → Buổi → start time, then compute
+  // rowspan info so consecutive rows with the same value are merged.
+  const tableRows = useMemo(() => {
+    const enriched = officeHours.map(item => {
+      const oh = item.officeHour;
+      const dKey = oh.startTime ? dateKey(oh.startTime) : '';
+      const dParts = oh.startTime ? dateLabelParts(oh.startTime) : { dow: 'N/A', ymd: '' };
+      const centreId = oh.centre?.id || '';
+      const centreLabel = oh.centre?.name || oh.centre?.shortName || '—';
+      const category = getOfficeHourCategory(oh);
+      const session = oh.endTime ? sessionLabel(oh.endTime) : 'Sáng';
+      const startMs = oh.startTime ? new Date(oh.startTime).getTime() : 0;
+      return { item, dKey, dParts, centreId, centreLabel, category, session, startMs };
+    });
+
+    enriched.sort((a, b) => {
+      if (a.dKey !== b.dKey) return a.dKey.localeCompare(b.dKey);
+      if (a.centreLabel !== b.centreLabel) return a.centreLabel.localeCompare(b.centreLabel, 'vi');
+      const ca = CATEGORY_ORDER[a.category] ?? 99;
+      const cb = CATEGORY_ORDER[b.category] ?? 99;
+      if (ca !== cb) return ca - cb;
+      const sa = SESSION_ORDER[a.session] ?? 99;
+      const sb = SESSION_ORDER[b.session] ?? 99;
+      if (sa !== sb) return sa - sb;
+      return a.startMs - b.startMs;
+    });
+
+    // Compute rowspans for each group level. A row "owns" a merged cell only
+    // when it is the first row of that group; later rows in the same group
+    // skip rendering that cell.
+    type Spans = { dateSpan: number; centreSpan: number; categorySpan: number; sessionSpan: number };
+    const out: Array<typeof enriched[number] & Spans> = enriched.map(e => ({
+      ...e, dateSpan: 0, centreSpan: 0, categorySpan: 0, sessionSpan: 0,
+    }));
+
+    for (let i = 0; i < out.length; i++) {
+      const e = out[i];
+      const k1 = e.dKey;
+      const k2 = `${k1}|${e.centreId}`;
+      const k3 = `${k2}|${e.category}`;
+      const k4 = `${k3}|${e.session}`;
+
+      const prev = i > 0 ? out[i - 1] : null;
+      const pk1 = prev ? prev.dKey : null;
+      const pk2 = prev ? `${prev.dKey}|${prev.centreId}` : null;
+      const pk3 = prev ? `${prev.dKey}|${prev.centreId}|${prev.category}` : null;
+      const pk4 = prev ? `${prev.dKey}|${prev.centreId}|${prev.category}|${prev.session}` : null;
+
+      if (k1 !== pk1) {
+        let n = 1;
+        while (i + n < out.length && out[i + n].dKey === k1) n++;
+        e.dateSpan = n;
+      }
+      if (k2 !== pk2) {
+        let n = 1;
+        while (i + n < out.length && `${out[i + n].dKey}|${out[i + n].centreId}` === k2) n++;
+        e.centreSpan = n;
+      }
+      if (k3 !== pk3) {
+        let n = 1;
+        while (i + n < out.length && `${out[i + n].dKey}|${out[i + n].centreId}|${out[i + n].category}` === k3) n++;
+        e.categorySpan = n;
+      }
+      if (k4 !== pk4) {
+        let n = 1;
+        while (i + n < out.length && `${out[i + n].dKey}|${out[i + n].centreId}|${out[i + n].category}|${out[i + n].session}` === k4) n++;
+        e.sessionSpan = n;
+      }
+    }
+
+    return out;
+  }, [officeHours]);
+
   async function handleRequestShift(item: OfficeHourWithConfirmation) {
     if (!session?.email || !teacherInfo) return;
 
@@ -492,280 +612,197 @@ export default function AvailableShiftsPage() {
                   style={{ overflow: 'hidden' }}
                 >
                   <div className={styles.tableScrollWrapper}>
-                    <div style={{ minWidth: '1300px' }}>
-                      {/* Table Header */}
-                      <div className={styles.classItemHeader} style={{ gridTemplateColumns: 'minmax(0, 1.2fr) minmax(0, 0.8fr) minmax(0, 1fr) minmax(0, 0.8fr) minmax(0, 0.7fr) minmax(0, 0.6fr) minmax(0, 0.8fr) minmax(0, 0.9fr) minmax(0, 1.2fr)' }}>
-                        <div>Thời gian</div>
-                        <div>Loại ca</div>
-                        <div>Khóa học</div>
-                        <div>Giáo viên</div>
-                        <div>Cơ sở</div>
-                        <div>HS</div>
-                        <div>Trạng thái</div>
-                        <div>Trạng thái xác nhận</div>
-                        <div>Hành động</div>
-                      </div>
+                    <table className={styles.mergedTable} style={{ minWidth: '1300px' }}>
+                      <thead>
+                        <tr>
+                          <th>Ngày</th>
+                          <th>Cơ sở</th>
+                          <th>Khối</th>
+                          <th>Buổi</th>
+                          <th>Giờ</th>
+                          <th>Loại ca</th>
+                          <th>Khóa học</th>
+                          <th>Giáo viên</th>
+                          <th>HS</th>
+                          <th>Trạng thái xác nhận</th>
+                          <th>Hành động</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {tableRows.map((row) => {
+                          const item = row.item;
+                          const oh = item.officeHour;
+                          const totalAppointments = oh.appointments?.length || 0;
+                          const hasTeacherOnLMS = !!oh.teacher;
+                          const hasConfirmedTeacher = item.hasConfirmedTeacher || false;
 
-                      {/* Skeleton loading */}
-                      {loading && officeHours.length === 0 && Array.from({ length: 8 }).map((_, i) => (
-                        <div key={i} className={styles.skeletonRow} style={{ gridTemplateColumns: 'minmax(0, 1.2fr) minmax(0, 0.8fr) minmax(0, 1fr) minmax(0, 0.8fr) minmax(0, 0.7fr) minmax(0, 0.6fr) minmax(0, 0.8fr) minmax(0, 0.9fr) minmax(0, 1.2fr)' }}>
-                          {Array.from({ length: 9 }).map((_, j) => (
-                            <div key={j} className={styles.skeletonBlock} style={{ width: `${[70, 50, 60, 60, 40, 30, 50, 45, 60][j]}%` }} />
-                          ))}
-                        </div>
-                      ))}
-
-                      {/* Table Rows */}
-                      {officeHours.map((item, index) => {
-                        const oh = item.officeHour;
-                        const totalAppointments = oh.appointments?.length || 0;
-                        const hasTeacherOnLMS = !!oh.teacher;
-                        const hasConfirmedTeacher = item.hasConfirmedTeacher || false;
-
-                        // Determine confirmation status for display
-                        let confirmationStatusDisplay = null;
-                        if (item.isAssignedToMe) {
-                          if (item.confirmation?.status === 'confirmed') {
+                          let confirmationStatusDisplay: React.ReactNode = null;
+                          if (item.isAssignedToMe) {
+                            if (item.confirmation?.status === 'confirmed') {
+                              confirmationStatusDisplay = (
+                                <span style={{ padding: '4px 10px', borderRadius: 'var(--radius-pill)', fontSize: 12, fontWeight: 510, background: '#d1fae5', color: '#065f46', border: '1px solid #6ee7b7' }}>Đã xác nhận</span>
+                              );
+                            } else if (item.confirmation?.status === 'rejected') {
+                              confirmationStatusDisplay = (
+                                <span style={{ padding: '4px 10px', borderRadius: 'var(--radius-pill)', fontSize: 12, fontWeight: 510, background: '#fee2e2', color: '#991b1b', border: '1px solid #fecaca' }}>Đã từ chối</span>
+                              );
+                            } else {
+                              confirmationStatusDisplay = (
+                                <span style={{ padding: '4px 10px', borderRadius: 'var(--radius-pill)', fontSize: 12, fontWeight: 510, background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a' }}>Chờ xác nhận</span>
+                              );
+                            }
+                          } else if (hasConfirmedTeacher) {
                             confirmationStatusDisplay = (
-                              <span style={{
-                                padding: '4px 10px',
-                                borderRadius: 'var(--radius-pill)',
-                                fontSize: 12,
-                                fontWeight: 510,
-                                background: '#d1fae5',
-                                color: '#065f46',
-                                border: '1px solid #6ee7b7',
-                              }}>
-                                Đã xác nhận
-                              </span>
+                              <span style={{ padding: '4px 10px', borderRadius: 'var(--radius-pill)', fontSize: 12, fontWeight: 510, background: '#d1fae5', color: '#065f46', border: '1px solid #6ee7b7' }}>Đã có GV xác nhận</span>
                             );
-                          } else if (item.confirmation?.status === 'rejected') {
+                          } else if (hasTeacherOnLMS) {
                             confirmationStatusDisplay = (
-                              <span style={{
-                                padding: '4px 10px',
-                                borderRadius: 'var(--radius-pill)',
-                                fontSize: 12,
-                                fontWeight: 510,
-                                background: '#fee2e2',
-                                color: '#991b1b',
-                                border: '1px solid #fecaca',
-                              }}>
-                                Đã từ chối
-                              </span>
+                              <span style={{ padding: '4px 10px', borderRadius: 'var(--radius-pill)', fontSize: 12, fontWeight: 510, background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a' }}>Chờ xác nhận</span>
                             );
                           } else {
-                            confirmationStatusDisplay = (
-                              <span style={{
-                                padding: '4px 10px',
-                                borderRadius: 'var(--radius-pill)',
-                                fontSize: 12,
-                                fontWeight: 510,
-                                background: '#fef3c7',
-                                color: '#92400e',
-                                border: '1px solid #fde68a',
-                              }}>
-                                Chờ xác nhận
-                              </span>
-                            );
+                            confirmationStatusDisplay = <span style={{ color: 'var(--text-tertiary)', fontSize: 12 }}>—</span>;
                           }
-                        } else if (hasConfirmedTeacher) {
-                          confirmationStatusDisplay = (
-                            <span style={{
-                              padding: '4px 10px',
-                              borderRadius: 'var(--radius-pill)',
-                              fontSize: 12,
-                              fontWeight: 510,
-                              background: '#d1fae5',
-                              color: '#065f46',
-                              border: '1px solid #6ee7b7',
-                            }}>
-                              Đã có GV xác nhận
-                            </span>
-                          );
-                        } else if (hasTeacherOnLMS) {
-                          confirmationStatusDisplay = (
-                            <span style={{
-                              padding: '4px 10px',
-                              borderRadius: 'var(--radius-pill)',
-                              fontSize: 12,
-                              fontWeight: 510,
-                              background: '#fef3c7',
-                              color: '#92400e',
-                              border: '1px solid #fde68a',
-                            }}>
-                              Chờ xác nhận
-                            </span>
-                          );
-                        } else {
-                          confirmationStatusDisplay = (
-                            <span style={{ color: 'var(--text-tertiary)', fontSize: 12 }}>
-                              —
-                            </span>
-                          );
-                        }
 
-                        return (
-                          <motion.div
-                            key={oh.id}
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ delay: index * 0.012 }}
-                            className={styles.classItem}
-                            style={{ gridTemplateColumns: 'minmax(0, 1.2fr) minmax(0, 0.8fr) minmax(0, 1fr) minmax(0, 0.8fr) minmax(0, 0.7fr) minmax(0, 0.6fr) minmax(0, 0.8fr) minmax(0, 0.9fr) minmax(0, 1.2fr)' }}
-                          >
-                            {/* Time */}
-                            <div className={styles.className}>
-                              <span>{formatDateTime(oh.startTime)}</span>
-                              <span className={styles.centreName}>
-                                {formatTime(oh.startTime)} - {formatTime(oh.endTime)}
-                              </span>
-                            </div>
+                          const isNewDate = row.dateSpan > 0;
 
-                            {/* Type */}
-                            <div className={styles.sizeCol}>
-                              <span className={`${styles.reasonTag} ${oh.type === 'Trial' ? styles.demoTag : ''}`}>
-                                {oh.type || '—'}
-                              </span>
-                            </div>
-
-                            {/* Courses */}
-                            <div className={styles.reasonsPreview}>
-                              {oh.courses && oh.courses.length > 0 ? (
-                                oh.courses.map(course => (
-                                  <span key={course.id} className={styles.reasonTag}>
-                                    {course.shortName}
-                                  </span>
-                                ))
-                              ) : (
-                                <span style={{ color: 'var(--text-tertiary)' }}>—</span>
+                          return (
+                            <tr
+                              key={oh.id}
+                              onClick={() => setDetailOfficeHour(oh)}
+                              style={{
+                                borderTop: isNewDate ? '2px solid var(--border)' : '1px solid var(--border-subtle)',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              {row.dateSpan > 0 && (
+                                <td rowSpan={row.dateSpan} className={styles.mergedCell} style={{ fontWeight: 600, lineHeight: 1.3 }}>
+                                  <div>{row.dParts.dow}</div>
+                                  <div style={{ color: 'var(--text-secondary)', fontWeight: 500, fontSize: 12 }}>{row.dParts.ymd}</div>
+                                </td>
                               )}
-                            </div>
-
-                            {/* Teacher */}
-                            <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-                              {oh.teacher?.fullName || (
-                                <span style={{ color: 'var(--text-tertiary)', fontStyle: 'italic' }}>Chưa có GV</span>
-                              )}
-                            </div>
-
-                            {/* Centre */}
-                            <div className={styles.centreName}>
-                              {oh.centre?.shortName || oh.centre?.name || '—'}
-                            </div>
-
-                            {/* Students */}
-                            <div className={styles.sizeCol}>{totalAppointments}</div>
-
-                            {/* Status */}
-                            <div className={styles.sizeCol}>
-                              <span className={`${styles.statusPill} ${getStatusColor(oh.status)}`}>
-                                {oh.status}
-                              </span>
-                            </div>
-
-                            {/* Confirmation Status */}
-                            <div className={styles.sizeCol}>
-                              {confirmationStatusDisplay}
-                            </div>
-
-                            {/* Actions */}
-                            <div style={{ display: 'flex', gap: 'var(--space-2)', justifyContent: 'center' }}>
-                              {item.isAssignedToMe ? (
-                                // Ca đã được gán cho mình - Show both Confirm and Reject buttons
-                                item.confirmation?.status === 'pending' || !item.confirmation ? (
-                                  <>
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleConfirm(item);
-                                      }}
-                                      disabled={submitting}
-                                      className={styles.primaryBtn}
-                                      style={{
-                                        padding: '6px 12px',
-                                        fontSize: 12,
-                                        minWidth: 'auto',
-                                      }}
-                                    >
-                                      {submitting ? 'Đang xử lý...' : 'Xác nhận'}
-                                    </button>
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        openRejectModal(item);
-                                      }}
-                                      disabled={submitting}
-                                      className={styles.clearCacheBtn}
-                                      style={{
-                                        padding: '6px 12px',
-                                        fontSize: 12,
-                                        minWidth: 'auto',
-                                      }}
-                                    >
-                                      Từ chối
-                                    </button>
-                                  </>
-                                ) : item.confirmation?.status === 'confirmed' ? (
-                                  <span style={{ color: 'var(--text-tertiary)', fontSize: 12 }}>
-                                    Đã xử lý
-                                  </span>
-                                ) : (
-                                  <span 
-                                    style={{ 
-                                      color: 'var(--text-tertiary)', 
-                                      fontSize: 12,
-                                      maxWidth: '150px',
-                                      overflow: 'hidden',
-                                      textOverflow: 'ellipsis',
-                                      whiteSpace: 'nowrap',
-                                    }}
-                                    title={item.confirmation?.rejection_reason || undefined}
-                                  >
-                                    {item.confirmation?.rejection_reason || 'Đã từ chối'}
-                                  </span>
-                                )
-                              ) : hasConfirmedTeacher ? (
-                                // Ca đã có giáo viên khác và đã xác nhận
-                                <span style={{ color: 'var(--text-tertiary)', fontSize: 12 }}>
-                                  Đã có GV
-                                </span>
-                              ) : item.hasMyRequest ? (
-                                // Đã gửi yêu cầu
-                                <span style={{ 
-                                  color: 'var(--brand-indigo)', 
-                                  fontSize: 12,
-                                  fontWeight: 510,
-                                }}>
-                                  Đã gửi yêu cầu
-                                </span>
-                              ) : (
-                                // Ca chưa có GV hoặc GV chưa xác nhận → Có thể xin trực
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleRequestShift(item);
-                                  }}
-                                  className={styles.clearCacheBtn}
+                              {row.centreSpan > 0 && (
+                                <td
+                                  rowSpan={row.centreSpan}
+                                  className={styles.mergedCell}
                                   style={{
-                                    padding: '6px 12px',
-                                    fontSize: 12,
-                                    minWidth: 'auto',
+                                    whiteSpace: 'normal',
+                                    wordBreak: 'break-word',
+                                    maxWidth: 160,
+                                    fontSize: 14,
+                                    fontWeight: 600,
+                                    color: 'var(--text-primary)',
+                                    lineHeight: 1.35,
                                   }}
                                 >
-                                  Yêu cầu xin trực
-                                </button>
+                                  {row.centreLabel}
+                                </td>
                               )}
-                            </div>
-                          </motion.div>
-                        );
-                      })}
-                    </div>
+                              {row.categorySpan > 0 && (
+                                <td
+                                  rowSpan={row.categorySpan}
+                                  className={styles.mergedCell}
+                                  style={{ ...(CATEGORY_STYLES[row.category] || CATEGORY_STYLES.Others), fontWeight: 600 }}
+                                >
+                                  {row.category}
+                                </td>
+                              )}
+                              {row.sessionSpan > 0 && (
+                                <td rowSpan={row.sessionSpan} className={styles.mergedCell} style={{ fontStyle: 'italic' }}>
+                                  {row.session}
+                                </td>
+                              )}
+                              <td>{formatTime(oh.startTime)} - {formatTime(oh.endTime)}</td>
+                              <td>
+                                <span className={`${styles.reasonTag} ${oh.type === 'Trial' ? styles.demoTag : ''}`}>{oh.type || '—'}</span>
+                              </td>
+                              <td>
+                                {oh.courses && oh.courses.length > 0 ? (
+                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                                    {oh.courses.map(course => (
+                                      <span key={course.id} className={styles.reasonTag}>{course.shortName}</span>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <span style={{ color: 'var(--text-tertiary)' }}>—</span>
+                                )}
+                              </td>
+                              <td style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                                {oh.teacher?.fullName || <span style={{ color: 'var(--text-tertiary)', fontStyle: 'italic' }}>Chưa có GV</span>}
+                              </td>
+                              <td style={{ textAlign: 'center' }}>{totalAppointments}</td>
+                              <td>{confirmationStatusDisplay}</td>
+                              <td>
+                                <div style={{ display: 'flex', gap: 'var(--space-2)', justifyContent: 'center' }}>
+                                  {item.isAssignedToMe ? (
+                                    item.confirmation?.status === 'pending' || !item.confirmation ? (
+                                      <>
+                                        <button
+                                          onClick={(e) => { e.stopPropagation(); handleConfirm(item); }}
+                                          disabled={submitting}
+                                          className={styles.primaryBtn}
+                                          style={{ padding: '6px 12px', fontSize: 12, minWidth: 'auto' }}
+                                        >
+                                          {submitting ? 'Đang xử lý...' : 'Xác nhận'}
+                                        </button>
+                                        <button
+                                          onClick={(e) => { e.stopPropagation(); openRejectModal(item); }}
+                                          disabled={submitting}
+                                          className={styles.clearCacheBtn}
+                                          style={{ padding: '6px 12px', fontSize: 12, minWidth: 'auto' }}
+                                        >
+                                          Từ chối
+                                        </button>
+                                      </>
+                                    ) : item.confirmation?.status === 'confirmed' ? (
+                                      <span style={{ color: 'var(--text-tertiary)', fontSize: 12 }}>Đã xử lý</span>
+                                    ) : (
+                                      <span
+                                        style={{ color: 'var(--text-tertiary)', fontSize: 12, maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                                        title={item.confirmation?.rejection_reason || undefined}
+                                      >
+                                        {item.confirmation?.rejection_reason || 'Đã từ chối'}
+                                      </span>
+                                    )
+                                  ) : hasConfirmedTeacher ? (
+                                    <span style={{ color: 'var(--text-tertiary)', fontSize: 12 }}>Đã có GV</span>
+                                  ) : item.hasMyRequest ? (
+                                    <span style={{ color: 'var(--brand-indigo)', fontSize: 12, fontWeight: 510 }}>Đã gửi yêu cầu</span>
+                                  ) : (
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); handleRequestShift(item); }}
+                                      className={styles.clearCacheBtn}
+                                      style={{ padding: '6px 12px', fontSize: 12, minWidth: 'auto' }}
+                                    >
+                                      Yêu cầu xin trực
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
                   </div>
                 </motion.div>
               )}
             </AnimatePresence>
           </div>
         )}
+
+        {/* Detail Modal — read-only office hour view */}
+        <Modal open={!!detailOfficeHour} onClose={() => setDetailOfficeHour(null)}>
+          {detailOfficeHour && (
+            <>
+              <ModalHeader
+                title={`Ca ${detailOfficeHour.type} – ${formatTime(detailOfficeHour.startTime)} - ${formatTime(detailOfficeHour.endTime)}`}
+                subtitle={`${detailOfficeHour.centre?.name || ''}${detailOfficeHour.courses?.length ? ' · ' + detailOfficeHour.courses.map(c => c.shortName).join(', ') : ''}`}
+                onClose={() => setDetailOfficeHour(null)}
+              />
+              <OfficeHourDetailsView oh={detailOfficeHour} />
+            </>
+          )}
+        </Modal>
 
         {/* Reject Modal */}
         {showRejectModal && selectedOfficeHour && (

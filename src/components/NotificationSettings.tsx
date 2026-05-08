@@ -43,11 +43,23 @@ export function NotificationSettings() {
   };
 
   if (!supported) {
+    const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
+    const isIOS = /iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && typeof navigator !== 'undefined' && (navigator as any).maxTouchPoints > 1);
+    const isIOSSafari = isIOS && /Safari/.test(ua) && !/CriOS|FxiOS|EdgiOS|OPiOS/.test(ua);
+    const isStandalone = typeof window !== 'undefined' && (window.matchMedia?.('(display-mode: standalone)').matches || (window.navigator as any).standalone === true);
+
+    let message = 'Trình duyệt của bạn không hỗ trợ push notifications';
+    if (isIOS && !isIOSSafari) {
+      message = 'Trên iPhone/iPad, push notifications chỉ hoạt động trong Safari. Vui lòng mở trang này bằng Safari, sau đó nhấn nút Chia sẻ → "Thêm vào màn hình chính" để bật thông báo.';
+    } else if (isIOSSafari && !isStandalone) {
+      message = 'Để bật push notifications trên iOS, hãy nhấn nút Chia sẻ → "Thêm vào màn hình chính", sau đó mở ứng dụng từ màn hình chính.';
+    }
+
     return (
       <div className={styles.container}>
         <div className={styles.unsupported}>
           <BellOff size={24} />
-          <p>Trình duyệt của bạn không hỗ trợ push notifications</p>
+          <p>{message}</p>
         </div>
       </div>
     );

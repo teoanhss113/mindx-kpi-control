@@ -2113,6 +2113,44 @@
   color: var(--text-primary);
 }
 
+/* ─── Merged-cell table (for /available-shifts) ─────────────────────────── */
+.mergedTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  background: var(--bg-panel);
+}
+
+.mergedTable thead th {
+  position: sticky;
+  top: 0;
+  background: var(--bg-elevated);
+  font-size: 12px;
+  font-weight: 510;
+  color: var(--text-secondary);
+  text-align: left;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+  z-index: 1;
+}
+
+.mergedTable tbody td {
+  padding: 10px 12px;
+  vertical-align: middle;
+  color: var(--text-primary);
+}
+
+.mergedTable tbody tr:hover td:not(.mergedCell) {
+  background: var(--bg-elevated);
+}
+
+.mergedCell {
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border-subtle);
+  white-space: nowrap;
+}
+
 .calendarDayInRange:hover {
   background: rgba(94, 106, 210, 0.15);
 }

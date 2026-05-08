@@ -235,7 +235,7 @@ function OfficeHoursPageInner() {
   const courseLineOptions: SelectOption[] = useMemo(() => {
     const categories = new Set<string>();
     officeHours.forEach(oh => {
-      const category = getOfficeHourCategory(oh.courseLines || []);
+      const category = getOfficeHourCategory(oh);
       if (category) categories.add(category);
     });
     return Array.from(categories).sort().map(cat => ({ value: cat, label: cat }));
@@ -606,7 +606,7 @@ function OfficeHoursPageInner() {
     // Grade filter (by category: Coding, Robotics, Art, Others)
     if (selectedGrades.length > 0 && selectedGrades.length !== courseLineOptions.length) {
       filtered = filtered.filter(oh => {
-        const category = getOfficeHourCategory(oh.courseLines || []);
+        const category = getOfficeHourCategory(oh);
         return selectedGrades.includes(category);
       });
     }
@@ -801,7 +801,7 @@ function OfficeHoursPageInner() {
       // Apply exemptions
       if (exemptTypes.includes(oh.type) || exemptStatuses.includes(oh.status)) return;
       
-      const category = getOfficeHourCategory(oh.courseLines || []);
+      const category = getOfficeHourCategory(oh);
       if (!map.has(category)) {
         map.set(category, { sessions: 0, students: 0, converted: 0 });
       }
