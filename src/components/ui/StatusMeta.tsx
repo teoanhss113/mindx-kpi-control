@@ -1,5 +1,11 @@
 import React from 'react';
 import { Badge, type BadgeShape, type BadgeSize, type BadgeVariant } from './Badge';
+import {
+  OFFICE_HOUR_TYPE_LABELS,
+  getOfficeHourTypeLabel,
+} from '@/lib/notificationFormat';
+
+export { OFFICE_HOUR_TYPE_LABELS, getOfficeHourTypeLabel };
 
 export const ACTIVE_STATUS_LABELS = {
   active: 'Hoạt động',
@@ -115,18 +121,6 @@ export function OfficeHourStatusBadge({
   );
 }
 
-export const OFFICE_HOUR_TYPE_LABELS: Record<string, string> = {
-  Office: 'Trực tại cơ sở',
-  Trial: 'Trực trực tuyến',
-  Event: 'Sự kiện',
-  Makeup: 'Bù học',
-  Tutor: 'Dạy kèm',
-};
-
-export function getOfficeHourTypeLabel(type: string | null | undefined): string {
-  return OFFICE_HOUR_TYPE_LABELS[type || ''] || type || '—';
-}
-
 export function OfficeHourTypeBadge({
   type,
   size = 'sm',
@@ -141,6 +135,72 @@ export function OfficeHourTypeBadge({
       {getOfficeHourTypeLabel(type)}
     </Badge>
   );
+}
+
+export type ParticipationStatus = 'pending' | 'confirmed' | 'rejected' | 'confirmed_by_other' | 'none';
+
+export const PARTICIPATION_STATUS_LABELS: Record<ParticipationStatus, string> = {
+  pending: 'Chờ xử lý',
+  confirmed: 'Đã xác nhận',
+  rejected: 'Đã từ chối',
+  confirmed_by_other: 'Đã có GV xác nhận',
+  none: '—',
+};
+
+export function ParticipationStatusBadge({
+  status,
+  size = 'sm',
+  shape = 'rounded',
+}: {
+  status: ParticipationStatus | null | undefined;
+  size?: BadgeSize;
+  shape?: BadgeShape;
+}) {
+  if (!status || status === 'none') {
+    return (
+      <span style={{ color: 'var(--text-tertiary)', fontSize: size === 'sm' ? 12 : 13 }}>
+        {PARTICIPATION_STATUS_LABELS.none}
+      </span>
+    );
+  }
+
+  const variant: BadgeVariant =
+    status === 'confirmed' || status === 'confirmed_by_other'
+      ? 'passed'
+      : status === 'rejected'
+        ? 'failed'
+        : 'warning';
+
+  return (
+    <Badge variant={variant} size={size} shape={shape}>
+      {PARTICIPATION_STATUS_LABELS[status]}
+    </Badge>
+  );
+}
+
+export type JudgeRequestStatus = 'pending' | 'approved' | 'rejected';
+
+export const JUDGE_REQUEST_STATUS_LABELS: Record<JudgeRequestStatus, string> = {
+  pending: PARTICIPATION_STATUS_LABELS.pending,
+  approved: PARTICIPATION_STATUS_LABELS.confirmed,
+  rejected: PARTICIPATION_STATUS_LABELS.rejected,
+};
+
+export function JudgeRequestStatusBadge({
+  status,
+  size = 'sm',
+  shape = 'rounded',
+}: {
+  status: JudgeRequestStatus | null | undefined;
+  size?: BadgeSize;
+  shape?: BadgeShape;
+}) {
+  const mappedStatus: ParticipationStatus | null | undefined =
+    status === 'approved'
+      ? 'confirmed'
+      : status;
+
+  return <ParticipationStatusBadge status={mappedStatus} size={size} shape={shape} />;
 }
 
 export type CompletionStatusKind = 'exempt' | 'completed' | 'incomplete';
@@ -317,11 +377,11 @@ export function TeacherAssignmentStatusBadge({
 export type TeacherConfirmationStatus = 'confirmed' | 'rejected' | 'pending' | 'confirmed_by_other' | 'none';
 
 export const TEACHER_CONFIRMATION_STATUS_LABELS: Record<TeacherConfirmationStatus, string> = {
-  confirmed: 'Đã xác nhận',
-  rejected: 'Đã từ chối',
-  pending: 'Chờ xác nhận',
-  confirmed_by_other: 'Đã có GV xác nhận',
-  none: '—',
+  confirmed: PARTICIPATION_STATUS_LABELS.confirmed,
+  rejected: PARTICIPATION_STATUS_LABELS.rejected,
+  pending: PARTICIPATION_STATUS_LABELS.pending,
+  confirmed_by_other: PARTICIPATION_STATUS_LABELS.confirmed_by_other,
+  none: PARTICIPATION_STATUS_LABELS.none,
 };
 
 export function TeacherConfirmationStatusBadge({
@@ -333,26 +393,7 @@ export function TeacherConfirmationStatusBadge({
   size?: BadgeSize;
   shape?: BadgeShape;
 }) {
-  if (status === 'none') {
-    return (
-      <span style={{ color: 'var(--text-tertiary)', fontSize: size === 'sm' ? 12 : 13 }}>
-        {TEACHER_CONFIRMATION_STATUS_LABELS.none}
-      </span>
-    );
-  }
-
-  const variant: BadgeVariant =
-    status === 'confirmed' || status === 'confirmed_by_other'
-      ? 'passed'
-      : status === 'rejected'
-        ? 'failed'
-        : 'warning';
-
-  return (
-    <Badge variant={variant} size={size} shape={shape}>
-      {TEACHER_CONFIRMATION_STATUS_LABELS[status]}
-    </Badge>
-  );
+  return <ParticipationStatusBadge status={status} size={size} shape={shape} />;
 }
 
 export type PriorityKind = 'high' | 'medium' | 'low' | 'other';

@@ -5,7 +5,6 @@
  */
 
 import React from 'react';
-import styles from '@/app/dashboard.module.css';
 
 export interface ShiftRequest {
   id: string;
@@ -20,11 +19,13 @@ export interface ShiftRequest {
 interface ShiftRequestSuggestionsProps {
   requests: ShiftRequest[];
   onSelect: (request: ShiftRequest) => void;
+  title?: string;
 }
 
 export function ShiftRequestSuggestions({
   requests,
   onSelect,
+  title = 'Giáo viên đã yêu cầu',
 }: ShiftRequestSuggestionsProps) {
   if (requests.length === 0) return null;
 
@@ -56,7 +57,7 @@ export function ShiftRequestSuggestions({
           <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
           <path d="M16 3.13a4 4 0 0 1 0 7.75" />
         </svg>
-        Giáo viên đã yêu cầu ({requests.length})
+        {title} ({requests.length})
       </div>
 
       {/* Suggestions List */}
@@ -141,7 +142,7 @@ export function ShiftRequestSuggestions({
                       whiteSpace: 'nowrap',
                     }}
                   >
-                    "{request.request_note}"
+                    &quot;{request.request_note}&quot;
                   </div>
                 )}
               </div>

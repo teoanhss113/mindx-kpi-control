@@ -609,7 +609,7 @@ export default function TeachersPage() {
         <EmptyState
           icon={<Icon.Users size={32} />}
           title="Không tìm thấy giáo viên"
-          subtitle="Thử thay đổi bộ lọc hoặc từ khóa tìm kiếm"
+          subtitle="Thử thay đổi bộ lọc hoặc từ khoá tìm kiếm"
         />
       )}
 
@@ -758,7 +758,7 @@ export default function TeachersPage() {
                 fontWeight: 590,
                 color: 'var(--text-primary)'
               }}>
-                Khối & Khóa học
+                Khối & Khoá học
               </h4>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
                 <div>
@@ -779,7 +779,7 @@ export default function TeachersPage() {
                 </div>
                 <div>
                   <label style={{ fontSize: 12, color: 'var(--text-tertiary)', display: 'block', marginBottom: 'var(--space-2)' }}>
-                    Khóa học
+                    Khoá học
                   </label>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
                     {selectedTeacher.courses.length > 0 ? (
@@ -791,7 +791,7 @@ export default function TeachersPage() {
                         </div>
                       ))
                     ) : (
-                      <span style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>Chưa có khóa học</span>
+                      <span style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>Chưa có khoá học</span>
                     )}
                   </div>
                 </div>

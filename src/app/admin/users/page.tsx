@@ -234,14 +234,15 @@ export default function UsersPage() {
       if (editingUser) {
         result = await updateUser(token, {
           id: editingUser.id,
-          email: formData.email,
+          email: formData.email.trim().toLowerCase(),
           role_id: formData.role_id,
           is_active: formData.is_active,
         });
         userId = editingUser.id;
       } else {
+        const normalizedEmail = formData.email.trim().toLowerCase();
         const createResult = await createUser(token, {
-          email: formData.email,
+          email: normalizedEmail,
           role_id: formData.role_id,
           is_active: formData.is_active,
         });
@@ -253,15 +254,14 @@ export default function UsersPage() {
           return;
         }
 
-        const usersResult = await getUsers(token);
-        const createdUser = usersResult.data.find((u: any) => u.email === formData.email);
-        if (!createdUser) {
+        const profileId = createResult.data?.id;
+        if (!profileId) {
           removeToast(loadingToastId);
           addToast('Lỗi: Không tìm thấy user vừa tạo', 'error');
           setSubmitting(false);
           return;
         }
-        userId = createdUser.id;
+        userId = profileId;
         result = createResult;
       }
 
@@ -290,9 +290,9 @@ export default function UsersPage() {
         }
         
         removeToast(loadingToastId);
-        addToast(MESSAGES.SUCCESS[editingUser ? 'UPDATED' : 'CREATED'](ENTITIES.USERS), 'success');
+        addToast(editingUser ? 'Cập nhật phân quyền thành công' : 'Cấp quyền thành công', 'success');
         setShowModal(false);
-        loadData(); // Changed from loadUsers to loadData
+        loadData();
       } else {
         removeToast(loadingToastId);
         addToast('Lỗi: ' + result.error, 'error');
@@ -314,7 +314,7 @@ export default function UsersPage() {
     if (!userToDelete) return;
 
     setDeleting(true);
-    const loadingToastId = addToast('Đang xóa...', 'loading');
+    const loadingToastId = addToast('Đang thu hồi quyền...', 'loading');
 
     try {
       const token = await getAuthToken();
@@ -322,7 +322,7 @@ export default function UsersPage() {
       removeToast(loadingToastId);
       
       if (result.success) {
-        addToast('Xóa tài khoản thành công', 'success');
+        addToast('Đã thu hồi quyền thành công', 'success');
         setShowConfirmDialog(false);
         setUserToDelete(null);
         loadData();
@@ -421,13 +421,13 @@ export default function UsersPage() {
 
   return (
     <ProtectedPage pageKey="admin-users">
-      <AdminPageWrapper title="Quản lý tài khoản" activePage="admin-users">
+      <AdminPageWrapper title="Quản lý phân quyền" activePage="admin-users">
         {/* Toolbar */}
         <AdminToolbar
           search={searchTerm}
           onSearchChange={setSearchTerm}
           searchPlaceholder="Tìm theo email, tên..."
-          actionLabel={`${LABELS.CREATE} ${ENTITIES.USERS}`}
+          actionLabel="Cấp quyền"
           onAction={openCreateModal}
           actionIcon={<Icon.Plus />}
         />
@@ -435,7 +435,7 @@ export default function UsersPage() {
       {/* Users Table */}
       {!loading && filteredUsers.length > 0 && (
         <AdminTableSection
-          title="Danh sách tài khoản"
+          title="Danh sách tài khoản có quyền"
           count={filteredUsers.length}
           loading={loading}
           isExpanded={showTable}
@@ -484,7 +484,7 @@ export default function UsersPage() {
                         <button
                           className={styles.clearCacheBtn}
                           onClick={() => handleDelete(user)}
-                          title="Xóa"
+                          title="Xoá"
                           style={{ padding: 'var(--space-2)', minWidth: 'auto' }}
                         >
                           <Icon.Trash size={16} />
@@ -504,7 +504,7 @@ export default function UsersPage() {
         <EmptyState
           icon={<Icon.Users size={32} />}
           title={searchTerm ? 'Không tìm thấy tài khoản' : 'Chưa có tài khoản nào'}
-          subtitle={searchTerm ? 'Thử tìm kiếm với từ khóa khác' : `${LABELS.CREATE} ${ENTITIES.USERS} đầu tiên để bắt đầu`}
+          subtitle={searchTerm ? 'Thử tìm kiếm với từ khoá khác' : `${LABELS.CREATE} ${ENTITIES.USERS} đầu tiên để bắt đầu`}
         />
       )}
 
@@ -565,8 +565,8 @@ export default function UsersPage() {
       {showModal && (
         <Modal open={showModal} onClose={() => setShowModal(false)}>
           <ModalHeader
-            title={editingUser ? `${LABELS.EDIT} ${ENTITIES.USERS}` : `${LABELS.CREATE} ${ENTITIES.USERS} mới`}
-            subtitle={editingUser ? `Cập nhật thông tin ${ENTITIES.USERS}` : `Tạo ${ENTITIES.USERS} mới cho hệ thống`}
+            title={editingUser ? 'Cập nhật phân quyền' : 'Cấp quyền cho tài khoản'}
+            subtitle={editingUser ? `Cập nhật vai trò và quyền truy cập của ${editingUser.email}` : 'Tìm tài khoản và phân vai trò, khu vực truy cập'}
             onClose={() => setShowModal(false)}
           />
 
@@ -734,13 +734,13 @@ export default function UsersPage() {
 
                 <div style={{ marginBottom: 'var(--space-4)' }}>
                   <label style={{ display: 'block', fontSize: 13, fontWeight: 510, color: 'var(--text-primary)', marginBottom: 'var(--space-2)' }}>
-                    Khóa học
+                    Khoá học
                   </label>
                   <MultiSelect
                     options={COURSES.map(course => ({ value: course, label: course }))}
                     selected={formData.courses}
                     onChange={(values) => setFormData({ ...formData, courses: values })}
-                    placeholder="Chọn khóa học (để trống = tất cả)"
+                    placeholder="Chọn khoá học (để trống = tất cả)"
                     maxDisplay={3}
                   />
                 </div>
@@ -771,7 +771,7 @@ export default function UsersPage() {
                       onChange={(e) => setFormData({ ...formData, can_manage: e.target.checked })}
                       className={styles.reasonCheckbox}
                     />
-                    Quản lý (tạo/xóa)
+                    Quản lý (tạo/xoá)
                   </label>
                 </div>
               </div>
@@ -797,7 +797,7 @@ export default function UsersPage() {
                     style={{ fontSize: 13, padding: 'var(--space-1) var(--space-3)' }}
                   >
                     <Icon.XCircle size={14} />
-                    Xóa thông tin tự động và nhập thủ công
+                    Xoá thông tin tự động và nhập thủ công
                   </button>
                 </div>
               )}
@@ -806,17 +806,17 @@ export default function UsersPage() {
             {/* Fixed footer outside scrollable area */}
             <ModalFooter
               secondaryButton={{
-                label: 'Hủy',
+                label: 'Huỷ',
                 onClick: () => setShowModal(false),
                 variant: 'secondary',
                 disabled: submitting,
               }}
               primaryButton={{
-                label: editingUser ? LABELS.UPDATE : `${LABELS.CREATE} ${ENTITIES.USERS}`,
+                label: editingUser ? 'Cập nhật quyền' : 'Cấp quyền',
                 onClick: () => {}, // Form submit handles this
                 variant: 'primary',
                 loading: submitting,
-                loadingText: editingUser ? 'Đang cập nhật...' : 'Đang tạo...',
+                loadingText: editingUser ? 'Đang cập nhật...' : 'Đang cấp quyền...',
                 type: 'submit',
               }}
             />
@@ -832,9 +832,9 @@ export default function UsersPage() {
           setUserToDelete(null);
         }}
         onConfirm={confirmDelete}
-        title="Xác nhận xóa tài khoản"
-        message={`Bạn có chắc chắn muốn xóa tài khoản "${userToDelete?.email}"? Hành động này không thể hoàn tác.`}
-        confirmLabel="Xóa tài khoản"
+        title="Xác nhận thu hồi quyền"
+        message={`Bạn có chắc muốn thu hồi toàn bộ quyền của "${userToDelete?.email}"? Tài khoản sẽ bị vô hiệu hoá và chuyển về trạng thái chưa phân quyền, nhưng hồ sơ vẫn được giữ lại.`}
+        confirmLabel="Thu hồi quyền"
         cancelLabel="Huỷ"
         variant="danger"
         loading={deleting}

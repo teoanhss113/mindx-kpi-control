@@ -54,7 +54,7 @@ const REQUIRED_PAGES = [
     key: 'completion',
     page_name: 'Tỷ lệ Hoàn thành',
     path: '/admin/completion-rate',
-    description: 'Trang theo dõi tỷ lệ hoàn thành khóa học',
+    description: 'Trang theo dõi tỷ lệ hoàn thành khoá học',
     display_order: 11,
   },
   {

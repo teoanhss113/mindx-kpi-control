@@ -39,7 +39,8 @@ import { exportToCSV, CSVColumn, CSVFormatters } from '@/lib/csvExport';
 import styles from '../../dashboard.module.css';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
-const DEFAULT_UNCHECKED_REASONS = [
+// Reasons that are EXEMPTED by default (checked = exempt = excluded from formula)
+const DEFAULT_EXEMPTED_REASONS = [
   'CHANGE_CLASS_SCHEDULE_CHANGE', 'TRANSFER_COURSE_LINE', 'WRONG_ENROLL'
 ];
 const DEMO_REASON_KEY = 'DEMO_NOT_ARRANGED';
@@ -100,7 +101,7 @@ function ChartTooltip({ active, payload, label }: any) {
     <div style={{ background: 'var(--text-primary)', color: 'var(--bg-surface)', padding: '8px 12px', borderRadius: "var(--radius-comfortable)", fontSize: 12, lineHeight: 1.6, boxShadow: '0 4px 12px rgba(0,0,0,0.2)' }}>
       <div style={{ fontWeight: 590, marginBottom: 'var(--space-1)' }}>{label}</div>
       <div>Tỷ lệ: <strong style={{ color: rateColor(d.rate) }}>{d.rate.toFixed(1)}%</strong></div>
-      <div style={{ color: 'var(--text-quaternary)' }}>{d.pass}/{d.base} HV</div>
+      <div style={{ color: 'var(--text-quaternary)' }}>{d.pass}/{d.base} học viên</div>
       {d.classes !== undefined && <div style={{ color: 'var(--text-quaternary)' }}>{d.classes} lớp</div>}
     </div>
   );
@@ -153,9 +154,10 @@ export default function DashboardPage() {
   const [sortKey, setSortKey] = useState<'name' | 'base' | 'rate' | 'pass' | 'teacher' | 'progress'>('rate');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
 
-  // Exclusions
-  const [includedReasons, setIncludedReasons] = useState<Record<string, boolean>>({});
-  const [excludedCourses, setExcludedCourses] = useState<Record<string, boolean>>({});
+  // exemptedReasons: true = checked = this reason is EXEMPTED (student not counted)
+  //                  false/undefined = unchecked = student IS counted
+  const [exemptedReasons, setExemptedReasons] = useState<Record<string, boolean>>({});
+  const [exemptedCourses, setExemptedCourses] = useState<Record<string, boolean>>({});
 
   // UI
   const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
@@ -206,8 +208,8 @@ export default function DashboardPage() {
         const parsed = await getCache(CACHE_KEYS.COMPLETION);
         if (parsed) {
           if (parsed.classes) setClasses(parsed.classes);
-          if (parsed.includedReasons) setIncludedReasons(parsed.includedReasons);
-          if (parsed.excludedCourses) setExcludedCourses(parsed.excludedCourses);
+          if (parsed.exemptedReasons) setExemptedReasons(parsed.exemptedReasons);
+          if (parsed.exemptedCourses) setExemptedCourses(parsed.exemptedCourses);
         }
       } catch (e) { console.error(e); }
     })();
@@ -220,9 +222,9 @@ export default function DashboardPage() {
     setLoading(true);
     setProgress({ loaded: 0, total: 0 });
     setClasses([]);
-    let curReasons = { ...includedReasons };
+    let curReasons = { ...exemptedReasons };
     let curClasses: Class[] = [];
-    let curExcluded = { ...excludedCourses };
+    let curExcluded = { ...exemptedCourses };
     const tid = addToast(MESSAGES.LOADING.CONNECTING, 'loading');
     try {
       const { endDateFrom, endDateTo } = dateRangeToUtcRange(new Date(fromDate), new Date(toDate));
@@ -235,19 +237,19 @@ export default function DashboardPage() {
           cls.students.forEach(st => {
             if (st.completionInfo?.status === 'UNCOMPLETED' && st.completionInfo.reason) {
               const r = st.completionInfo.reason;
-              if (curReasons[r] === undefined) curReasons[r] = !DEFAULT_UNCHECKED_REASONS.includes(r);
+              if (curReasons[r] === undefined) curReasons[r] = DEFAULT_EXEMPTED_REASONS.includes(r);
             }
           });
           const cKey = getCourseKey(cls);
           // Exclude PREPARING classes as they are considered cancelled (forgotten to update status)
           if (cKey && !(cls.status === 'ABANDONED' || cls.status === 'REJECTED' || cls.status === 'PREPARING')) {
-            if (curExcluded[cKey] === undefined) curExcluded[cKey] = true;
+            if (curExcluded[cKey] === undefined) curExcluded[cKey] = false;
           }
         });
-        setIncludedReasons({ ...curReasons });
-        setExcludedCourses({ ...curExcluded });
+        setExemptedReasons({ ...curReasons });
+        setExemptedCourses({ ...curExcluded });
       }, controller.signal);
-      await setCache(CACHE_KEYS.COMPLETION, { classes: result, includedReasons: curReasons, excludedCourses: curExcluded, timestamp: Date.now() });
+      await setCache(CACHE_KEYS.COMPLETION, { classes: result, exemptedReasons: curReasons, exemptedCourses: curExcluded, timestamp: Date.now() });
       removeToast(tid);
       addToast(MESSAGES.LOADING.SUCCESS(result.length, ENTITIES.CLASSES), 'success');
     } catch (err: any) {
@@ -273,14 +275,14 @@ export default function DashboardPage() {
 
   const handleClearCache = async () => {
     await clearCache(CACHE_KEYS.COMPLETION);
-    setClasses([]); setIncludedReasons({}); setExcludedCourses({});
+    setClasses([]); setExemptedReasons({}); setExemptedCourses({});
     addToast(MESSAGES.CACHE.CLEARED, 'success');
   };
 
   useEffect(() => {
     if (classes.length > 0 && !loading)
-      setCache(CACHE_KEYS.COMPLETION, { classes, includedReasons, excludedCourses, timestamp: Date.now() }).catch(console.error);
-  }, [includedReasons, excludedCourses, classes, loading]);
+      setCache(CACHE_KEYS.COMPLETION, { classes, exemptedReasons, exemptedCourses, timestamp: Date.now() }).catch(console.error);
+  }, [exemptedReasons, exemptedCourses, classes, loading]);
 
   // ─── Core Data Processing ────────────────────────────────────────────────
   const { normalClasses, cancelledClasses, availableCourseLines, courseOptions, reasonCounts, demoCount } = useMemo(() => {
@@ -294,7 +296,7 @@ export default function DashboardPage() {
       const isCancelled = cls.status === 'ABANDONED' || cls.status === 'REJECTED' || cls.status === 'PREPARING';
       const cKey = getCourseCategory(cls);
       const courseKey = getCourseKey(cls);
-      const isExcludedByCourse = courseKey ? excludedCourses[courseKey] === false : false;
+      const isExcludedByCourse = courseKey ? exemptedCourses[courseKey] === true : false;
       let clsPass = 0, clsExcluded = 0, clsExempt = 0;
       const clsBase = cls.students.length;
       const uncompReasons: string[] = [];
@@ -307,7 +309,8 @@ export default function DashboardPage() {
         else if (info?.status === 'UNCOMPLETED' && info.reason) {
           uncompReasons.push(info.reason);
           if (!isCancelled) rCounts[info.reason] = (rCounts[info.reason] || 0) + 1;
-          if (includedReasons[info.reason] === false) clsExcluded++;
+          // Checked = exempted = student NOT counted in formula
+          if (exemptedReasons[info.reason] === true) clsExcluded++;
           if (info.reason === DEMO_REASON_KEY) hasDemo = true;
         }
       });
@@ -339,7 +342,7 @@ export default function DashboardPage() {
     });
 
     return { normalClasses: norm, cancelledClasses: canc, availableCourseLines: Array.from(clSet).sort(), courseOptions: cOptions, reasonCounts: rCounts, demoCount };
-  }, [classes, includedReasons, excludedCourses]);
+  }, [classes, exemptedReasons, exemptedCourses]);
 
   // Centre IDs that appear in loaded data (for table-level filter)
   const tableCentreIds = useMemo(() => {
@@ -456,8 +459,8 @@ export default function DashboardPage() {
       .sort((a, b) => b.rate - a.rate);
   }, [filteredNormalClasses]);
 
-  const handleToggleReason = (r: string) => setIncludedReasons(prev => ({ ...prev, [r]: !prev[r] }));
-  const handleToggleCourse = (k: string) => setExcludedCourses(prev => ({ ...prev, [k]: !(prev[k] ?? true) }));
+  const handleToggleReason = (r: string) => setExemptedReasons(prev => ({ ...prev, [r]: !prev[r] }));
+  const handleToggleCourse = (k: string) => setExemptedCourses(prev => ({ ...prev, [k]: !prev[k] }));
   const handleSort = (k: typeof sortKey) => {
     if (sortKey === k) setSortOrder(p => p === 'asc' ? 'desc' : 'asc');
     else { setSortKey(k); setSortOrder('asc'); }
@@ -465,7 +468,6 @@ export default function DashboardPage() {
 
   const selectedClassData = useMemo(() => classes.find(c => c.id === selectedClassId), [classes, selectedClassId]);
 
-  // Prepare sortable student data for modal
   const modalStudentData = useMemo(() => {
     if (!selectedClassData) return [];
     
@@ -480,21 +482,28 @@ export default function DashboardPage() {
       });
       const info = st.completionInfo;
       const isPassed = info?.status === 'PASSED' || info?.status === 'COMPLETED' || info?.status === 'FINISHED';
+      // LMS-recorded status (raw, no exemption rule applied)
       const statusKind: CompletionStatusKind = exempt ? 'exempt' : isPassed ? 'completed' : 'incomplete';
       const statusLabel = COMPLETION_STATUS_LABELS[statusKind];
+
+      // Final/effective status after applying exemption rules
+      const exemptedByReason = !exempt && !isPassed && !!info?.reason && exemptedReasons[info.reason] === true;
+      const finalStatusKind: CompletionStatusKind = (exempt || exemptedByReason) ? 'exempt' : isPassed ? 'completed' : 'incomplete';
       
       return {
         ...st,
         name: st.student.fullName || st.student.customer?.fullName || '',
         statusLabel,
         statusKind,
+        finalStatusKind,
+        exemptedByReason,
         statusOrder: exempt ? 0 : isPassed ? 1 : 2,
         reason: info?.reason || '',
         absentCount,
         exempt
       };
     });
-  }, [selectedClassData]);
+  }, [selectedClassData, exemptedReasons]);
 
   type ModalStudentSortKey = 'name' | 'statusOrder' | 'reason' | 'absentCount';
   
@@ -594,7 +603,7 @@ export default function DashboardPage() {
                       {completionSuggestions.map(({ target, needed }) => (
                         <div key={target} className={`${styles.suggestPill} ${needed === 0 ? styles.suggestDone : ''}`}>
                           <span className={styles.suggestTarget}>{target}%</span>
-                          {needed === 0 ? <span><Icon.Check size={11} /> Đã đạt</span> : <span>cần thêm <strong>{needed}</strong> HV</span>}
+                          {needed === 0 ? <span><Icon.Check size={11} /> Đã đạt</span> : <span>cần thêm <strong>{needed}</strong> học viên</span>}
                         </div>
                       ))}
                     </div>
@@ -773,7 +782,7 @@ export default function DashboardPage() {
                         <div className={`${styles.sortableCol} ${sortKey === 'name' ? styles.activeSort : ''}`} onClick={() => handleSort('name')}>Lớp học <SortIcon col="name" sortKey={sortKey} sortDir={sortOrder} /></div>
                         <div className={`${styles.sortableCol} ${sortKey === 'teacher' ? styles.activeSort : ''}`} onClick={() => handleSort('teacher')}>Giáo viên <SortIcon col="teacher" sortKey={sortKey} sortDir={sortOrder} /></div>
                         <div className={`${styles.sortableCol} ${sortKey === 'progress' ? styles.activeSort : ''}`} onClick={() => handleSort('progress')}>Tiến độ <SortIcon col="progress" sortKey={sortKey} sortDir={sortOrder} /></div>
-                        <div className={`${styles.sortableCol} ${sortKey === 'base' ? styles.activeSort : ''}`} onClick={() => handleSort('base')}>HV <SortIcon col="base" sortKey={sortKey} sortDir={sortOrder} /></div>
+                        <div className={`${styles.sortableCol} ${sortKey === 'base' ? styles.activeSort : ''}`} onClick={() => handleSort('base')}>{LABELS.STUDENTS} <SortIcon col="base" sortKey={sortKey} sortDir={sortOrder} /></div>
                         <div className={`${styles.sortableCol} ${sortKey === 'rate' ? styles.activeSort : ''}`} onClick={() => handleSort('rate')}>Tỷ lệ <SortIcon col="rate" sortKey={sortKey} sortDir={sortOrder} /></div>
                         <div>Lý do chưa hoàn thành</div>
                       </div>
@@ -828,7 +837,7 @@ export default function DashboardPage() {
                                   {Object.keys(cls.reasonsSummary).length > 0
                                     ? Object.entries(cls.reasonsSummary).map(([res, count], i) => (
                                       <span key={i} className={`${styles.reasonTag} ${res === DEMO_REASON_KEY ? styles.demoTag : ''}`}
-                                        style={{ opacity: includedReasons[res] !== false ? 1 : 0.35 }}>
+                                        style={{ opacity: exemptedReasons[res] === true ? 0.35 : 1 }}>
                                         {REASON_LABELS[res] || res}: {count as number}
                                       </span>
                                     ))
@@ -907,13 +916,13 @@ export default function DashboardPage() {
                                 Miễn trừ theo Lý do
                               </div>
                               <div className={styles.reasonList}>
-                                {Object.keys(includedReasons).sort().map(reason => {
+                                {Object.keys(exemptedReasons).sort().map(reason => {
                                   const count = reasonCounts[reason] || 0;
-                                  if (count === 0 && !DEFAULT_UNCHECKED_REASONS.includes(reason)) return null;
+                                  if (count === 0 && !DEFAULT_EXEMPTED_REASONS.includes(reason)) return null;
                                   return (
                                     <label key={reason} className={styles.reasonItem}>
                                       <input type="checkbox" className={styles.reasonCheckbox}
-                                        checked={includedReasons[reason] ?? true} onChange={() => handleToggleReason(reason)} />
+                                        checked={exemptedReasons[reason] === true} onChange={() => handleToggleReason(reason)} />
                                       <div className={styles.reasonLabel}>
                                         <span>{REASON_LABELS[reason] || reason}</span>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-1)', flexShrink: 0 }}>
@@ -940,7 +949,7 @@ export default function DashboardPage() {
                                   {Array.from(courseOptions.entries()).sort((a, b) => a[1].label.localeCompare(b[1].label)).map(([key, { label, count }]) => (
                                     <label key={key} className={styles.reasonItem}>
                                       <input type="checkbox" className={styles.reasonCheckbox}
-                                        checked={excludedCourses[key] !== false} onChange={() => handleToggleCourse(key)} />
+                                        checked={exemptedCourses[key] === true} onChange={() => handleToggleCourse(key)} />
                                       <div className={styles.reasonLabel}>
                                         <span style={{ fontSize: 12 }}>{label}</span>
                                         <span className={styles.reasonCount}>{count}</span>
@@ -1003,7 +1012,8 @@ export default function DashboardPage() {
                   <thead>
                     <tr>
                       <SortableHeader label="Học viên" sortKey="name" currentSortKey={modalSortBy} sortOrder={modalSortOrder} onSort={(key) => handleModalSort(key as ModalStudentSortKey)} />
-                      <SortableHeader label="Trạng thái" sortKey="statusOrder" currentSortKey={modalSortBy} sortOrder={modalSortOrder} onSort={(key) => handleModalSort(key as ModalStudentSortKey)} />
+                      <SortableHeader label="Trạng thái trên LMS" sortKey="statusOrder" currentSortKey={modalSortBy} sortOrder={modalSortOrder} onSort={(key) => handleModalSort(key as ModalStudentSortKey)} />
+                      <th style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>Trạng thái chốt</th>
                       <SortableHeader label="Lý do" sortKey="reason" currentSortKey={modalSortBy} sortOrder={modalSortOrder} onSort={(key) => handleModalSort(key as ModalStudentSortKey)} />
                       <SortableHeader label="Buổi vắng" sortKey="absentCount" currentSortKey={modalSortBy} sortOrder={modalSortOrder} onSort={(key) => handleModalSort(key as ModalStudentSortKey)} />
                     </tr>
@@ -1025,6 +1035,13 @@ export default function DashboardPage() {
                         <tr key={st._id}>
                           <td style={{ fontWeight: 510 }}>{st.name}</td>
                           <td><CompletionStatusBadge status={statusKind} /></td>
+                          <td>
+                            {/* Final status after exemption rules */}
+                            <CompletionStatusBadge status={st.finalStatusKind} />
+                            {st.exemptedByReason && (
+                              <div style={{ fontSize: 11, color: 'var(--text-quaternary)', marginTop: 2 }}>Miễn trừ theo lý do</div>
+                            )}
+                          </td>
                           <td style={{ fontSize: 12, color: info?.reason === DEMO_REASON_KEY ? 'var(--status-dark-orange)' : 'var(--text-tertiary)' }}>
                             {st.exempt ? <em style={{ color: 'var(--text-quaternary)' }}>Chưa phát sinh buổi học</em>
                               : info?.reason ? (REASON_LABELS[info.reason] || info.reason) : '—'}
@@ -1128,9 +1145,9 @@ function getDefaultCSVColumns(): CSVColumnConfig[] {
     { id: 'teacher', label: 'Giáo viên', enabled: true },
     { id: 'sessionsCompleted', label: 'Buổi đã học', enabled: true },
     { id: 'totalSessions', label: 'Tổng buổi', enabled: true },
-    { id: 'studentsCompleted', label: 'HV hoàn thành', enabled: true },
-    { id: 'effectiveBase', label: 'Tổng HV (hiệu lực)', enabled: true },
-    { id: 'totalBase', label: 'Tổng HV (gốc)', enabled: true },
+    { id: 'studentsCompleted', label: 'Học viên hoàn thành', enabled: true },
+    { id: 'effectiveBase', label: 'Tổng học viên (hiệu lực)', enabled: true },
+    { id: 'totalBase', label: 'Tổng học viên (gốc)', enabled: true },
     { id: 'rate', label: 'Tỷ lệ hoàn thành (%)', enabled: true },
     { id: 'status', label: 'Trạng thái', enabled: true },
   ];
@@ -1159,9 +1176,9 @@ function getCSVColumnsFromConfig(config: CSVColumnConfig[]): CSVColumn<any>[] {
     teacher: { header: 'Giáo viên', accessor: (row) => getClassTeacher(row) },
     sessionsCompleted: { header: 'Buổi đã học', accessor: (row) => getCompletedSessions(row) },
     totalSessions: { header: 'Tổng buổi', accessor: (row) => row.numberOfSessions || 0 },
-    studentsCompleted: { header: 'HV hoàn thành', accessor: 'clsPass' },
-    effectiveBase: { header: 'Tổng HV (hiệu lực)', accessor: 'effectiveBase' },
-    totalBase: { header: 'Tổng HV (gốc)', accessor: 'clsBase' },
+    studentsCompleted: { header: 'Học viên hoàn thành', accessor: 'clsPass' },
+    effectiveBase: { header: 'Tổng học viên (hiệu lực)', accessor: 'effectiveBase' },
+    totalBase: { header: 'Tổng học viên (gốc)', accessor: 'clsBase' },
     rate: { header: 'Tỷ lệ hoàn thành (%)', accessor: 'rate', formatter: CSVFormatters.number(1) },
     status: { header: 'Trạng thái', accessor: (row) => row.status || '—' },
     exempt: { header: 'Miễn trừ', accessor: 'clsExempt' },

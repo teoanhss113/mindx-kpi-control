@@ -347,10 +347,10 @@ export default function DashboardPage() {
       setOfficeHoursData(null);
       setClassQualityData(null);
       
-      addToast('Đã xóa tất cả dữ liệu tạm', 'success');
+      addToast('Đã xoá tất cả dữ liệu tạm', 'success');
     } catch (err) {
       console.error('Failed to clear caches:', err);
-      addToast('Không thể xóa dữ liệu tạm', 'error');
+      addToast('Không thể xoá dữ liệu tạm', 'error');
     }
   }
 
@@ -671,7 +671,7 @@ export default function DashboardPage() {
       if (demoCount > 0) {
         result.push({
           id: 'demo-not-arranged',
-          title: `${demoCount} lớp chưa sắp xếp thuyết trình cuối khóa`,
+          title: `${demoCount} lớp chưa sắp xếp thuyết trình cuối khoá`,
           description: 'Cần xử lý ngay',
           severity: 'critical' as const,
           icon: <Icon.AlertTriangle size={16} />,
@@ -692,7 +692,7 @@ export default function DashboardPage() {
         result.push({
           id: 'completion-gap',
           title: `Tỷ lệ hoàn thành đang ở mức ${FORMAT.percentage(completionRate)}`,
-          description: studentsNeeded > 0 ? `Cần thêm ${studentsNeeded} HV để đạt 95%` : 'Cần cải thiện',
+          description: studentsNeeded > 0 ? `Cần thêm ${studentsNeeded} học viên để đạt 95%` : 'Cần cải thiện',
           severity,
           icon: <Icon.TrendingDown size={16} />,
           href: '/admin/completion-rate',

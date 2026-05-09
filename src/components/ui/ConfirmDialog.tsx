@@ -92,130 +92,122 @@ export function ConfirmDialog({
   };
 
   return (
-    <Modal open={open} onClose={onClose}>
+    <Modal open={open} onClose={onClose} maxWidth="440px">
+      <ModalHeader title={title} onClose={onClose} />
+      
+      {/* Content */}
       <div style={{ 
-        width: '100%', 
-        maxWidth: '440px',
-        background: 'var(--bg-surface)',
-        borderRadius: 'var(--radius-card)',
-        overflow: 'hidden',
+        padding: 'var(--space-5)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 'var(--space-4)',
       }}>
-        <ModalHeader title={title} onClose={onClose} />
-        
-        {/* Content */}
+        {/* Icon + Message */}
         <div style={{ 
-          padding: 'var(--space-5)',
           display: 'flex',
-          flexDirection: 'column',
-          gap: 'var(--space-4)',
+          gap: 'var(--space-3)',
+          alignItems: 'flex-start',
         }}>
-          {/* Icon + Message */}
           <div style={{ 
-            display: 'flex',
-            gap: 'var(--space-3)',
-            alignItems: 'flex-start',
+            color: getIconColor(),
+            flexShrink: 0,
+            marginTop: '2px',
           }}>
-            <div style={{ 
-              color: getIconColor(),
-              flexShrink: 0,
-              marginTop: '2px',
-            }}>
-              {getIcon()}
-            </div>
-            <div style={{ 
-              fontSize: 14,
-              lineHeight: 1.6,
-              color: 'var(--text-secondary)',
-              letterSpacing: '-0.13px',
-            }}>
-              {message}
-            </div>
+            {getIcon()}
+          </div>
+          <div style={{ 
+            fontSize: 14,
+            lineHeight: 1.6,
+            color: 'var(--text-secondary)',
+            letterSpacing: '-0.13px',
+          }}>
+            {message}
           </div>
         </div>
+      </div>
 
-        {/* Footer */}
-        <div style={{
-          display: 'flex',
-          gap: 'var(--space-2)',
-          padding: 'var(--space-4)',
-          borderTop: '1px solid var(--border-primary)',
-          background: 'var(--bg-elevated)',
-          justifyContent: 'flex-end',
-        }}>
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={loading}
-            style={{
-              padding: '10px 16px',
-              fontSize: 13,
-              fontWeight: 510,
-              borderRadius: 'var(--radius-comfortable)',
-              border: '1px solid var(--border-secondary)',
-              background: 'var(--bg-surface)',
-              color: 'var(--text-secondary)',
-              cursor: loading ? 'not-allowed' : 'pointer',
-              fontFamily: 'inherit',
-              letterSpacing: '-0.13px',
-              opacity: loading ? 0.5 : 1,
-              transition: 'all 0.15s ease',
-            }}
-            onMouseEnter={(e) => {
-              if (!loading) {
-                e.currentTarget.style.background = 'rgba(0,0,0,0.04)';
-              }
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'var(--bg-surface)';
-            }}
-          >
-            {cancelLabel}
-          </button>
-          
-          <button
-            type="button"
-            onClick={handleConfirm}
-            disabled={loading}
-            style={{
-              padding: '10px 16px',
-              fontSize: 13,
-              fontWeight: 510,
-              borderRadius: 'var(--radius-comfortable)',
-              cursor: loading ? 'not-allowed' : 'pointer',
-              fontFamily: 'inherit',
-              letterSpacing: '-0.13px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 'var(--space-2)',
-              opacity: loading ? 0.7 : 1,
-              transition: 'all 0.15s ease',
-              ...getConfirmButtonStyle(),
-            }}
-            onMouseEnter={(e) => {
-              if (!loading) {
-                e.currentTarget.style.opacity = '0.9';
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (!loading) {
-                e.currentTarget.style.opacity = '1';
-              }
-            }}
-          >
-            {loading && (
-              <span 
-                className={styles.spinner}
-                style={{ 
-                  width: 12, 
-                  height: 12, 
-                  borderColor: 'rgba(255,255,255,0.3)',
-                  borderTopColor: 'white',
-                }} 
-              />
-            )}
-            {confirmLabel}
-          </button>
-        </div>
+      {/* Footer */}
+      <div style={{
+        display: 'flex',
+        gap: 'var(--space-2)',
+        padding: 'var(--space-4)',
+        borderTop: '1px solid var(--border-primary)',
+        background: 'var(--bg-elevated)',
+        justifyContent: 'flex-end',
+      }}>
+        <button
+          type="button"
+          onClick={onClose}
+          disabled={loading}
+          style={{
+            padding: '10px 16px',
+            fontSize: 13,
+            fontWeight: 510,
+            borderRadius: 'var(--radius-comfortable)',
+            border: '1px solid var(--border-secondary)',
+            background: 'var(--bg-surface)',
+            color: 'var(--text-secondary)',
+            cursor: loading ? 'not-allowed' : 'pointer',
+            fontFamily: 'inherit',
+            letterSpacing: '-0.13px',
+            opacity: loading ? 0.5 : 1,
+            transition: 'all 0.15s ease',
+          }}
+          onMouseEnter={(e) => {
+            if (!loading) {
+              e.currentTarget.style.background = 'rgba(0,0,0,0.04)';
+            }
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'var(--bg-surface)';
+          }}
+        >
+          {cancelLabel}
+        </button>
+        
+        <button
+          type="button"
+          onClick={handleConfirm}
+          disabled={loading}
+          style={{
+            padding: '10px 16px',
+            fontSize: 13,
+            fontWeight: 510,
+            borderRadius: 'var(--radius-comfortable)',
+            cursor: loading ? 'not-allowed' : 'pointer',
+            fontFamily: 'inherit',
+            letterSpacing: '-0.13px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 'var(--space-2)',
+            opacity: loading ? 0.7 : 1,
+            transition: 'all 0.15s ease',
+            ...getConfirmButtonStyle(),
+          }}
+          onMouseEnter={(e) => {
+            if (!loading) {
+              e.currentTarget.style.opacity = '0.9';
+            }
+          }}
+          onMouseLeave={(e) => {
+            if (!loading) {
+              e.currentTarget.style.opacity = '1';
+            }
+          }}
+        >
+          {loading && (
+            <span 
+              className={styles.spinner}
+              style={{ 
+                width: 12, 
+                height: 12, 
+                borderColor: 'rgba(255,255,255,0.3)',
+                borderTopColor: 'white',
+              }} 
+            />
+          )}
+          {confirmLabel}
+        </button>
       </div>
     </Modal>
   );

@@ -1,4 +1,5 @@
 import React from 'react';
+import styles from '@/app/dashboard.module.css';
 
 export interface ModalFooterButton {
   label: string;
@@ -94,14 +95,13 @@ export function ModalFooter({
       >
         {isLoading && (
           <span
+            className={styles.spinner}
+            aria-hidden="true"
             style={{
               width: 14,
               height: 14,
-              borderRadius: '50%',
-              border: '2px solid rgba(255,255,255,0.3)',
-              borderTopColor: button.variant === 'secondary' ? 'var(--brand-indigo)' : 'var(--bg-surface)',
-              display: 'inline-block',
-              animation: 'spin 0.7s linear infinite',
+              borderColor: 'rgba(0,0,0,0.12)',
+              borderTopColor: 'var(--brand-indigo)',
             }}
           />
         )}

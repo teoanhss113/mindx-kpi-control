@@ -3,11 +3,11 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
-import { requireUser, authErrorResponse, AuthError } from '@/lib/auth/serverAuth';
+import { extractBearer, verifyFirebaseIdToken, authErrorResponse, AuthError } from '@/lib/auth/serverAuth';
 
 export async function POST(request: NextRequest) {
   try {
-    const user = await requireUser(request);
+    const { email } = await verifyFirebaseIdToken(extractBearer(request));
     const body = await request.json();
     const { endpoint, keys } = body;
 
@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
       .from('push_subscriptions')
       .upsert(
         {
-          user_id: user.email,
+          user_id: email,
           endpoint,
           p256dh: keys.p256dh,
           auth: keys.auth,

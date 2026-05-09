@@ -107,11 +107,11 @@ export function OfficeHourDetailsView({ oh }: { oh: OfficeHour }) {
         </div>
       </div>
 
-      {/* Khóa học */}
+      {/* Khoá học */}
       {oh.courses && oh.courses.length > 0 && (
         <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border-primary)' }}>
           <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 12 }}>
-            Khóa học ({oh.courses.length})
+            Khoá học ({oh.courses.length})
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
             {oh.courses.map(course => (

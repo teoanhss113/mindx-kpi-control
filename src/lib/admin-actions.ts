@@ -119,18 +119,41 @@ export async function createUser(idToken: string, userData: CreateUserData) {
   try {
     await requireAdminToken(idToken);
 
-    const { error } = await supabaseAdmin
+    const email = userData.email.trim().toLowerCase();
+
+    const { data: existingProfile, error: findError } = await supabaseAdmin
       .from('profiles')
-      .insert({
-        id: crypto.randomUUID(),
-        email: userData.email,
-        role_id: userData.role_id,
-        is_active: userData.is_active,
-      });
+      .select('id')
+      .eq('email', email)
+      .maybeSingle();
+
+    if (findError) throw findError;
+
+    const { data: savedProfile, error } = existingProfile
+      ? await supabaseAdmin
+        .from('profiles')
+        .update({
+          role_id: userData.role_id,
+          is_active: userData.is_active,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', existingProfile.id)
+        .select('id, email')
+        .single()
+      : await supabaseAdmin
+        .from('profiles')
+        .insert({
+          id: crypto.randomUUID(),
+          email,
+          role_id: userData.role_id,
+          is_active: userData.is_active,
+        })
+        .select('id, email')
+        .single();
 
     if (error) throw error;
     revalidatePath('/admin/users');
-    return { success: true as const };
+    return { success: true as const, data: savedProfile };
   } catch (error) {
     return failure(error);
   }
@@ -157,13 +180,22 @@ export async function updateUser(idToken: string, userData: UpdateUserData) {
   }
 }
 
+/**
+ * "deleteUser" — actually REVOKES permissions: sets role_id=null and is_active=false.
+ * The profile record is preserved so the user can still authenticate via Firebase.
+ * The account will appear in the "Tài khoản chưa phân quyền" table until re-assigned.
+ */
 export async function deleteUser(idToken: string, userId: string) {
   try {
     await requireAdminToken(idToken);
 
     const { error } = await supabaseAdmin
       .from('profiles')
-      .delete()
+      .update({
+        role_id: null,
+        is_active: false,
+        updated_at: new Date().toISOString(),
+      })
       .eq('id', userId);
 
     if (error) throw error;
@@ -573,7 +605,7 @@ export async function deleteRole(idToken: string, roleId: string) {
       .single();
 
     if (role?.is_system_role) {
-      return { success: false, error: 'Không thể xóa vai trò hệ thống' };
+      return { success: false, error: 'Không thể xoá vai trò hệ thống' };
     }
 
     const { data: users } = await supabaseAdmin
@@ -583,7 +615,7 @@ export async function deleteRole(idToken: string, roleId: string) {
       .limit(1);
 
     if (users && users.length > 0) {
-      return { success: false, error: 'Không thể xóa vai trò đang được sử dụng' };
+      return { success: false, error: 'Không thể xoá vai trò đang được sử dụng' };
     }
 
     const { error } = await supabaseAdmin

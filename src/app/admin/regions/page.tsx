@@ -192,7 +192,7 @@ export default function RegionsPage() {
   }
 
   async function handleDelete(region: Region) {
-    if (!confirm(`Xóa khu vực "${region.name}"?\n\nLưu ý: Các phân quyền liên quan sẽ bị xóa.`)) return;
+    if (!confirm(`Xoá khu vực "${region.name}"?\n\nLưu ý: Các phân quyền liên quan sẽ bị xoá.`)) return;
 
     try {
       const token = await getAuthToken();
@@ -333,7 +333,7 @@ export default function RegionsPage() {
                         <button
                           className={styles.clearCacheBtn}
                           onClick={() => handleDelete(region)}
-                          title="Xóa"
+                          title="Xoá"
                           style={{ padding: 'var(--space-2)', minWidth: 'auto' }}
                         >
                           <Icon.Trash size={16} />
@@ -353,7 +353,7 @@ export default function RegionsPage() {
         <EmptyState
           icon={<Icon.MapPin size={32} />}
           title={searchTerm ? 'Không tìm thấy khu vực' : 'Chưa có khu vực nào'}
-          subtitle={searchTerm ? 'Thử tìm kiếm với từ khóa khác' : `${LABELS.CREATE} ${ENTITIES.REGIONS} đầu tiên để bắt đầu`}
+          subtitle={searchTerm ? 'Thử tìm kiếm với từ khoá khác' : `${LABELS.CREATE} ${ENTITIES.REGIONS} đầu tiên để bắt đầu`}
         />
       )}
 
@@ -457,7 +457,7 @@ export default function RegionsPage() {
 
                 <div style={{ display: 'flex', gap: 'var(--space-2)', justifyContent: 'flex-end', marginTop: 'var(--space-2)' }}>
                   <button type="button" className={styles.clearCacheBtn} onClick={() => setShowModal(false)}>
-                    Hủy
+                    Huỷ
                   </button>
                   <button type="submit" className={styles.primaryBtn} disabled={submitting}>
                     {submitting ? (

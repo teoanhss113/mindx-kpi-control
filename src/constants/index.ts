@@ -36,17 +36,24 @@ export const LABELS = {
   TEACHER: 'Giáo viên',
   STATUS: 'Trạng thái',
   STUDENT: 'Học viên',
+  STUDENTS: 'Học viên',
   DATE: 'Ngày',
   TIME: 'Thời gian',
   REASON: 'Lý do',
+  ACTION: 'Hành động',
   SIZE: 'Sĩ số',
   COURSE_LINE: 'Khối',
+  COURSE: 'Khoá học',
+  CLASS_TITLE: 'Tên lớp',
+  MAIN_TEACHER: 'Giáo viên chính',
+  REGISTRATION_STATUS: 'Trạng thái đăng ký',
   
   // Progress/Sessions
   PROGRESS: 'Tiến độ',  // Simple, clear — no parentheses needed
   COMPLETED: 'Đã học',
   TOTAL: 'Tổng',
   SESSIONS: 'Buổi học',
+  SESSION: 'Buổi',
   
   // Stats
   COMPLETION_RATE: 'Tỷ lệ Hoàn thành',
@@ -77,7 +84,7 @@ export const LABELS = {
   EXPORT: 'Xuất Dữ Liệu',
   CLOSE: 'Đóng',
   SAVE: 'Lưu',
-  CANCEL: 'Hủy',
+  CANCEL: 'Huỷ',
   
   // CRUD Actions (Admin)
   CREATE: 'Tạo',           // Create new entity

@@ -15,6 +15,19 @@ export interface OHInfo {
 
 const DOW_VI = ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
 
+export const OFFICE_HOUR_TYPE_LABELS: Record<string, string> = {
+  Office: 'Trực tại cơ sở',
+  Trial: 'Trực trực tuyến',
+  Event: 'Sự kiện',
+  Makeup: 'Bù học',
+  Tutor: 'Dạy kèm',
+  Fixed: 'Trực tại cơ sở',
+};
+
+export function getOfficeHourTypeLabel(type: string | null | undefined): string {
+  return OFFICE_HOUR_TYPE_LABELS[type || ''] || type || '—';
+}
+
 function sessionLabel(endIso: string): string {
   const h = parseInt(
     new Intl.DateTimeFormat('vi-VN', { hour: 'numeric', timeZone: 'Asia/Ho_Chi_Minh', hour12: false }).format(new Date(endIso)),

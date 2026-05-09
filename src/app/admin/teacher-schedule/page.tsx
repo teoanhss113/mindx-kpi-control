@@ -15,9 +15,9 @@ import { getCache, setCache, clearCache } from '@/lib/idb';
 import { getCourseLineCategory } from '@/lib/courseCategories';
 import { getNavItemsWithRouter } from '@/lib/navigation';
 import { useAllowedPages } from '@/hooks/useAllowedPages';
-import { fetchTeacherSchedules, findAvailableTeachers } from '@/services/teacherScheduleService';
+import { addSupplyTeacherToSession, fetchClassTeacherSchedules, fetchTeacherSchedules, findAvailableTeachers } from '@/services/teacherScheduleService';
 import { searchUsers } from '@/services/ticketService';
-import { TeacherSchedule, CoordinationRequest, TeacherAvailability, Teacher } from '@/types/teacherSchedule';
+import { TeacherSchedule, TeacherScheduleSlot, CoordinationRequest, TeacherAvailability, Teacher } from '@/types/teacherSchedule';
 import { LmsUser } from '@/types/ticket';
 import { PageLayout } from '@/components/PageLayout';
 import {
@@ -149,19 +149,25 @@ function calculateAvailableTeachers(
   requestStartTime: string,
   requestEndTime: string,
   requestCentreId: string,
-  requestCourseLine?: string // Add course line for matching
+  requestCourseLine?: string, // Add course line for matching
+  conflictSchedules: TeacherSchedule[] = schedules
 ): TeacherAvailability[] {
   const requestStart = `${requestDate}T${requestStartTime}:00+07:00`;
   const requestEnd = `${requestDate}T${requestEndTime}:00+07:00`;
   
   const availabilities: TeacherAvailability[] = [];
+  const conflictScheduleMap = new Map(
+    conflictSchedules.map(schedule => [schedule.teacher.id, schedule.slots])
+  );
   
   const requestStartMs = new Date(requestStart).getTime();
   const requestEndMs = new Date(requestEnd).getTime();
   
   schedules.forEach(schedule => {
+    const conflictSourceSlots = conflictScheduleMap.get(schedule.teacher.id) || schedule.slots;
+
     // Get all slots for this teacher on the requested date
-    const daySlots = schedule.slots.filter(slot => {
+    const daySlots = conflictSourceSlots.filter(slot => {
       const slotDate = new Date(slot.startTime).toISOString().split('T')[0];
       return slotDate === requestDate;
     });
@@ -171,115 +177,87 @@ function calculateAvailableTeachers(
       timeRangesOverlap(slot.startTime, slot.endTime, requestStart, requestEnd)
     );
     
-    // Include teachers who are currently teaching at same centre (for flexible swap)
-    const hasConflictAtSameCentre = conflictSlots.some(slot => slot.centreId === requestCentreId);
-    const hasConflictAtOtherCentre = conflictSlots.some(slot => slot.centreId !== requestCentreId);
-    
-    // Available if no conflict OR only conflict at same centre (flexible swap)
-    const isAvailable = conflictSlots.length === 0 || (hasConflictAtSameCentre && !hasConflictAtOtherCentre);
+    // Adding a supply teacher is blocked by any overlapping booking, regardless of role or centre.
+    const isAvailable = conflictSlots.length === 0;
     
     if (!isAvailable) return; // Skip truly unavailable teachers
     
     // Calculate score, category, and detailed reasons
     let score = 100;
     let category = '';
-    let reasons: string[] = [];
-    let hasClassBefore = false;
-    let hasClassAfter = false;
+    const reasons: string[] = [];
+    const hasClassBefore = false;
+    const hasClassAfter = false;
     
     // Global variables to track the closest related slot for display
-    let globalClosestSlot: any = null;
+    let globalClosestSlot: TeacherScheduleSlot | null = null;
     let globalIsBefore = false;
     
     // Check for slots at the same centre on the same day
     const sameCentreSlots = daySlots.filter(slot => slot.centreId === requestCentreId);
     
-    // Determine category based on current situation
-    if (hasConflictAtSameCentre) {
-      // Teacher is currently teaching at same centre during this time slot
-      category = 'currently-at-centre';
-      score = 200; // Highest priority - already at centre, can swap
-      reasons.push('Đang dạy tại cùng cơ sở trong khung giờ này');
-      
-      // No need to check for other classes - this is the priority
-    } else if (hasConflictAtOtherCentre) {
-      // Teacher is currently teaching at other centre during this time slot
-      category = 'currently-at-other-centre';
-      score = 80; // Low priority - teaching at different centre
-      reasons.push('Đang dạy tại cơ sở khác trong khung giờ này');
-    } else {
-      // Teacher is free during this time slot
-      // Check if they have other classes at same centre (not during this time slot)
-      const nonConflictSameCentreSlots = sameCentreSlots.filter(slot => 
-        !timeRangesOverlap(slot.startTime, slot.endTime, requestStart, requestEnd)
-      );
-      
-      if (nonConflictSameCentreSlots.length > 0) {
-        // Teacher has other classes at same centre (not during this time slot)
-        // Find closest class for detailed reason
-        let closestGap: number | null = null;
-        let closestSlot: any = null;
-        let isBefore = false;
-        
-        nonConflictSameCentreSlots.forEach(slot => {
-          const slotStartMs = new Date(slot.startTime).getTime();
-          const slotEndMs = new Date(slot.endTime).getTime();
-          
-          if (slotEndMs <= requestStartMs) {
-            const gap = Math.round((requestStartMs - slotEndMs) / (1000 * 60));
-            if (closestGap === null || gap < closestGap) {
-              closestGap = gap;
-              closestSlot = slot;
-              isBefore = true;
-            }
+    const nonConflictSameCentreSlots = sameCentreSlots.filter(slot =>
+      !timeRangesOverlap(slot.startTime, slot.endTime, requestStart, requestEnd)
+    );
+
+    if (nonConflictSameCentreSlots.length > 0) {
+      let closestGap: number | null = null;
+      let closestSlot: TeacherScheduleSlot | null = null;
+      let isBefore = false;
+
+      nonConflictSameCentreSlots.forEach(slot => {
+        const slotStartMs = new Date(slot.startTime).getTime();
+        const slotEndMs = new Date(slot.endTime).getTime();
+
+        if (slotEndMs <= requestStartMs) {
+          const gap = Math.round((requestStartMs - slotEndMs) / (1000 * 60));
+          if (closestGap === null || gap < closestGap) {
+            closestGap = gap;
+            closestSlot = slot;
+            isBefore = true;
           }
-          
-          if (slotStartMs >= requestEndMs) {
-            const gap = Math.round((slotStartMs - requestEndMs) / (1000 * 60));
-            if (closestGap === null || gap < closestGap) {
-              closestGap = gap;
-              closestSlot = slot;
-              isBefore = false;
-            }
-          }
-        });
-        
-        // Check if adjacent (gap <= 0)
-        const isAdjacent = closestGap !== null && closestGap <= 0;
-        
-        if (isAdjacent) {
-          category = 'has-class-same-centre-adjacent';
-          score = 160; // Higher priority - adjacent at same centre
-        } else {
-          category = 'has-class-same-centre';
-          score = 150; // High priority - at same centre but not adjacent
         }
-        
-        if (closestSlot) {
-          globalClosestSlot = closestSlot;
-          globalIsBefore = isBefore;
-          
-          if (closestGap !== null && closestGap <= 0) {
-            if (isBefore) {
-              reasons.push('Có lớp liền kề tại cùng cơ sở');
-            } else {
-              reasons.push('Có lớp liền kề tại cùng cơ sở');
-            }
-            score += 30;
-          } else if (closestGap! <= 30) {
-            reasons.push('Có lớp tại cùng cơ sở');
-            score += 20;
-          } else {
-            reasons.push('Có lớp tại cùng cơ sở');
-            score += 10;
+
+        if (slotStartMs >= requestEndMs) {
+          const gap = Math.round((slotStartMs - requestEndMs) / (1000 * 60));
+          if (closestGap === null || gap < closestGap) {
+            closestGap = gap;
+            closestSlot = slot;
+            isBefore = false;
           }
+        }
+      });
+
+      const isAdjacent = closestGap !== null && closestGap <= 0;
+
+      if (isAdjacent) {
+        category = 'has-class-same-centre-adjacent';
+        score = 160;
+      } else {
+        category = 'has-class-same-centre';
+        score = 150;
+      }
+
+      if (closestSlot) {
+        globalClosestSlot = closestSlot;
+        globalIsBefore = isBefore;
+
+        if (closestGap !== null && closestGap <= 0) {
+          reasons.push('Có lớp liền kề tại cùng cơ sở');
+          score += 30;
+        } else if (closestGap! <= 30) {
+          reasons.push('Có lớp tại cùng cơ sở');
+          score += 20;
         } else {
           reasons.push('Có lớp tại cùng cơ sở');
+          score += 10;
         }
+      } else {
+        reasons.push('Có lớp tại cùng cơ sở');
       }
     }
     
-    // Check total hours on that day (excluding conflict slots for swap scenario)
+    // Check total hours on that day.
     const nonConflictDaySlots = daySlots.filter(slot => 
       !timeRangesOverlap(slot.startTime, slot.endTime, requestStart, requestEnd)
     );
@@ -309,7 +287,7 @@ function calculateAvailableTeachers(
         // Check if any class is close to requested time
         const otherCentreSlots = daySlots.filter(slot => slot.centreId !== requestCentreId);
         let closestGap: number | null = null;
-        let closestSlot: any = null;
+        let closestSlot: TeacherScheduleSlot | null = null;
         let isBefore = false;
         
         otherCentreSlots.forEach(slot => {
@@ -379,7 +357,7 @@ function calculateAvailableTeachers(
     availabilities.push({
       teacher: schedule.teacher,
       isAvailable: true,
-      conflictSlots: hasConflictAtSameCentre ? conflictSlots : [],
+      conflictSlots: [],
       score,
       reason,
       hasClassBefore,
@@ -387,7 +365,7 @@ function calculateAvailableTeachers(
       totalHoursToday: totalHours,
       category, // Add category for grouping
       courseLineMatch, // Add course line match flag
-      relatedSlot: globalClosestSlot, // Add related slot for detailed display
+      relatedSlot: globalClosestSlot || undefined, // Add related slot for detailed display
       isRelatedSlotBefore: globalIsBefore, // Add timing info
     });
   });
@@ -396,6 +374,133 @@ function calculateAvailableTeachers(
   availabilities.sort((a, b) => b.score - a.score);
   
   return availabilities;
+}
+
+function findTeacherBlockingSlot(
+  schedules: TeacherSchedule[],
+  teacherId: string,
+  requestStart: string,
+  requestEnd: string
+): TeacherScheduleSlot | undefined {
+  const schedule = schedules.find(item => item.teacher.id === teacherId);
+  return schedule?.slots.find(slot =>
+    timeRangesOverlap(slot.startTime, slot.endTime, requestStart, requestEnd)
+  );
+}
+
+function getTeacherRoleLabel(roleShortName?: string, roleName?: string): string {
+  const role = (roleShortName || roleName || '').trim();
+  if (!role) return 'Giáo viên';
+
+  const roleUpper = role.toUpperCase();
+  if (roleUpper === 'SUPPLY') return 'SUPPLY';
+  return role;
+}
+
+function getSlotTeachersByRole(slot: TeacherScheduleSlot, roleShortName: string) {
+  const roleUpper = roleShortName.toUpperCase();
+  return (slot.sessionTeachers || []).filter(item =>
+    (item.roleShortName || item.roleName || '').toUpperCase() === roleUpper
+  );
+}
+
+function getDisplaySessionTeachers(slot: TeacherScheduleSlot) {
+  if (slot.sessionTeachers?.length) return slot.sessionTeachers;
+  if (!slot.teacher) return [];
+
+  return [{
+    teacher: slot.teacher,
+    roleId: slot.roleId,
+    roleName: slot.roleName,
+    roleShortName: slot.roleShortName,
+  }];
+}
+
+function getSessionTeacherRoleRows(slot: TeacherScheduleSlot) {
+  const rows = new Map<string, { label: string; names: string[] }>();
+
+  getDisplaySessionTeachers(slot).forEach(item => {
+    const label = getTeacherRoleLabel(item.roleShortName, item.roleName);
+    const key = label.toUpperCase();
+    const name = item.teacher.fullName || item.teacher.username;
+    if (!rows.has(key)) rows.set(key, { label, names: [] });
+    rows.get(key)!.names.push(name);
+  });
+
+  return Array.from(rows.values());
+}
+
+function getSlotSessionTeacherItems(slot: TeacherScheduleSlot) {
+  const items = [...(slot.sessionTeachers || [])];
+
+  if (slot.teacher) {
+    const exists = items.some(item =>
+      item.teacher.id === slot.teacher?.id &&
+      (item.roleId || item.roleShortName || item.roleName) === (slot.roleId || slot.roleShortName || slot.roleName)
+    );
+
+    if (!exists) {
+      items.push({
+        teacher: slot.teacher,
+        roleId: slot.roleId,
+        roleName: slot.roleName,
+        roleShortName: slot.roleShortName,
+      });
+    }
+  }
+
+  return items;
+}
+
+function mergeSessionTeachers(
+  current: TeacherScheduleSlot['sessionTeachers'] = [],
+  incoming: TeacherScheduleSlot['sessionTeachers'] = [],
+): NonNullable<TeacherScheduleSlot['sessionTeachers']> {
+  const merged = new Map<string, NonNullable<TeacherScheduleSlot['sessionTeachers']>[number]>();
+
+  [...current, ...incoming].forEach(item => {
+    const key = `${item.teacher.id}-${item.roleId || item.roleShortName || item.roleName || 'role'}`;
+    if (!merged.has(key)) merged.set(key, item);
+  });
+
+  return Array.from(merged.values());
+}
+
+function getSlotTeacherIds(slot: TeacherScheduleSlot): Set<string> {
+  const ids = new Set<string>();
+  getDisplaySessionTeachers(slot).forEach(item => ids.add(item.teacher.id));
+  if (slot.teacher?.id) ids.add(slot.teacher.id);
+  return ids;
+}
+
+function replaceClassSlotsInSchedules(
+  schedules: TeacherSchedule[],
+  classId: string,
+  classSchedules: TeacherSchedule[],
+): TeacherSchedule[] {
+  const scheduleMap = new Map<string, TeacherSchedule>();
+
+  schedules.forEach(schedule => {
+    const remainingSlots = schedule.slots.filter(slot => slot.classId !== classId);
+    if (remainingSlots.length > 0) {
+      scheduleMap.set(schedule.teacher.id, {
+        ...schedule,
+        slots: remainingSlots,
+      });
+    }
+  });
+
+  classSchedules.forEach(classSchedule => {
+    const existing = scheduleMap.get(classSchedule.teacher.id);
+    scheduleMap.set(classSchedule.teacher.id, {
+      teacher: existing?.teacher || classSchedule.teacher,
+      slots: [...(existing?.slots || []), ...classSchedule.slots].sort((a, b) =>
+        new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
+      ),
+    });
+  });
+
+  return Array.from(scheduleMap.values());
 }
 
 // ─── Memoized Calendar Grid Component ────────────────────────────────────────
@@ -868,7 +973,7 @@ const TableView = memo(({
           <EmptyState
             icon={<Icon.Search size={32} />}
             title="Không tìm thấy giáo viên"
-            subtitle="Thử thay đổi bộ lọc hoặc từ khóa tìm kiếm"
+            subtitle="Thử thay đổi bộ lọc hoặc từ khoá tìm kiếm"
           />
         )}
       </div>
@@ -1349,7 +1454,7 @@ const TeacherCard = ({ ta, idx, total }: { ta: any; idx: number; total: number }
 // ─── Memoized ClassCard Component ────────────────────────────────────────────
 
 interface ClassCardProps {
-  slot: any;
+  slot: TeacherScheduleSlot & { teacher?: Teacher };
   onClick?: () => void;
 }
 
@@ -1405,6 +1510,9 @@ const ClassCard = memo(({ slot, onClick }: ClassCardProps) => {
     statusColor = 'var(--status-error)';
   }
 
+  const teacherName = slot.teacher?.fullName || slot.teacher?.username || 'Giáo viên';
+  const teacherRoleRows = getSessionTeacherRoleRows(slot);
+
   return (
     <div
       ref={cardRef}
@@ -1440,11 +1548,27 @@ const ClassCard = memo(({ slot, onClick }: ClassCardProps) => {
         </div>
       )}
       
-      {/* Teacher Name */}
-      <div style={{ fontSize: 10, color: 'var(--text-secondary)', marginBottom: 'var(--space-1)', display: 'flex', alignItems: 'center', gap: 'var(--space-1)' }}>
-        <Icon.User size={10} />
-        <span>{slot.teacher.fullName}</span>
-      </div>
+      {slot.type === 'class' ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginBottom: 'var(--space-1)' }}>
+          {teacherRoleRows.map(row => (
+            <div
+              key={row.label}
+              style={{ fontSize: 10, color: 'var(--text-secondary)', display: 'flex', alignItems: 'flex-start', gap: 'var(--space-1)' }}
+            >
+              <Icon.User size={10} />
+              <span>
+                <strong style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{row.label}:</strong>{' '}
+                {row.names.join(', ')}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div style={{ fontSize: 9, color: 'var(--text-tertiary)', marginBottom: 'var(--space-1)', display: 'flex', alignItems: 'center', gap: 'var(--space-1)' }}>
+          <Icon.User size={10} />
+          <span>{teacherName}</span>
+        </div>
+      )}
       
       {/* Type label for office hours */}
       {slot.type === 'office-hour' && (
@@ -1566,6 +1690,8 @@ export default function TeacherSchedulePage() {
   const [unavailableTeachers, setUnavailableTeachers] = useState<TeacherAvailability[]>([]);
   const [selectedSlot, setSelectedSlot] = useState<any | null>(null);
   const [calculatingTeachers, setCalculatingTeachers] = useState(false);
+  const [addingSupplyTeacherId, setAddingSupplyTeacherId] = useState<string | null>(null);
+  const [reloadingClassId, setReloadingClassId] = useState<string | null>(null);
   
   // ── Group expansion states for teacher categorization ──────────────────────
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
@@ -1687,7 +1813,6 @@ export default function TeacherSchedulePage() {
     // Open modal immediately
     setShowCoordinationPanel(true);
     
-    // Calculate available teachers in next tick to avoid blocking UI
     setTimeout(() => {
       const available = calculateAvailableTeachers(
         schedules,
@@ -1699,7 +1824,8 @@ export default function TeacherSchedulePage() {
       );
       
       // Filter out the current teacher from suggestions
-      const filteredAvailable = available.filter(ta => ta.teacher.id !== slot.teacher.id);
+      const currentTeacherIds = getSlotTeacherIds(slot);
+      const filteredAvailable = available.filter(ta => !currentTeacherIds.has(ta.teacher.id));
       
       setAvailableTeachers(filteredAvailable);
       setUnavailableTeachers([]);
@@ -1722,9 +1848,7 @@ export default function TeacherSchedulePage() {
 
     setCalculatingTeachers(true);
     
-    // Use setTimeout to avoid blocking UI
     setTimeout(() => {
-      // Calculate from existing data (no API call)
       const available = calculateAvailableTeachers(
         schedules,
         coordinationRequest.date,
@@ -1735,8 +1859,9 @@ export default function TeacherSchedulePage() {
       );
       
       // If there's a selected slot, filter out its teacher
-      const filteredAvailable = selectedSlot 
-        ? available.filter(ta => ta.teacher.id !== selectedSlot.teacher.id)
+      const selectedSlotTeacherIds = selectedSlot ? getSlotTeacherIds(selectedSlot) : new Set<string>();
+      const filteredAvailable = selectedSlot
+        ? available.filter(ta => !selectedSlotTeacherIds.has(ta.teacher.id))
         : available;
       
       setAvailableTeachers(filteredAvailable);
@@ -1750,6 +1875,114 @@ export default function TeacherSchedulePage() {
       }
     }, 0);
   }, [coordinationRequest, schedules, selectedSlot, addToast]);
+
+  const reloadClassSchedule = useCallback(async (
+    classId: string,
+    options: { showToast?: boolean; refreshAvailableTeachers?: boolean } = {},
+  ): Promise<TeacherSchedule[]> => {
+    const { showToast = true, refreshAvailableTeachers = true } = options;
+
+    try {
+      setReloadingClassId(classId);
+      const classSchedules = await fetchClassTeacherSchedules(classId);
+      const nextSchedules = replaceClassSlotsInSchedules(schedules, classId, classSchedules);
+
+      setSchedules(nextSchedules);
+      await setCache(CACHE_KEYS.TEACHER_SCHEDULE, {
+        schedules: nextSchedules,
+        selectedTeachers,
+        timestamp: Date.now(),
+      });
+
+      if (refreshAvailableTeachers && selectedSlot) {
+        const slotDate = new Date(selectedSlot.startTime).toISOString().split('T')[0];
+        const startTimeStr = new Date(selectedSlot.startTime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false });
+        const endTimeStr = new Date(selectedSlot.endTime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false });
+        const available = calculateAvailableTeachers(
+          nextSchedules,
+          slotDate,
+          startTimeStr,
+          endTimeStr,
+          selectedSlot.centreId,
+          selectedSlot.courseLine,
+        ).filter(ta => !getSlotTeacherIds(selectedSlot).has(ta.teacher.id));
+
+        setAvailableTeachers(available);
+        setUnavailableTeachers([]);
+      }
+
+      if (showToast) addToast('Đã cập nhật dữ liệu lớp', 'success');
+      return nextSchedules;
+    } catch (error) {
+      console.error('Error reloading class schedule:', error);
+      addToast(
+        error instanceof Error ? error.message : 'Không thể cập nhật dữ liệu lớp',
+        'error',
+      );
+      throw error;
+    } finally {
+      setReloadingClassId(null);
+    }
+  }, [addToast, schedules, selectedSlot, selectedTeachers]);
+
+  const handleAddSupplyTeacher = useCallback(async (ta: TeacherAvailability) => {
+    if (!selectedSlot) return;
+    if (selectedSlot.type !== 'class') {
+      addToast('Chỉ có thể thêm giáo viên vào buổi học của lớp', 'info');
+      return;
+    }
+    if (!selectedSlot.classId || !selectedSlot.sessionId || !selectedSlot.className) {
+      addToast('Thiếu thông tin lớp hoặc buổi học để thêm giáo viên', 'error');
+      return;
+    }
+
+    try {
+      setAddingSupplyTeacherId(ta.teacher.id);
+      addToast('Đang thêm giáo viên vào lớp...', 'info');
+
+      const blockingSlot = findTeacherBlockingSlot(
+        schedules,
+        ta.teacher.id,
+        selectedSlot.startTime,
+        selectedSlot.endTime,
+      );
+
+      if (blockingSlot) {
+        const roleLabel = blockingSlot.roleShortName || blockingSlot.roleName || 'vai trò khác';
+        addToast(
+          `${ta.teacher.fullName || ta.teacher.username} đang bận ở ${blockingSlot.className || 'lớp khác'} (${roleLabel})`,
+          'error',
+        );
+        return;
+      }
+
+      await addSupplyTeacherToSession({
+        classId: selectedSlot.classId,
+        className: selectedSlot.className,
+        classSiteId: selectedSlot.classSiteId,
+        centreId: selectedSlot.centreId,
+        sessionId: selectedSlot.sessionId,
+        sessionStartTime: selectedSlot.startTime,
+        sessionEndTime: selectedSlot.endTime,
+        teacherId: ta.teacher.id,
+        teacherName: ta.teacher.fullName || ta.teacher.username,
+        teacherHandleScore: 7,
+        teacherPrimaryCenters: [selectedSlot.centreId],
+      });
+
+      addToast(`Đã thêm ${ta.teacher.fullName || ta.teacher.username} vào lớp với vai trò SUPPLY`, 'success');
+      setAddingSupplyTeacherId(null);
+      await reloadClassSchedule(selectedSlot.classId, { showToast: false, refreshAvailableTeachers: true });
+    } catch (error) {
+      console.error('Error adding supply teacher:', error);
+      addToast(
+        error instanceof Error ? error.message : 'Không thể thêm giáo viên',
+        'error',
+      );
+    } finally {
+      setAddingSupplyTeacherId(null);
+    }
+  }, [addToast, reloadClassSchedule, schedules, selectedSlot]);
 
   // ── Hydration + Auto-fetch ──────────────────────────────────────────────────
   useEffect(() => {
@@ -2043,25 +2276,71 @@ export default function TeacherSchedulePage() {
       });
     });
     
-    // Step 2: Deduplicate — for each className+teacherId+date, keep only the best entry
+    // Step 2: Deduplicate — each class session appears once, even when it has LEC/TA/SUPPLY.
     // (prefer type 'class' over 'office-hour', then longest duration)
     const bestEntryMap = new Map<string, SlotEntry>();
     
     allEntries.forEach(entry => {
-      const dedupeKey = `${entry.slot.className || entry.slot.id}-${entry.teacher.id}-${entry.slotDate}`;
+      const dedupeKey = entry.slot.type === 'class'
+        ? `class-${entry.slot.classId || entry.slot.className}-${entry.slot.sessionId || entry.startStr}-${entry.slotDate}`
+        : `${entry.slot.className || entry.slot.id}-${entry.teacher.id}-${entry.slotDate}`;
       const existing = bestEntryMap.get(dedupeKey);
+      const entrySessionTeachers = getSlotSessionTeacherItems(entry.slot);
       
       if (!existing) {
-        bestEntryMap.set(dedupeKey, entry);
+        const lecTeacher = entrySessionTeachers.find((item: NonNullable<TeacherScheduleSlot['sessionTeachers']>[number]) =>
+          (item.roleShortName || item.roleName || '').toUpperCase() === 'LEC'
+        )?.teacher;
+        bestEntryMap.set(dedupeKey, {
+          ...entry,
+          slot: {
+            ...entry.slot,
+            sessionTeachers: entrySessionTeachers,
+            teacher: lecTeacher || entry.slot.teacher || entry.teacher,
+          },
+        });
       } else {
+        const mergedSessionTeachers = mergeSessionTeachers(
+          existing.slot.sessionTeachers,
+          entrySessionTeachers,
+        );
+        const lecTeacher = mergedSessionTeachers.find(item =>
+          (item.roleShortName || item.roleName || '').toUpperCase() === 'LEC'
+        )?.teacher;
+        const mergedEntry: SlotEntry = {
+          ...existing,
+          durationMs: Math.max(existing.durationMs, entry.durationMs),
+          slot: {
+            ...existing.slot,
+            sessionTeachers: mergedSessionTeachers,
+            teacher: lecTeacher || existing.slot.teacher || entry.slot.teacher || existing.teacher,
+          },
+        };
+
         // Prefer 'class' type over 'office-hour'
         const entryIsClass = entry.slot.type === 'class';
         const existingIsClass = existing.slot.type === 'class';
         if (entryIsClass && !existingIsClass) {
-          bestEntryMap.set(dedupeKey, entry);
+          bestEntryMap.set(dedupeKey, {
+            ...entry,
+            slot: {
+              ...entry.slot,
+              sessionTeachers: mergedSessionTeachers,
+              teacher: lecTeacher || entry.slot.teacher || existing.slot.teacher || entry.teacher,
+            },
+          });
         } else if (entryIsClass === existingIsClass && entry.durationMs > existing.durationMs) {
           // Same type: prefer longer duration
-          bestEntryMap.set(dedupeKey, entry);
+          bestEntryMap.set(dedupeKey, {
+            ...entry,
+            slot: {
+              ...entry.slot,
+              sessionTeachers: mergedSessionTeachers,
+              teacher: lecTeacher || entry.slot.teacher || existing.slot.teacher || entry.teacher,
+            },
+          });
+        } else {
+          bestEntryMap.set(dedupeKey, mergedEntry);
         }
       }
     });
@@ -2549,8 +2828,39 @@ export default function TeacherSchedulePage() {
                 width: '100%',
                 boxSizing: 'border-box'
               }}>
-                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 'var(--space-2)' }}>
-                  Thông tin ca hiện tại
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-2)', marginBottom: 'var(--space-2)' }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>
+                    Thông tin ca hiện tại
+                  </div>
+                  {selectedSlot.classId && (
+                    <button
+                      type="button"
+                      onClick={() => reloadClassSchedule(selectedSlot.classId)}
+                      disabled={reloadingClassId === selectedSlot.classId || addingSupplyTeacherId !== null}
+                      title="Tải lại dữ liệu riêng lớp này"
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 'var(--space-1)',
+                        padding: '4px 8px',
+                        borderRadius: 'var(--radius-comfortable)',
+                        border: '1px solid var(--border-primary)',
+                        background: 'var(--bg-surface)',
+                        color: 'var(--text-secondary)',
+                        fontSize: 11,
+                        fontWeight: 510,
+                        cursor: reloadingClassId === selectedSlot.classId || addingSupplyTeacherId !== null ? 'not-allowed' : 'pointer',
+                        opacity: reloadingClassId === selectedSlot.classId || addingSupplyTeacherId !== null ? 0.6 : 1,
+                      }}
+                    >
+                      {reloadingClassId === selectedSlot.classId ? (
+                        <Spinner size={11} />
+                      ) : (
+                        <Icon.Refresh size={11} />
+                      )}
+                      Reload
+                    </button>
+                  )}
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', fontSize: 12 }}>
                   <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? 2 : 8 }}>
@@ -2559,7 +2869,16 @@ export default function TeacherSchedulePage() {
                   </div>
                   <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? 2 : 8 }}>
                     <span style={{ color: 'var(--text-tertiary)', minWidth: isMobile ? 'auto' : 100, fontSize: isMobile ? 10 : 12 }}>Giáo viên:</span>
-                    <span style={{ color: 'var(--text-primary)', wordBreak: 'break-word' }}>{selectedSlot.teacher.fullName}</span>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)', minWidth: 0 }}>
+                      {getSessionTeacherRoleRows(selectedSlot).map(row => (
+                        <span
+                          key={row.label}
+                          style={{ color: 'var(--text-primary)', wordBreak: 'break-word' }}
+                        >
+                          <span style={{ fontWeight: 600 }}>{row.label}:</span> {row.names.join(', ')}
+                        </span>
+                      ))}
+                    </div>
                   </div>
                   <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? 2 : 8 }}>
                     <span style={{ color: 'var(--text-tertiary)', minWidth: isMobile ? 'auto' : 100, fontSize: isMobile ? 10 : 12 }}>Cơ sở:</span>
@@ -3020,63 +3339,41 @@ export default function TeacherSchedulePage() {
                                             {/* Add to Class Button - Only show if we have a selected slot */}
                                             {selectedSlot && (
                                               <button
-                                                onClick={async () => {
-                                                  try {
-                                                    addToast('Đang thêm giáo viên...', 'info');
-                                                    
-                                                    const { addSupplyTeacherToSession } = await import('@/services/teacherScheduleService');
-                                                    
-                                                    await addSupplyTeacherToSession({
-                                                      classId: selectedSlot.classId || '',
-                                                      classSiteId: selectedSlot.classId || '', // Using classId as classSiteId for now
-                                                      sessionId: selectedSlot.id,
-                                                      sessionStartTime: selectedSlot.startTime,
-                                                      sessionEndTime: selectedSlot.endTime,
-                                                      teacherId: ta.teacher.id,
-                                                      teacherName: ta.teacher.fullName || ta.teacher.username,
-                                                      teacherHandleScore: 10,
-                                                      teacherPrimaryCenters: [null],
-                                                    });
-                                                    
-                                                    addToast(`Đã thêm ${ta.teacher.fullName} vào lớp với vai trò SUPPLY`, 'success');
-                                                    
-                                                    // Refresh schedules
-                                                    loadData(fromDate, toDate);
-                                                    
-                                                    // Close modal
-                                                    setShowCoordinationPanel(false);
-                                                    setSelectedSlot(null);
-                                                    setAvailableTeachers([]);
-                                                  } catch (error) {
-                                                    console.error('Error adding supply teacher:', error);
-                                                    addToast(
-                                                      error instanceof Error ? error.message : 'Không thể thêm giáo viên',
-                                                      'error'
-                                                    );
-                                                  }
-                                                }}
+                                                onClick={() => handleAddSupplyTeacher(ta)}
+                                                disabled={addingSupplyTeacherId !== null}
                                                 style={{
                                                   marginTop: 6,
                                                   padding: '4px 10px',
                                                   fontSize: 10,
                                                   fontWeight: 510,
                                                   color: 'white',
-                                                  background: 'var(--brand-indigo)',
+                                                  background: addingSupplyTeacherId === ta.teacher.id ? 'var(--text-quaternary)' : 'var(--brand-indigo)',
                                                   border: 'none',
                                                   borderRadius: 'var(--radius-comfortable)',
-                                                  cursor: 'pointer',
+                                                  cursor: addingSupplyTeacherId !== null ? 'not-allowed' : 'pointer',
                                                   transition: 'all 0.15s ease',
+                                                  opacity: addingSupplyTeacherId !== null && addingSupplyTeacherId !== ta.teacher.id ? 0.5 : 1,
                                                 }}
                                                 onMouseEnter={e => {
-                                                  e.currentTarget.style.background = 'var(--accent-hover)';
-                                                  e.currentTarget.style.transform = 'translateY(-1px)';
+                                                  if (addingSupplyTeacherId === null) {
+                                                    e.currentTarget.style.background = 'var(--accent-hover)';
+                                                    e.currentTarget.style.transform = 'translateY(-1px)';
+                                                  }
                                                 }}
                                                 onMouseLeave={e => {
-                                                  e.currentTarget.style.background = 'var(--brand-indigo)';
-                                                  e.currentTarget.style.transform = 'translateY(0)';
+                                                  e.currentTarget.style.background = addingSupplyTeacherId === ta.teacher.id ? 'var(--text-quaternary)' : 'var(--brand-indigo)';
+                                                  if (addingSupplyTeacherId === null) e.currentTarget.style.transform = 'translateY(0)';
                                                 }}
                                               >
-                                                <Icon.Plus size={10} /> Thêm vào lớp
+                                                {addingSupplyTeacherId === ta.teacher.id ? (
+                                                  <>
+                                                    <Spinner size={10} /> Đang thêm...
+                                                  </>
+                                                ) : (
+                                                  <>
+                                                    <Icon.Plus size={10} /> Thêm vào lớp
+                                                  </>
+                                                )}
                                               </button>
                                             )}
                                           </div>

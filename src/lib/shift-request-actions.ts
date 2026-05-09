@@ -50,7 +50,7 @@ export async function createShiftRequest(
     body: JSON.stringify({ officeHourId, teacherName, teacherId, requestNote, officeHourInfo }),
   });
   if (res.status === 409) {
-    throw new Error('Bạn đã yêu cầu ca trực này rồi');
+    throw new Error('Bạn đã đăng ký ca trực này rồi');
   }
   const json = await readJson<{ data: ShiftRequest }>(res);
   return json.data;

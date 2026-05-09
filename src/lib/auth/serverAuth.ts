@@ -134,5 +134,6 @@ export function authErrorResponse(error: unknown): NextResponse {
   if (error instanceof AuthError) {
     return NextResponse.json({ error: error.message }, { status: error.status });
   }
-  return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  console.error('[authErrorResponse] Unexpected error:', error);
+  return NextResponse.json({ error: 'Internal Server Error', details: String(error) }, { status: 500 });
 }

@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { requireUser, authErrorResponse } from '@/lib/auth/serverAuth';
+import { notifyUsers, getAdminEmailsForPage, NotifyTemplates } from '@/lib/notificationService';
 
 export async function POST(request: NextRequest) {
   try {
@@ -36,6 +37,29 @@ export async function POST(request: NextRequest) {
       throw error;
     }
 
+    // Fetch session info for notification
+    const { data: sessionData } = await supabaseAdmin
+      .from('final_sessions')
+      .select('class_name, centre_name')
+      .eq('id', finalSessionId)
+      .maybeSingle();
+
+    // Notify admins who manage final-sessions
+    void (async () => {
+      try {
+        const adminEmails = await getAdminEmailsForPage('final-sessions');
+        await notifyUsers({
+          userEmails: adminEmails,
+          ...NotifyTemplates.judgeRequested(
+            teacherName || user.email,
+            { className: sessionData?.class_name, centreName: sessionData?.centre_name }
+          ),
+        });
+      } catch (e) {
+        console.error('[judge-requests POST] Notification error:', e);
+      }
+    })();
+
     return NextResponse.json({ data }, { status: 201 });
   } catch (err) {
     return authErrorResponse(err);
@@ -56,6 +80,30 @@ export async function DELETE(request: NextRequest) {
       .eq('status', 'pending');
 
     if (error) throw error;
+
+    // Fetch session info for notification
+    const { data: sessionData } = await supabaseAdmin
+      .from('final_sessions')
+      .select('class_name, centre_name')
+      .eq('id', sessionId)
+      .maybeSingle();
+
+    // Notify admins of cancellation
+    void (async () => {
+      try {
+        const adminEmails = await getAdminEmailsForPage('final-sessions');
+        await notifyUsers({
+          userEmails: adminEmails,
+          ...NotifyTemplates.judgeCancelled(
+            user.email,
+            { className: sessionData?.class_name, centreName: sessionData?.centre_name }
+          ),
+        });
+      } catch (e) {
+        console.error('[judge-requests DELETE] Notification error:', e);
+      }
+    })();
+
     return NextResponse.json({ success: true });
   } catch (err) {
     return authErrorResponse(err);

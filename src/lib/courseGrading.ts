@@ -18,7 +18,7 @@ export interface CourseGrade {
   cp1Score: number | null;
   cp2Score: number | null;
   demoScore: number | null;
-  tbckScore: number | null; // Điểm trung bình cả khóa
+  tbckScore: number | null; // Điểm trung bình cả khoá
   rank: GradeRank | null;
   rankLabel: string;
   isPassed: boolean; // Rank A, B, or C
@@ -26,7 +26,7 @@ export interface CourseGrade {
 }
 
 /**
- * Tính điểm trung bình cả khóa (TBCK)
+ * Tính điểm trung bình cả khoá (TBCK)
  * Formula: TBCK = 40% × (CP1 + CP2)/2 + 60% × DEMO
  */
 export function computeTBCK(
@@ -53,7 +53,7 @@ export function computeTBCK(
 }
 
 /**
- * Xếp loại năng lực dựa trên TBCK và điểm cuối khóa (ĐCK = Demo)
+ * Xếp loại năng lực dựa trên TBCK và điểm cuối khoá (ĐCK = Demo)
  * 
  * Hạng A: 4.5 ≤ TBCK ≤ 5.0 và ĐCK ≥ 3.5 → Xuất sắc
  * Hạng B: 4.0 ≤ TBCK < 4.5 và ĐCK ≥ 2.5 → Tốt

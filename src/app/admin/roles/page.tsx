@@ -248,7 +248,7 @@ export default function RolesPage() {
     if (!roleToDelete) return;
 
     setDeleting(true);
-    const loadingToastId = addToast('Đang xóa...', 'loading');
+    const loadingToastId = addToast('Đang xoá...', 'loading');
 
     try {
       const token = await getAuthToken();
@@ -256,16 +256,16 @@ export default function RolesPage() {
       removeToast(loadingToastId);
       
       if (result.success) {
-        addToast('Xóa vai trò thành công', 'success');
+        addToast('Xoá vai trò thành công', 'success');
         setShowConfirmDialog(false);
         setRoleToDelete(null);
         loadData();
       } else {
-        addToast(result.error || 'Có lỗi xảy ra khi xóa vai trò', 'error');
+        addToast(result.error || 'Có lỗi xảy ra khi xoá vai trò', 'error');
       }
     } catch (error) {
       removeToast(loadingToastId);
-      addToast('Có lỗi xảy ra khi xóa vai trò', 'error');
+      addToast('Có lỗi xảy ra khi xoá vai trò', 'error');
     } finally {
       setDeleting(false);
     }
@@ -483,7 +483,7 @@ export default function RolesPage() {
                           <button
                             className={styles.clearCacheBtn}
                             onClick={() => handleDelete(role)}
-                            title="Xóa"
+                            title="Xoá"
                             style={{ padding: 'var(--space-2)', minWidth: 'auto' }}
                           >
                             <Icon.Trash size={16} />
@@ -504,7 +504,7 @@ export default function RolesPage() {
         <EmptyState
           icon={<Icon.UsersGroup size={32} />}
           title={searchTerm ? 'Không tìm thấy vai trò' : 'Chưa có vai trò nào'}
-          subtitle={searchTerm ? 'Thử tìm kiếm với từ khóa khác' : `${LABELS.CREATE} ${ENTITIES.ROLES} đầu tiên để bắt đầu`}
+          subtitle={searchTerm ? 'Thử tìm kiếm với từ khoá khác' : `${LABELS.CREATE} ${ENTITIES.ROLES} đầu tiên để bắt đầu`}
         />
       )}
 
@@ -720,7 +720,7 @@ export default function RolesPage() {
                       color: 'var(--text-secondary)'
                     }}
                   >
-                    Hủy
+                    Huỷ
                   </button>
                   <button
                     type="submit"
@@ -753,9 +753,9 @@ export default function RolesPage() {
           setRoleToDelete(null);
         }}
         onConfirm={confirmDelete}
-        title="Xác nhận xóa vai trò"
-        message={`Bạn có chắc chắn muốn xóa vai trò "${roleToDelete?.name}"? Hành động này không thể hoàn tác.`}
-        confirmLabel="Xóa vai trò"
+        title="Xác nhận xoá vai trò"
+        message={`Bạn có chắc chắn muốn xoá vai trò "${roleToDelete?.name}"? Hành động này không thể hoàn tác.`}
+        confirmLabel="Xoá vai trò"
         cancelLabel="Huỷ"
         variant="danger"
         loading={deleting}

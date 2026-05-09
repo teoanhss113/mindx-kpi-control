@@ -1029,7 +1029,7 @@ function OfficeHoursPageInner() {
                       {filteredOfficeHours.filter(oh => 
                         oh.status === OFFICE_HOUR_STATUS.REJECTED || 
                         oh.status === OFFICE_HOUR_STATUS.ABANDONED
-                      ).length} ca bị hủy
+                      ).length} ca bị huỷ
                     </div>
                   </div>
                 </div>
@@ -1295,7 +1295,7 @@ function OfficeHoursPageInner() {
                     className={`${styles.sortableCol} ${sortBy === 'course' ? styles.activeSort : ''}`}
                     onClick={() => handleSort('course')}
                   >
-                    Khóa học
+                    Khoá học
                     {sortBy === 'course' ? (
                       sortOrder === 'asc' ? (
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="18 15 12 9 6 15" /></svg>
@@ -1340,7 +1340,7 @@ function OfficeHoursPageInner() {
                     className={`${styles.sortableCol} ${sortBy === 'students' ? styles.activeSort : ''}`}
                     onClick={() => handleSort('students')}
                   >
-                    HS
+                    {LABELS.STUDENTS}
                     {sortBy === 'students' ? (
                       sortOrder === 'asc' ? (
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="18 15 12 9 6 15" /></svg>
@@ -2189,11 +2189,11 @@ function OfficeHoursPageInner() {
                   </div>
                 </div>
 
-                {/* Khóa học */}
+                {/* Khoá học */}
                 {selectedEntry.courses && selectedEntry.courses.length > 0 && (
                   <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border-primary)' }}>
                     <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 12 }}>
-                      Khóa học ({selectedEntry.courses.length})
+                      Khoá học ({selectedEntry.courses.length})
                     </div>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
                       {selectedEntry.courses.map(course => (
@@ -2322,7 +2322,7 @@ function OfficeHoursPageInner() {
                         }}>
                           <div>Học viên</div>
                           <div>Trạng thái</div>
-                          <div>Khóa học</div>
+                          <div>Khoá học</div>
                           <div>Nhận xét GV</div>
                           <div>Kết quả</div>
                           <div>Liên hệ</div>
@@ -2364,7 +2364,7 @@ function OfficeHoursPageInner() {
                               </span>
                             </div>
 
-                            {/* Khóa học */}
+                            {/* Khoá học */}
                             <div>
                               {apt.courses && apt.courses.length > 0 ? (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
@@ -2643,7 +2643,7 @@ function OfficeHoursPageInner() {
                   <div className={styles.classItemHeader} style={{ gridTemplateColumns: 'minmax(0, 1.2fr) minmax(0, 0.8fr) minmax(0, 1fr) minmax(0, 0.7fr) minmax(0, 0.6fr) minmax(0, 0.8fr) minmax(0, 0.9fr) minmax(0, 1fr) minmax(0, 1fr)' }}>
                     <div>Thời gian</div>
                     <div>Loại ca</div>
-                    <div>Khóa học</div>
+                    <div>Khoá học</div>
                     <div>Cơ sở</div>
                     <div>Học viên</div>
                     <div>Trạng thái</div>

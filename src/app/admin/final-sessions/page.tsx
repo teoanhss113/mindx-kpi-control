@@ -9,12 +9,12 @@ import {
   BatchStatusBadge, COMMENT_STATUS_COUNT_LABELS, CourseCategoryBadge, RescheduleStatusBadge,
 } from '@/components/ui';
 import { authFetch } from '@/lib/auth/clientAuth';
-import { fetchAllClasses, haveSlotInToUtcRange } from '@/services/classesService';
+import { dateRangeToUtcRange, fetchAllClasses } from '@/services/classesService';
 import { getCourseCategory } from '@/lib/courseCategories';
 import { analyzeClassQuality } from '@/lib/classQualityAnalysis';
 import { getRankColor } from '@/lib/courseGrading';
 import { getStudentAttendanceCommentContent, stripCommentHtml } from '@/lib/commentContent';
-import { COURSE_CATEGORY_COLORS, COURSE_CATEGORY_ORDER, MESSAGES } from '@/constants';
+import { COURSE_CATEGORY_COLORS, COURSE_CATEGORY_ORDER, LABELS, MESSAGES } from '@/constants';
 import type { Class, Session, StudentAttendance, TeacherSlot } from '@/types/classes';
 import type { StudentCheckpointScore, StudentDemoScore } from '@/types/classQuality';
 import type { Centre } from '@/services/centresService';
@@ -225,18 +225,18 @@ export default function FinalSessionsAdminPage() {
     const tid = addToast(MESSAGES.LOADING.CONNECTING, 'loading');
 
     const centreIds = selectedCentres.length > 0 ? selectedCentres : centres.map(c => c.id);
-    const { from: slotFrom, to: slotTo } = haveSlotInToUtcRange(
+    const { endDateFrom, endDateTo } = dateRangeToUtcRange(
       new Date(dateFrom),
       new Date(dateTo),
     );
 
-    // Accumulate ALL loaded classes so the table updates progressively.
-    // Filtering to "final sessions only" happens in the sortedCandidates useMemo.
+    // The LMS filters by class end date, so this only loads classes whose final
+    // session is expected in the selected window.
     const accumulated: Candidate[] = [];
 
     try {
       await fetchAllClasses(
-        { centres: centreIds, haveSlotIn: { from: slotFrom, to: slotTo } },
+        { centres: centreIds, endDateFrom, endDateTo },
         (loaded, total, chunk) => {
           setProgress({ loaded, total });
           for (const cls of chunk) {
@@ -244,8 +244,8 @@ export default function FinalSessionsAdminPage() {
             const sorted = [...cls.slots].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
             const last = sorted[sorted.length - 1];
             if (!last) continue;
-            // Include the class regardless of whether last slot is in range —
-            // the useMemo filter will narrow to final sessions only.
+            const lastSlotKey = dateKey(last.date);
+            if (lastSlotKey < dateFrom || lastSlotKey > dateTo) continue;
             accumulated.push({
               cls, slot: last,
               category: getCourseCategory(cls),
@@ -260,10 +260,7 @@ export default function FinalSessionsAdminPage() {
       if (!signal.aborted) {
         removeToast(tid);
         setFetchedOnce(true);
-        const finalCount = accumulated.filter(c => {
-          const dk = dateKey(c.slot.date);
-          return dk >= dateFrom && dk <= dateTo;
-        }).length;
+        const finalCount = accumulated.length;
         if (finalCount === 0) addToast('Không tìm thấy buổi cuối khoá trong khoảng này', 'info');
         else addToast(MESSAGES.LOADING.SUCCESS(finalCount, 'buổi cuối khoá'), 'success');
       }
@@ -544,7 +541,7 @@ export default function FinalSessionsAdminPage() {
                     <div>Giờ</div>
                     <div className={`${styles.sortableCol} ${sortKey === 'name' ? styles.activeSort : ''}`} onClick={() => handleSort('name')}>Tên lớp <SortIcon col="name" sortKey={sortKey} sortDir={sortDir} /></div>
                     <div className={`${styles.sortableCol} ${sortKey === 'teacher' ? styles.activeSort : ''}`} onClick={() => handleSort('teacher')}>Giáo viên chính <SortIcon col="teacher" sortKey={sortKey} sortDir={sortDir} /></div>
-                    <div className={`${styles.sortableCol} ${sortKey === 'students' ? styles.activeSort : ''}`} onClick={() => handleSort('students')} style={{ justifyContent: 'center' }}>Học sinh <SortIcon col="students" sortKey={sortKey} sortDir={sortDir} /></div>
+                    <div className={`${styles.sortableCol} ${sortKey === 'students' ? styles.activeSort : ''}`} onClick={() => handleSort('students')} style={{ justifyContent: 'center' }}>{LABELS.STUDENTS} <SortIcon col="students" sortKey={sortKey} sortDir={sortDir} /></div>
                     <div>Giám khảo</div>
                   </div>
 
@@ -704,14 +701,15 @@ export default function FinalSessionsAdminPage() {
           onClose={() => setShowCreate(false)}
         />
         <div className={styles.modalBody}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', padding: 'var(--space-5)' }}>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
-                <span className={styles.statLabel}>Từ ngày</span>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 510, color: 'var(--text-primary)', marginBottom: 'var(--space-2)' }}>Từ ngày *</label>
                 <input
                   type="date"
-                  className={styles.filterInput}
+                  className={styles.dateInput}
+                  style={{ width: '100%', boxSizing: 'border-box' }}
                   value={form.weekFrom}
                   onChange={e => {
                     const v = e.target.value;
@@ -719,11 +717,12 @@ export default function FinalSessionsAdminPage() {
                   }}
                 />
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
-                <span className={styles.statLabel}>Đến ngày</span>
+              <div>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 510, color: 'var(--text-primary)', marginBottom: 'var(--space-2)' }}>Đến ngày *</label>
                 <input
                   type="date"
-                  className={styles.filterInput}
+                  className={styles.dateInput}
+                  style={{ width: '100%', boxSizing: 'border-box' }}
                   value={form.weekTo}
                   onChange={e => {
                     const v = e.target.value;
@@ -733,38 +732,38 @@ export default function FinalSessionsAdminPage() {
               </div>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
-              <span className={styles.statLabel}>Tiêu đề</span>
+            <div>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 510, color: 'var(--text-primary)', marginBottom: 'var(--space-2)' }}>Tiêu đề *</label>
               <input
                 type="text"
-                className={styles.filterInput}
-                style={{ width: '100%' }}
+                className={styles.dateInput}
+                style={{ width: '100%', boxSizing: 'border-box' }}
                 placeholder="VD: Đợt 19/05 – 25/05"
                 value={form.title}
                 onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
               />
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
-              <span className={styles.statLabel}>Đường dẫn (slug)</span>
+            <div>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 510, color: 'var(--text-primary)', marginBottom: 'var(--space-2)' }}>Đường dẫn (slug) *</label>
               <input
                 type="text"
-                className={styles.filterInput}
-                style={{ width: '100%' }}
+                className={styles.dateInput}
+                style={{ width: '100%', boxSizing: 'border-box' }}
                 placeholder="dot-19-05-2026"
                 value={form.slug}
                 onChange={e => setForm(f => ({ ...f, slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-') }))}
               />
-              <span style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>
-                Link chia sẻ: <strong>/judge-requests/{form.slug || '...'}</strong>
-              </span>
+              <p style={{ fontSize: 13, color: 'var(--text-quaternary)', marginTop: 'var(--space-1)' }}>
+                Link chia sẻ: <strong style={{ color: 'var(--text-secondary)' }}>/judge-requests/{form.slug || '...'}</strong>
+              </p>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
-              <span className={styles.statLabel}>Ghi chú nội bộ</span>
+            <div>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 510, color: 'var(--text-primary)', marginBottom: 'var(--space-2)' }}>Ghi chú nội bộ</label>
               <textarea
-                className={styles.filterInput}
-                style={{ width: '100%', resize: 'vertical', minHeight: 60 }}
+                className={styles.dateInput}
+                style={{ width: '100%', boxSizing: 'border-box', resize: 'vertical', minHeight: 80 }}
                 placeholder="Ghi chú cho admin (không hiển thị với giáo viên)..."
                 value={form.notes}
                 onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
@@ -861,12 +860,12 @@ export default function FinalSessionsAdminPage() {
                 {/* Summary bar */}
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-5)', marginBottom: 'var(--space-4)', padding: '12px 16px', background: 'var(--bg-elevated)', borderRadius: 6, border: '1px solid var(--border-primary)' }}>
                   {([
-                    ['Khóa học',       c.cls.course?.shortName || '—'],
+                    [LABELS.COURSE,       c.cls.course?.shortName || '—'],
                     ['Giờ buổi cuối',  `${fmtTime(c.slot.startTime)} – ${fmtTime(c.slot.endTime)}`],
                     ['Giáo viên chính', c.mainTeacher],
                     ['Giám khảo',      judgeTeacher || 'Chưa có'],
                     ['Tiến độ',        `Buổi ${finalIdx + 1}/${totalSessions} · ${passedSessions} đã qua`],
-                    ['Học sinh',       `${c.studentCount}`],
+                    [LABELS.STUDENTS,       `${c.studentCount}`],
                   ] as [string, string][]).map(([label, value]) => (
                     <div key={label}>
                       <div className={styles.statLabel}>{label}</div>
@@ -878,7 +877,7 @@ export default function FinalSessionsAdminPage() {
                 {/* Tabs */}
                 <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid var(--border-primary)', marginBottom: 'var(--space-3)' }}>
                   <button style={TAB_STYLE(candidateModalTab === 'students')} onClick={() => setCandidateModalTab('students')}>
-                    Chuyên cần ({allStudents.length} học sinh)
+                    Chuyên cần ({allStudents.length} học viên)
                   </button>
                   <button style={TAB_STYLE(candidateModalTab === 'comments')} onClick={() => setCandidateModalTab('comments')}>
                     Nhận xét giáo viên ({allSlots.length} buổi)
@@ -899,7 +898,7 @@ export default function FinalSessionsAdminPage() {
                         <thead>
                           <tr>
                             <th style={{ width: 28 }}>#</th>
-                            <th>Học sinh</th>
+                            <th>{LABELS.STUDENT}</th>
                             <th>Trạng thái</th>
                             <th>Điểm danh ({allSlots.length} buổi)</th>
                           </tr>
@@ -946,7 +945,7 @@ export default function FinalSessionsAdminPage() {
                       </table>
                     </div>
                   ) : (
-                    <div style={{ textAlign: 'center', padding: 20, color: 'var(--text-quaternary)', fontSize: 13 }}>Chưa có học sinh trong lớp.</div>
+                    <div style={{ textAlign: 'center', padding: 20, color: 'var(--text-quaternary)', fontSize: 13 }}>Chưa có học viên trong lớp.</div>
                   )
                 )}
 
@@ -957,7 +956,7 @@ export default function FinalSessionsAdminPage() {
 	                      <table className={styles.studentTable}>
 	                        <thead>
 	                          <tr>
-	                            <th style={{ minWidth: 160 }}>Học sinh</th>
+	                            <th style={{ minWidth: 160 }}>{LABELS.STUDENT}</th>
 	                            <th>Tổng quan</th>
 	                            {commentSessionStats.map(stat => (
 	                              <th
@@ -1056,7 +1055,7 @@ export default function FinalSessionsAdminPage() {
                             <thead>
                               <tr>
                                 <th style={{ width: 28 }}>#</th>
-                                <th>Học sinh</th>
+                                <th>{LABELS.STUDENT}</th>
                                 <th>Điểm danh</th>
                                 <th>Trạng thái nhận xét</th>
                                 <th>Nội dung nhận xét</th>
@@ -1168,7 +1167,7 @@ export default function FinalSessionsAdminPage() {
                               <table className={styles.studentTable}>
                                 <thead>
                                   <tr>
-                                    <th>Học sinh</th>
+                                    <th>{LABELS.STUDENT}</th>
                                     <th>Điểm danh</th>
                                     <th>{item.key === 'demo' ? 'Điểm Demo' : 'Điểm CP'}</th>
                                     {item.key === 'demo' && <th>TBCK</th>}

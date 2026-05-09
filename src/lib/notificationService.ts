@@ -165,7 +165,7 @@ export async function getAdminEmailsForPage(pageKey: string): Promise<string[]> 
 
 // ─── Office hour info helper ──────────────────────────────────────────────────
 
-import { formatOHLabel, type OHInfo } from '@/lib/notificationFormat';
+import { formatOHLabel, getOfficeHourTypeLabel, type OHInfo } from '@/lib/notificationFormat';
 
 export type OfficeHourInfo = OHInfo;
 
@@ -189,8 +189,9 @@ export const NotifyTemplates = {
   /** Teacher submits an office-hours shift request */
   shiftRequested: (teacherName: string, info?: OfficeHourInfo) => {
     const label = formatOHLabel(info);
+    const typeLabel = info?.type ? getOfficeHourTypeLabel(info.type) : '';
     return {
-      title: `Yêu cầu xin trực${info?.type ? `: ${info.type}` : ''}`,
+      title: `Đăng ký ca trực${typeLabel ? `: ${typeLabel}` : ''}`,
       body: label ? `${teacherName} · ${label}` : `${teacherName} vừa đăng ký ca trực`,
       url: buildOHUrl(info),
       tag: 'shift-requested',
@@ -234,6 +235,31 @@ export const NotifyTemplates = {
       tag: 'teacher-rejected',
       requireInteraction: true,
       type: 'teacher-confirmation',
+    };
+  },
+
+  /** Teacher submits a judge request */
+  judgeRequested: (teacherName: string, sessionInfo?: { className?: string; centreName?: string }) => {
+    const label = sessionInfo?.className ? `Lớp ${sessionInfo.className} (${sessionInfo.centreName || 'Trực tuyến'})` : '';
+    return {
+      title: 'Đăng ký làm giám khảo',
+      body: label ? `${teacherName} đăng ký · ${label}` : `${teacherName} vừa đăng ký làm giám khảo`,
+      url: '/admin/final-sessions',
+      tag: 'judge-requested',
+      requireInteraction: false,
+      type: 'judge-request',
+    };
+  },
+
+  /** Teacher cancels a judge request */
+  judgeCancelled: (teacherName: string, sessionInfo?: { className?: string; centreName?: string }) => {
+    const label = sessionInfo?.className ? `Lớp ${sessionInfo.className} (${sessionInfo.centreName || 'Trực tuyến'})` : '';
+    return {
+      title: 'Huỷ đăng ký làm giám khảo',
+      body: label ? `${teacherName} huỷ đăng ký · ${label}` : `${teacherName} đã huỷ đăng ký làm giám khảo`,
+      url: '/admin/final-sessions',
+      tag: 'judge-cancelled',
+      type: 'judge-request',
     };
   },
 };

@@ -1,15 +1,18 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import { AuthenticatedPage } from '@/components/AuthenticatedPage';
 import { UserLayout } from '@/components/UserLayout';
 import { useAuth } from '@/lib/AuthContext';
-import { useToast, ToastContainer, TableGroupHeader, EmptyState, Modal, ModalHeader } from '@/components/ui';
+import { useToast, ToastContainer, TableGroupHeader, EmptyState, Modal, ModalHeader, BatchStatusBadge, ParticipationStatusBadge } from '@/components/ui';
 import { authFetch } from '@/lib/auth/clientAuth';
 import { searchTeachers, type Teacher } from '@/services/officeHoursService';
+import { dateRangeToUtcRange, fetchAllClasses } from '@/services/classesService';
+import { LABELS } from '@/constants';
 import { motion, AnimatePresence } from 'framer-motion';
 import styles from '@/app/dashboard.module.css';
+import type { Session, TeacherSlot } from '@/types/classes';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -17,6 +20,8 @@ interface JudgeRequest {
   id: string;
   final_session_id: string;
   teacher_email: string;
+  teacher_name?: string | null;
+  teacher_id?: string | null;
   status: 'pending' | 'approved' | 'rejected';
   rejection_reason: string | null;
 }
@@ -37,6 +42,7 @@ interface FinalSession {
   student_count: number;
   notes: string | null;
   myRequest: JudgeRequest | null;
+  approvedJudge: JudgeRequest | null;
 }
 
 interface Batch {
@@ -100,11 +106,21 @@ function formatDate(ymd: string): string {
   return `${dd}/${mm}/${yyyy}`;
 }
 
+function getTeacherRoleShortName(t: TeacherSlot): string {
+  const role = t.role;
+  return (role?.shortName || role?.name || '').toUpperCase();
+}
+
+function getJudgeTeacher(slot: Session): string | null {
+  const teacherSlot = (slot.teachers || []).find(t => getTeacherRoleShortName(t) === 'JUDGE');
+  return teacherSlot?.teacher?.fullName || teacherSlot?.teacher?.email || null;
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function JudgeRequestsSlugPage() {
   const { slug } = useParams() as { slug: string };
-  const { session } = useAuth();
+  const { session, isLoading: authLoading } = useAuth();
   const { toasts, addToast, removeToast } = useToast();
 
   const [batch, setBatch] = useState<Batch | null>(null);
@@ -114,23 +130,35 @@ export default function JudgeRequestsSlugPage() {
   const [submitting, setSubmitting] = useState(false);
   const [showTable, setShowTable] = useState(true);
   const [detailSession, setDetailSession] = useState<FinalSession | null>(null);
+  const [lmsJudgeBySlot, setLmsJudgeBySlot] = useState<Record<string, string>>({});
 
-  async function loadBatch() {
+  const loadBatch = useCallback(async () => {
     setLoading(true);
+    setNotFound(false);
     try {
       const res = await authFetch(`/api/judge-batches/${slug}`);
       if (res.status === 404) { setNotFound(true); return; }
-      if (!res.ok) throw new Error();
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || `HTTP Error ${res.status}`);
+      }
       const json = await res.json();
       setBatch(json.data);
-    } catch {
-      addToast('Không thể tải dữ liệu', 'error');
+    } catch (err) {
+      console.error('Failed to load batch:', err);
+      addToast(err instanceof Error ? err.message : 'Không thể tải dữ liệu', 'error');
+      // If it's not a 404, we don't set notFound, but batch remains null
     } finally {
       setLoading(false);
     }
-  }
+  }, [addToast, slug]);
 
-  useEffect(() => { loadBatch(); }, [slug]);
+  // Wait until Firebase auth is fully initialised before fetching.
+  // Without this guard, authFetch fires before the token is ready → 401 error.
+  useEffect(() => {
+    if (authLoading || !session) return;
+    void loadBatch();
+  }, [authLoading, session, loadBatch]);
 
   useEffect(() => {
     if (session?.email) {
@@ -139,6 +167,33 @@ export default function JudgeRequestsSlugPage() {
         .catch(() => {});
     }
   }, [session?.email]);
+
+  useEffect(() => {
+    if (!batch?.week_from || !batch.week_to) return;
+    const controller = new AbortController();
+
+    (async () => {
+      try {
+        const { endDateFrom, endDateTo } = dateRangeToUtcRange(
+          new Date(batch.week_from),
+          new Date(batch.week_to),
+        );
+        const classes = await fetchAllClasses({ endDateFrom, endDateTo }, undefined, controller.signal);
+        const next: Record<string, string> = {};
+        classes.forEach(cls => {
+          cls.slots.forEach(slot => {
+            const judge = getJudgeTeacher(slot);
+            if (judge) next[slot._id] = judge;
+          });
+        });
+        if (!controller.signal.aborted) setLmsJudgeBySlot(next);
+      } catch {
+        if (!controller.signal.aborted) setLmsJudgeBySlot({});
+      }
+    })();
+
+    return () => controller.abort();
+  }, [batch?.week_from, batch?.week_to]);
 
   // ─── Request actions ────────────────────────────────────────────────────
 
@@ -155,12 +210,12 @@ export default function JudgeRequestsSlugPage() {
           teacherId: teacherInfo.id,
         }),
       });
-      if (res.status === 409) { addToast('Bạn đã gửi yêu cầu cho buổi này rồi', 'info'); return; }
+      if (res.status === 409) { addToast('Bạn đã đăng ký cho buổi này rồi', 'info'); return; }
       if (!res.ok) throw new Error();
-      addToast('Đã gửi yêu cầu làm giám khảo', 'success');
+      addToast('Đã gửi đăng ký làm giám khảo', 'success');
       await loadBatch();
     } catch {
-      addToast('Không thể gửi yêu cầu', 'error');
+      addToast('Không thể gửi đăng ký', 'error');
     } finally {
       setSubmitting(false);
     }
@@ -171,10 +226,10 @@ export default function JudgeRequestsSlugPage() {
     try {
       const res = await authFetch(`/api/judge-requests?sessionId=${fs.id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error();
-      addToast('Đã huỷ yêu cầu', 'success');
+      addToast('Đã huỷ đăng ký', 'success');
       await loadBatch();
     } catch {
-      addToast('Không thể huỷ yêu cầu', 'error');
+      addToast('Không thể huỷ đăng ký', 'error');
     } finally {
       setSubmitting(false);
     }
@@ -246,7 +301,7 @@ export default function JudgeRequestsSlugPage() {
     );
   }
 
-  if (notFound || !batch) {
+  if (notFound) {
     return (
       <AuthenticatedPage>
         <UserLayout title="Giám khảo Cuối khoá" activePage="judge-requests">
@@ -254,6 +309,20 @@ export default function JudgeRequestsSlugPage() {
             icon={<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>}
             title="Không tìm thấy đợt đăng ký"
             subtitle="Link có thể đã hết hạn hoặc không hợp lệ"
+          />
+        </UserLayout>
+      </AuthenticatedPage>
+    );
+  }
+
+  if (!batch) {
+    return (
+      <AuthenticatedPage>
+        <UserLayout title="Giám khảo Cuối khoá" activePage="judge-requests">
+          <EmptyState
+            icon={<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>}
+            title="Không thể tải đợt đăng ký"
+            subtitle="Vui lòng thử lại sau"
           />
         </UserLayout>
       </AuthenticatedPage>
@@ -272,9 +341,7 @@ export default function JudgeRequestsSlugPage() {
               <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
                 <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>{batch.title}</h2>
                 {!batch.is_active && (
-                  <span style={{ padding: '2px 8px', borderRadius: 'var(--radius-pill)', fontSize: 11, fontWeight: 600, background: 'var(--bg-secondary)', color: 'var(--text-tertiary)', border: '1px solid var(--border)' }}>
-                    Đã đóng
-                  </span>
+                  <BatchStatusBadge active={false} />
                 )}
               </div>
               <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 3 }}>
@@ -316,41 +383,29 @@ export default function JudgeRequestsSlugPage() {
                   style={{ overflow: 'hidden' }}
                 >
                   <div className={styles.tableScrollWrapper}>
-                    <table className={styles.mergedTable} style={{ minWidth: 1000 }}>
+                    <table className={styles.mergedTable} style={{ minWidth: 1100 }}>
                       <thead>
                         <tr>
-                          <th>Ngày</th>
-                          <th>Cơ sở</th>
-                          <th>Khối</th>
-                          <th>Buổi</th>
+                          <th>{LABELS.DATE}</th>
+                          <th>{LABELS.CENTRE}</th>
+                          <th>{LABELS.COURSE_LINE}</th>
+                          <th>{LABELS.SESSION}</th>
                           <th>Giờ</th>
-                          <th>Tên lớp</th>
-                          <th>Khóa học</th>
-                          <th>Giáo viên chính</th>
-                          <th style={{ textAlign: 'center' }}>Học sinh</th>
-                          <th>Trạng thái</th>
-                          <th>Hành động</th>
+                          <th>{LABELS.CLASS_TITLE}</th>
+                          <th>{LABELS.COURSE}</th>
+                          <th>{LABELS.MAIN_TEACHER}</th>
+                          <th style={{ textAlign: 'center' }}>{LABELS.STUDENTS}</th>
+                          <th>Giám khảo</th>
+                          <th>{LABELS.REGISTRATION_STATUS}</th>
+                          <th>{LABELS.ACTION}</th>
                         </tr>
                       </thead>
                       <tbody>
                         {tableRows.map(row => {
                           const { fs } = row;
                           const req = fs.myRequest;
+                          const approvedJudgeName = fs.approvedJudge?.teacher_name || fs.approvedJudge?.teacher_email || lmsJudgeBySlot[fs.lms_slot_id] || '';
                           const isNewDate = row.dateSpan > 0;
-
-                          // Status badge
-                          let statusBadge: React.ReactNode = <span style={{ color: 'var(--text-tertiary)', fontSize: 12 }}>—</span>;
-                          if (req) {
-                            if (req.status === 'approved') statusBadge = (
-                              <span style={{ padding: '3px 10px', borderRadius: 'var(--radius-pill)', fontSize: 12, fontWeight: 600, background: '#d1fae5', color: '#065f46', border: '1px solid #6ee7b7' }}>Đã được duyệt</span>
-                            );
-                            else if (req.status === 'rejected') statusBadge = (
-                              <span style={{ padding: '3px 10px', borderRadius: 'var(--radius-pill)', fontSize: 12, fontWeight: 600, background: '#fee2e2', color: '#991b1b', border: '1px solid #fecaca' }} title={req.rejection_reason || undefined}>Bị từ chối</span>
-                            );
-                            else statusBadge = (
-                              <span style={{ padding: '3px 10px', borderRadius: 'var(--radius-pill)', fontSize: 12, fontWeight: 600, background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a' }}>Chờ duyệt</span>
-                            );
-                          }
 
                           return (
                             <tr
@@ -399,26 +454,34 @@ export default function JudgeRequestsSlugPage() {
                               <td onClick={() => setDetailSession(fs)} style={{ cursor: 'pointer', textAlign: 'center', fontSize: 13 }}>
                                 {fs.student_count}
                               </td>
+                              <td onClick={() => setDetailSession(fs)} style={{ cursor: 'pointer', fontSize: 13, color: approvedJudgeName ? 'var(--text-primary)' : 'var(--text-tertiary)', fontWeight: approvedJudgeName ? 510 : 400 }}>
+                                {approvedJudgeName || '—'}
+                              </td>
                               <td onClick={() => setDetailSession(fs)} style={{ cursor: 'pointer' }}>
-                                {statusBadge}
+                                <ParticipationStatusBadge status={req?.status === 'approved' ? 'confirmed' : req?.status} />
                               </td>
                               <td onClick={e => e.stopPropagation()}>
                                 <div style={{ display: 'flex', justifyContent: 'center' }}>
                                   {!batch.is_active ? (
                                     <span style={{ color: 'var(--text-tertiary)', fontSize: 12 }}>Đã đóng</span>
                                   ) : req?.status === 'pending' ? (
-                                    <button
-                                      className={styles.clearCacheBtn}
-                                      style={{ fontSize: 12, padding: '5px 10px', color: 'var(--status-warning)' }}
-                                      disabled={submitting}
-                                      onClick={() => handleCancel(fs)}
-                                    >
-                                      Huỷ yêu cầu
-                                    </button>
+                                    <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
+                                      <span style={{ color: 'var(--brand-indigo)', fontSize: 12, fontWeight: 510 }}>Đã đăng ký</span>
+                                      <button
+                                        className={styles.clearCacheBtn}
+                                        style={{ padding: '4px 8px', fontSize: 11, minWidth: 'auto', color: 'var(--status-error)', borderColor: 'rgba(220,38,38,0.3)' }}
+                                        disabled={submitting}
+                                        onClick={() => handleCancel(fs)}
+                                      >
+                                        Huỷ
+                                      </button>
+                                    </div>
                                   ) : req?.status === 'approved' ? (
-                                    <span style={{ color: '#065f46', fontSize: 12, fontWeight: 510 }}>Đã được duyệt</span>
+                                    <ParticipationStatusBadge status="confirmed" />
                                   ) : req?.status === 'rejected' ? (
-                                    <span style={{ color: 'var(--text-tertiary)', fontSize: 12 }}>Đã từ chối</span>
+                                    <ParticipationStatusBadge status="rejected" />
+                                  ) : approvedJudgeName ? (
+                                    <span style={{ color: 'var(--text-tertiary)', fontSize: 12 }}>Đã có giám khảo</span>
                                   ) : (
                                     <button
                                       className={styles.clearCacheBtn}
@@ -457,9 +520,9 @@ export default function JudgeRequestsSlugPage() {
                   ['Ngày', formatDate(detailSession.session_date)],
                   ['Giờ', `${formatTime(detailSession.start_time_utc)} – ${formatTime(detailSession.end_time_utc)}`],
                   ['Cơ sở', detailSession.centre_name || '—'],
-                  ['Khóa học', detailSession.course_short_name || '—'],
+                  [LABELS.COURSE, detailSession.course_short_name || '—'],
                   ['Giáo viên chính', detailSession.main_teacher || '—'],
-                  ['Học sinh', `${detailSession.student_count}`],
+                  [LABELS.STUDENTS, `${detailSession.student_count}`],
                 ].map(([label, value]) => (
                   <div key={label as string}>
                     <div style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 3 }}>{label}</div>

@@ -19,7 +19,7 @@ import {
 // Checkpoint sessions where comments are required even if student is absent
 const CHECKPOINT_SESSIONS = [5, 9, 14]; // 1-indexed: session 5, 9, 14
 
-export function analyzeComments(cls: Class, exemptSessions: number[] = CHECKPOINT_SESSIONS): ClassCommentAnalysis {
+export function analyzeComments(cls: Class, exemptedSessions: number[] = []): ClassCommentAnalysis {
   let emptyCount = 0;
   let briefCount = 0;
   let duplicateCount = 0;
@@ -78,7 +78,7 @@ export function analyzeComments(cls: Class, exemptSessions: number[] = CHECKPOIN
 
        const studentStatus = sa.status?.toUpperCase() || '';
        const isAbsent = ['ABSENT', 'ABSENT_UNEXCUSED', 'ABSENT_WITH_NOTICE'].includes(studentStatus);
-       const isCheckpoint = exemptSessions.includes(sessionIndex + 1); // sessionIndex is 0-based, sessions are 1-based
+       const isCheckpoint = !exemptedSessions.includes(sessionIndex + 1); // sessionIndex is 0-based, sessions are 1-based
        
        // Skip comment check if student is absent on non-checkpoint sessions
        if (isAbsent && !isCheckpoint) {
@@ -819,7 +819,7 @@ function analyzeDemo(cls: Class, sessionIndex: number = 13): CheckpointAnalysis 
   };
 }
 
-export function analyzeClassQuality(cls: Class, exemptSessions?: number[]): AnalyzedClassForQuality {
+export function analyzeClassQuality(cls: Class, exemptedSessions?: number[]): AnalyzedClassForQuality {
   const cp1Analysis = analyzeCheckpoint(cls, 4); // Session 5 (0-indexed = 4)
   const cp2Analysis = analyzeCheckpoint(cls, 8); // Session 9 (0-indexed = 8)
   const demoAnalysis = analyzeDemo(cls, 13); // Session 14 (0-indexed = 13)
@@ -849,7 +849,7 @@ export function analyzeClassQuality(cls: Class, exemptSessions?: number[]): Anal
   return {
     cls,
     courseLineName: getCourseCategory(cls),
-    commentAnalysis: analyzeComments(cls, exemptSessions),
+    commentAnalysis: analyzeComments(cls, exemptedSessions),
     attendanceAnalysis: analyzeAttendance(cls),
     reschedulingAnalysis: analyzeSessionRescheduling(cls),
     cp1Analysis,

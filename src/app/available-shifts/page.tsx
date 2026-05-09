@@ -6,16 +6,16 @@ import { UserLayout } from '@/components/UserLayout';
 import { useAuth } from '@/lib/AuthContext';
 import {
   useToast, ToastContainer, Toolbar, TableGroupHeader, EmptyState, Modal, ModalHeader, ModalFooter,
-  OfficeHourTypeBadge, TeacherConfirmationStatusBadge, getOfficeHourTypeLabel,
+  OfficeHourTypeBadge, ParticipationStatusBadge, getOfficeHourTypeLabel,
 } from '@/components/ui';
 import { getTeacherConfirmations, confirmOfficeHour } from '@/lib/teacher-confirmation-actions';
-import { createShiftRequest, hasRequestedShift } from '@/lib/shift-request-actions';
+import { createShiftRequest, hasRequestedShift, cancelShiftRequest } from '@/lib/shift-request-actions';
 import { fetchOfficeHours, searchTeachers, type Teacher } from '@/services/officeHoursService';
 import type { TeacherConfirmation } from '@/lib/teacher-confirmation-actions';
 import type { OfficeHour } from '@/types/officeHours';
 import { getOfficeHourCategory } from '@/lib/courseCategories';
 import { OfficeHourDetailsView } from '@/components/OfficeHourDetailsView';
-import { COURSE_CATEGORY_COLORS, COURSE_CATEGORY_ORDER, MESSAGES } from '@/constants';
+import { COURSE_CATEGORY_COLORS, COURSE_CATEGORY_ORDER, LABELS, MESSAGES } from '@/constants';
 import { motion, AnimatePresence } from 'framer-motion';
 import styles from '@/app/dashboard.module.css';
 
@@ -64,6 +64,9 @@ export default function AvailableShiftsPage() {
   const { toasts, addToast, removeToast } = useToast();
   
   const abortRef = useRef<AbortController | null>(null);
+  // Guard: auto-fetch should only fire once per mount, regardless of how many
+  // times regionCentres state is set (navigation vs reload timing differences).
+  const autoFetchedRef = useRef(false);
 
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState({ loaded: 0, total: 0 });
@@ -198,14 +201,12 @@ export default function AvailableShiftsPage() {
     }
   }
 
-  // Auto-select region centres and fetch when ready
+  // Auto-select region centres and fetch when ready (only once per mount)
   useEffect(() => {
     if (regionCentres.length > 0) {
-      // Pre-select all region centres in the filter
       setSelectedCentres(regionCentres);
-      
-      // Auto-fetch if dates are set
-      if (timeFrom && timeTo) {
+      if (timeFrom && timeTo && !autoFetchedRef.current) {
+        autoFetchedRef.current = true;
         handleFetch();
       }
     }
@@ -503,7 +504,7 @@ export default function AvailableShiftsPage() {
       // Check if already requested
       const alreadyRequested = await hasRequestedShift(item.officeHour.id, session.email);
       if (alreadyRequested) {
-        addToast('Bạn đã yêu cầu ca trực này rồi', 'info');
+        addToast('Bạn đã đăng ký ca trực này rồi', 'info');
         return;
       }
 
@@ -517,12 +518,27 @@ export default function AvailableShiftsPage() {
         toOHInfo(item.officeHour),
       );
 
-      addToast('Đã gửi yêu cầu xin trực', 'success');
+      addToast('Đã gửi đăng ký ca trực', 'success');
       
       // Reload data to update UI
       await handleFetch();
     } catch (error: any) {
-      addToast(error.message || 'Không thể gửi yêu cầu xin trực', 'error');
+      addToast(error.message || 'Không thể gửi đăng ký ca trực', 'error');
+    }
+  }
+
+  async function handleCancelRequestShift(item: OfficeHourWithConfirmation) {
+    if (!session?.email) return;
+
+    try {
+      setSubmitting(true);
+      await cancelShiftRequest(item.officeHour.id, session.email);
+      addToast('Đã huỷ đăng ký', 'success');
+      await handleFetch();
+    } catch (error: any) {
+      addToast(error.message || 'Không thể huỷ đăng ký', 'error');
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -592,17 +608,17 @@ export default function AvailableShiftsPage() {
                     <table className={styles.mergedTable} style={{ minWidth: '1300px' }}>
                       <thead>
                         <tr>
-                          <th>Ngày</th>
-                          <th>Cơ sở</th>
-                          <th>Khối</th>
-                          <th>Buổi</th>
+                          <th>{LABELS.DATE}</th>
+                          <th>{LABELS.CENTRE}</th>
+                          <th>{LABELS.COURSE_LINE}</th>
+                          <th>{LABELS.SESSION}</th>
                           <th>Giờ</th>
                           <th>Loại ca</th>
-                          <th>Khóa học</th>
-                          <th>Giáo viên</th>
-                          <th>HS</th>
-                          <th>Trạng thái xác nhận</th>
-                          <th>Hành động</th>
+                          <th>{LABELS.COURSE}</th>
+                          <th>{LABELS.TEACHER}</th>
+                          <th>{LABELS.STUDENTS}</th>
+                          <th>{LABELS.REGISTRATION_STATUS}</th>
+                          <th>{LABELS.ACTION}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -616,18 +632,18 @@ export default function AvailableShiftsPage() {
                           let confirmationStatusDisplay: React.ReactNode = null;
                           if (item.isAssignedToMe) {
                             if (item.confirmation?.status === 'confirmed') {
-                              confirmationStatusDisplay = <TeacherConfirmationStatusBadge status="confirmed" />;
+                              confirmationStatusDisplay = <ParticipationStatusBadge status="confirmed" />;
                             } else if (item.confirmation?.status === 'rejected') {
-                              confirmationStatusDisplay = <TeacherConfirmationStatusBadge status="rejected" />;
+                              confirmationStatusDisplay = <ParticipationStatusBadge status="rejected" />;
                             } else {
-                              confirmationStatusDisplay = <TeacherConfirmationStatusBadge status="pending" />;
+                              confirmationStatusDisplay = <ParticipationStatusBadge status="pending" />;
                             }
                           } else if (hasConfirmedTeacher) {
-                            confirmationStatusDisplay = <TeacherConfirmationStatusBadge status="confirmed_by_other" />;
+                            confirmationStatusDisplay = <ParticipationStatusBadge status="confirmed_by_other" />;
                           } else if (hasTeacherOnLMS) {
-                            confirmationStatusDisplay = <TeacherConfirmationStatusBadge status="pending" />;
+                            confirmationStatusDisplay = <ParticipationStatusBadge status="pending" />;
                           } else {
-                            confirmationStatusDisplay = <TeacherConfirmationStatusBadge status="none" />;
+                            confirmationStatusDisplay = <ParticipationStatusBadge status="none" />;
                           }
 
                           const isNewDate = row.dateSpan > 0;
@@ -732,14 +748,25 @@ export default function AvailableShiftsPage() {
                                   ) : hasConfirmedTeacher ? (
                                     <span style={{ color: 'var(--text-tertiary)', fontSize: 12 }}>Đã có GV</span>
                                   ) : item.hasMyRequest ? (
-                                    <span style={{ color: 'var(--brand-indigo)', fontSize: 12, fontWeight: 510 }}>Đã gửi yêu cầu</span>
+                                    <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
+                                      <span style={{ color: 'var(--brand-indigo)', fontSize: 12, fontWeight: 510 }}>Đã đăng ký</span>
+                                      <button
+                                        onClick={(e) => { e.stopPropagation(); handleCancelRequestShift(item); }}
+                                        className={styles.clearCacheBtn}
+                                        disabled={submitting}
+                                        style={{ padding: '4px 8px', fontSize: 11, minWidth: 'auto', color: 'var(--status-error)', borderColor: 'rgba(220,38,38,0.3)' }}
+                                      >
+                                        Huỷ
+                                      </button>
+                                    </div>
                                   ) : (
                                     <button
                                       onClick={(e) => { e.stopPropagation(); handleRequestShift(item); }}
                                       className={styles.clearCacheBtn}
+                                      disabled={submitting}
                                       style={{ padding: '6px 12px', fontSize: 12, minWidth: 'auto' }}
                                     >
-                                      Yêu cầu xin trực
+                                      Đăng ký ca trực
                                     </button>
                                   )}
                                 </div>

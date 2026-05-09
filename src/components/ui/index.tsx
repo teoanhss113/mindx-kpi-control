@@ -80,10 +80,14 @@ export {
   CompletionStatusBadge,
   DATE_MARKER_LABELS,
   DateMarkerBadge,
+  JUDGE_REQUEST_STATUS_LABELS,
+  JudgeRequestStatusBadge,
   OFFICE_HOUR_STATUS_LABELS,
   OFFICE_HOUR_TYPE_LABELS,
   OfficeHourStatusBadge,
   OfficeHourTypeBadge,
+  PARTICIPATION_STATUS_LABELS,
+  ParticipationStatusBadge,
   RESCHEDULE_STATUS_LABELS,
   RescheduleStatusBadge,
   TEACHER_ASSIGNMENT_STATUS_LABELS,
@@ -104,6 +108,8 @@ export type {
   AttendanceAlertKind,
   CompletionStatusKind,
   DateMarkerStatus,
+  JudgeRequestStatus,
+  ParticipationStatus,
   PriorityKind,
   RescheduleStatus,
   TeacherAssignmentStatus,
@@ -1852,10 +1858,12 @@ export function Modal({
   open,
   onClose,
   children,
+  maxWidth = 'min(1200px, calc(100vw - 40px))',
 }: {
   open: boolean
   onClose: () => void
   children: React.ReactNode
+  maxWidth?: string
 }) {
   // ESC key handler
   useEffect(() => {
@@ -1899,7 +1907,7 @@ export function Modal({
             transition={{ duration: 0.2 }}
             style={{
               width: '100%',
-              maxWidth: 'min(1200px, calc(100vw - 40px))',
+              maxWidth,
               boxSizing: 'border-box',
               overflow: 'hidden',
             }}

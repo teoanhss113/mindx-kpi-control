@@ -13,11 +13,23 @@ export interface Teacher {
 export interface TeacherScheduleSlot {
   id: string;
   type: 'class' | 'office-hour';
+  teacher?: Teacher;
+  sessionTeachers?: Array<{
+    teacher: Teacher;
+    roleId?: string;
+    roleName?: string;
+    roleShortName?: string;
+  }>;
   startTime: string; // ISO-8601
   endTime: string;   // ISO-8601
   className?: string;
   officeHourType?: string; // raw type from API: Office, Trial, Makeup, Fixed, etc.
   classId?: string;
+  classSiteId?: string;
+  sessionId?: string;
+  roleId?: string;
+  roleName?: string;
+  roleShortName?: string;
   centreId: string;
   centreName: string;
   centreShortName: string;

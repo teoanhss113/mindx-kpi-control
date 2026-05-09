@@ -3,16 +3,16 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
-import { requireUser, authErrorResponse, AuthError } from '@/lib/auth/serverAuth';
+import { extractBearer, verifyFirebaseIdToken, authErrorResponse, AuthError } from '@/lib/auth/serverAuth';
 
 export async function GET(request: NextRequest) {
   try {
-    const user = await requireUser(request);
+    const { email } = await verifyFirebaseIdToken(extractBearer(request));
 
     const { data: notifications, error } = await supabaseAdmin
       .from('notifications')
       .select('*')
-      .eq('user_id', user.email)
+      .eq('user_id', email)
       .order('created_at', { ascending: false })
       .limit(50);
 
@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const user = await requireUser(request);
+    const { email } = await verifyFirebaseIdToken(extractBearer(request));
     const body = await request.json();
     const { notificationIds } = body;
 
@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
       .from('notifications')
       .update({ read: true, read_at: new Date().toISOString() })
       .in('id', notificationIds)
-      .eq('user_id', user.email);
+      .eq('user_id', email);
 
     if (error) {
       console.error('[Mark Read] Database error:', error);

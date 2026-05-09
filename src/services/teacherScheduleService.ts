@@ -7,6 +7,7 @@
 import { fetchAllClasses, haveSlotInToUtcRange } from './classesService';
 import { fetchOfficeHours } from './officeHoursService';
 import { searchUsers } from './ticketService';
+import { lmsQuery } from './lmsClient';
 import { Class } from '@/types/classes';
 import { OfficeHour } from '@/types/officeHours';
 import { LmsUser } from '@/types/ticket';
@@ -25,17 +26,50 @@ import {
  */
 function classToScheduleSlots(cls: Class): TeacherScheduleSlot[] {
   const slots: TeacherScheduleSlot[] = [];
+  const classSiteId = cls.classSites?.[0]?._id;
   
   cls.slots.forEach(slot => {
+    const sessionTeachers = slot.teachers
+      .filter(teacherSlot => teacherSlot.isActive)
+      .map(teacherSlot => ({
+        teacher: {
+          id: teacherSlot.teacher.id,
+          username: teacherSlot.teacher.username,
+          code: teacherSlot.teacher.code,
+          fullName: teacherSlot.teacher.fullName,
+          email: teacherSlot.teacher.email,
+          phoneNumber: teacherSlot.teacher.phoneNumber,
+          imageUrl: teacherSlot.teacher.imageUrl,
+        },
+        roleId: teacherSlot.role?.id,
+        roleName: teacherSlot.role?.name,
+        roleShortName: teacherSlot.role?.shortName,
+      }));
+
     slot.teachers.forEach(teacherSlot => {
       if (teacherSlot.isActive) {
         slots.push({
           id: `class-${cls.id}-${slot._id}-${teacherSlot.teacher.id}`,
           type: 'class',
+          teacher: {
+            id: teacherSlot.teacher.id,
+            username: teacherSlot.teacher.username,
+            code: teacherSlot.teacher.code,
+            fullName: teacherSlot.teacher.fullName,
+            email: teacherSlot.teacher.email,
+            phoneNumber: teacherSlot.teacher.phoneNumber,
+            imageUrl: teacherSlot.teacher.imageUrl,
+          },
+          sessionTeachers,
           startTime: slot.startTime,
           endTime: slot.endTime,
           className: cls.name,
           classId: cls.id,
+          classSiteId,
+          sessionId: slot._id,
+          roleId: teacherSlot.role?.id,
+          roleName: teacherSlot.role?.name,
+          roleShortName: teacherSlot.role?.shortName,
           centreId: cls.centre.id,
           centreName: cls.centre.name,
           centreShortName: cls.centre.shortName,
@@ -49,6 +83,31 @@ function classToScheduleSlots(cls: Class): TeacherScheduleSlot[] {
   });
   
   return slots;
+}
+
+function scheduleSlotsToTeacherSchedules(slots: TeacherScheduleSlot[]): TeacherSchedule[] {
+  const teacherMap = new Map<string, TeacherSchedule>();
+
+  slots.forEach(slot => {
+    if (!slot.teacher) return;
+
+    const teacherId = slot.teacher.id;
+    if (!teacherMap.has(teacherId)) {
+      teacherMap.set(teacherId, {
+        teacher: slot.teacher,
+        slots: [],
+      });
+    }
+
+    teacherMap.get(teacherId)!.slots.push(slot);
+  });
+
+  return Array.from(teacherMap.values()).map(schedule => ({
+    ...schedule,
+    slots: schedule.slots.sort((a, b) =>
+      new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
+    ),
+  }));
 }
 
 /**
@@ -111,7 +170,7 @@ function calculateTeacherScore(
   slots: TeacherScheduleSlot[]
 ): { score: number; reason: string; hasClassBefore: boolean; hasClassAfter: boolean } {
   let score = 100;
-  let reasons: string[] = [];
+  const reasons: string[] = [];
   let hasClassBefore = false;
   let hasClassAfter = false;
   
@@ -215,31 +274,14 @@ export async function fetchTeacherSchedules(
       // Filter slots to only include those within the requested date range
       const slotTime = new Date(slot.startTime).getTime();
       if (slotTime < dateFrom.getTime() || slotTime > dateTo.getTime()) return;
-
-      // Find teacher from class.teachers
-      const teacherSlot = cls.slots
-        .flatMap(s => s.teachers)
-        .find(t => {
-          const slotStartTime = slot.startTime;
-          const sessionSlot = cls.slots.find(ss => ss.startTime === slotStartTime);
-          return sessionSlot?.teachers.some(st => st.teacher.id === t.teacher.id);
-        });
       
-      if (!teacherSlot) return;
+      if (!slot.teacher) return;
       
-      const teacherId = teacherSlot.teacher.id;
+      const teacherId = slot.teacher.id;
       
       if (!teacherMap.has(teacherId)) {
         teacherMap.set(teacherId, {
-          teacher: {
-            id: teacherSlot.teacher.id,
-            username: teacherSlot.teacher.username,
-            code: teacherSlot.teacher.code,
-            fullName: teacherSlot.teacher.fullName,
-            email: teacherSlot.teacher.email,
-            phoneNumber: teacherSlot.teacher.phoneNumber,
-            imageUrl: teacherSlot.teacher.imageUrl,
-          },
+          teacher: slot.teacher,
           slots: [],
         });
       }
@@ -294,6 +336,114 @@ export async function fetchTeacherSchedules(
   });
   
   return schedules;
+}
+
+export async function fetchClassTeacherSchedules(classId: string): Promise<TeacherSchedule[]> {
+  const query = `
+    query GetClassById($id: ID!) {
+      classesById(id: $id) {
+        id
+        name
+        level
+        status
+        startDate
+        endDate
+        numberOfSessions
+        numberOfSessionsStatus
+        sessionHour
+        totalHour
+        course {
+          id
+          name
+          shortName
+          courseLine { id name }
+        }
+        centre { id name shortName }
+        classSites { _id name }
+        students {
+          _id
+          activeInClass
+          student {
+            id
+            fullName
+            customer { fullName phoneNumber email facebook zalo }
+          }
+        }
+        slots {
+          _id
+          date
+          startTime
+          endTime
+          sessionHour
+          summary
+          homework
+          teachers {
+            _id
+            teacher {
+              id
+              username
+              code
+              fullName
+              email
+              phoneNumber
+              imageUrl
+            }
+            role { id name shortName }
+            isActive
+          }
+          teacherAttendance {
+            _id
+            status
+            note
+            createdAt
+            lastModifiedAt
+            teacher { id fullName email }
+          }
+          studentAttendance {
+            _id
+            status
+            comment
+            sendCommentStatus
+            student {
+              id
+              fullName
+              phoneNumber
+              email
+              gender
+              imageUrl
+            }
+          }
+        }
+        teachers {
+          _id
+          teacher {
+            id
+            username
+            code
+            fullName
+            email
+            phoneNumber
+            imageUrl
+          }
+          role { id name shortName }
+          isActive
+        }
+      }
+    }
+  `;
+
+  const response = await lmsQuery<{ data: { classesById: Class | null } }>({
+    operationName: 'GetClassById',
+    query,
+    variables: { id: classId },
+  });
+
+  const cls = response.data.classesById;
+  if (!cls) {
+    throw new Error('Không tìm thấy dữ liệu lớp trên LMS');
+  }
+
+  return scheduleSlotsToTeacherSchedules(classToScheduleSlots(cls));
 }
 
 /**
@@ -413,39 +563,272 @@ export async function findAvailableTeachers(
   return { available, unavailable };
 }
 
-/**
- * Add a supply teacher to a class session
- * Based on the ApproveRequestTeacher mutation
- */
-export async function addSupplyTeacherToSession(params: {
+const SUPPLY_ROLE_ID = '661f5728c74b9b0012de6857';
+const DEFAULT_EXCEPTIONAL_REASON = 'TEACHER_FOLLOW_CLASS';
+
+interface RequestTeacherListItem {
+  id: string;
+  status?: string;
+  class?: { id: string; name: string };
+  classSite?: { _id: string; name: string };
+  sessions?: { id: string; startTime: string; endTime: string }[];
+}
+
+interface RequestTeacherDetailTeacher {
+  teacher: {
+    id: string;
+    username?: string;
+    fullName?: string;
+    email?: string;
+    phoneNumber?: string;
+    imageUrl?: string;
+    handleScore?: number;
+  };
+  role: { id: string; name?: string; shortName?: string };
+}
+
+interface RequestTeacherDetailSession {
+  id: string;
+  startTime: string;
+  endTime: string;
+  teachers?: RequestTeacherDetailTeacher[];
+}
+
+interface RequestTeacherDetail {
+  id: string;
+  exceptionalReason?: string;
+  class: {
+    id: string;
+    name: string;
+    course?: {
+      oneSessionSettings?: {
+        classRole?: { id: string; name?: string; shortName?: string };
+      }[];
+      sessionSettings?: {
+        settings?: {
+          classRole?: { id: string; name?: string; shortName?: string };
+        }[];
+      }[];
+    };
+    slots?: {
+      _id: string;
+      startTime: string;
+      endTime: string;
+      teachers?: RequestTeacherDetailTeacher[];
+    }[];
+  };
+  classSite?: { _id: string; name: string };
+  note?: string;
+  sessions: RequestTeacherDetailSession[];
+}
+
+interface RequestTeacherPayloadTeacher {
+  teacherId: string;
+  classRoleId: string;
+  teacherName: string;
+  teacherHandleScore: number;
+  primaryCenters: (string | null)[];
+  secondaryCenters?: string[];
+}
+
+function toApproveTeacherInput(
+  item: RequestTeacherDetailTeacher,
+): RequestTeacherPayloadTeacher {
+  return {
+    teacherId: item.teacher.id,
+    classRoleId: item.role.id,
+    teacherName: item.teacher.fullName || item.teacher.username || item.teacher.email || item.teacher.id,
+    teacherHandleScore: item.teacher.handleScore ?? 7,
+    primaryCenters: [null],
+  };
+}
+
+function resolveClassRoleId(
+  detail: RequestTeacherDetail,
+  roleShortName: string,
+  fallbackRoleId?: string,
+): string {
+  const roleKey = roleShortName.toUpperCase();
+  const roles: Array<{ id: string; name?: string; shortName?: string } | undefined> = [];
+
+  detail.class.course?.oneSessionSettings?.forEach(setting => roles.push(setting.classRole));
+  detail.class.course?.sessionSettings?.forEach(sessionSetting => {
+    sessionSetting.settings?.forEach(setting => roles.push(setting.classRole));
+  });
+  detail.sessions?.forEach(session => {
+    session.teachers?.forEach(teacher => roles.push(teacher.role));
+  });
+  detail.class.slots?.forEach(slot => {
+    slot.teachers?.forEach(teacher => roles.push(teacher.role));
+  });
+
+  const role = roles.find(item =>
+    item &&
+    ((item.shortName || '').toUpperCase() === roleKey || (item.name || '').toUpperCase() === roleKey)
+  );
+
+  if (role?.id) return role.id;
+  if (fallbackRoleId) return fallbackRoleId;
+  throw new Error(`Không tìm thấy role ${roleShortName} trên LMS cho lớp này`);
+}
+
+async function findRequestTeacherForSession(params: {
   classId: string;
-  classSiteId: string;
+  className: string;
+  classSiteId?: string;
+  sessionId: string;
+  centreId?: string;
+}): Promise<RequestTeacherListItem> {
+  const query = `
+    query FindRequestTeacher($filter: FilterRequestTeacherInput, $pagination: PaginationInput, $orderBy: String) {
+      findRequestTeacher(payload: {filter: $filter, pagination: $pagination, orderBy: $orderBy}) {
+        data {
+          id
+          status
+          class { id name }
+          classSite { _id name }
+          sessions { id startTime endTime }
+        }
+        total
+      }
+    }
+  `;
+
+  const response = await lmsQuery<{
+    data: { findRequestTeacher: { data: RequestTeacherListItem[]; total: number } };
+  }>({
+    operationName: 'FindRequestTeacher',
+    query,
+    variables: {
+      filter: {
+        search_textSearch: params.className,
+        center_in: params.centreId ? [params.centreId] : [],
+      },
+      pagination: { page: 0, limit: 20 },
+      orderBy: 'createdAt_desc',
+    },
+  });
+
+  const requests = response.data.findRequestTeacher.data || [];
+  const request = requests.find(item =>
+    item.class?.id === params.classId &&
+    (!params.classSiteId || item.classSite?._id === params.classSiteId) &&
+    (item.sessions || []).some(session => session.id === params.sessionId),
+  ) || requests.find(item =>
+    item.class?.id === params.classId &&
+    (item.sessions || []).some(session => session.id === params.sessionId),
+  );
+
+  if (!request) {
+    throw new Error('Không tìm thấy yêu cầu giáo viên trên LMS cho buổi học này');
+  }
+
+  return request;
+}
+
+async function findOneRequestTeacher(id: string): Promise<RequestTeacherDetail> {
+  const query = `
+    query FindOneRequestTeacher($payload: FindOneRequestTeacherPayload) {
+      findOneRequestTeacher(payload: $payload) {
+        id
+        exceptionalReason
+        class {
+          id
+          name
+          course {
+            oneSessionSettings {
+              classRole { id name shortName }
+            }
+            sessionSettings {
+              settings {
+                classRole { id name shortName }
+              }
+            }
+          }
+          slots {
+            _id
+            startTime
+            endTime
+            teachers {
+              teacher { id username fullName email phoneNumber imageUrl }
+              role { id name shortName }
+            }
+          }
+        }
+        classSite { _id name }
+        note
+        sessions {
+          id
+          startTime
+          endTime
+          teachers {
+            teacher { id username fullName email phoneNumber imageUrl handleScore }
+            role { id name shortName }
+          }
+        }
+      }
+    }
+  `;
+
+  const response = await lmsQuery<{ data: { findOneRequestTeacher: RequestTeacherDetail } }>({
+    operationName: 'FindOneRequestTeacher',
+    query,
+    variables: { payload: { id } },
+  });
+
+  if (!response.data.findOneRequestTeacher) {
+    throw new Error('Không thể tải chi tiết yêu cầu giáo viên từ LMS');
+  }
+
+  return response.data.findOneRequestTeacher;
+}
+
+export async function addTeacherToSessionRole(params: {
+  classId: string;
+  className: string;
+  classSiteId?: string;
+  centreId?: string;
   sessionId: string;
   sessionStartTime: string;
   sessionEndTime: string;
   teacherId: string;
   teacherName: string;
+  roleShortName: string;
+  fallbackRoleId?: string;
   teacherHandleScore?: number;
   teacherPrimaryCenters?: (string | null)[];
   exceptionalReason?: string;
   note?: string;
-}): Promise<any> {
+  replaceSameRoleInTargetSession?: boolean;
+}): Promise<unknown> {
   const {
     classId,
+    className,
     classSiteId,
+    centreId,
     sessionId,
     sessionStartTime,
     sessionEndTime,
     teacherId,
     teacherName,
-    teacherHandleScore = 10,
+    roleShortName,
+    fallbackRoleId,
+    teacherHandleScore = 7,
     teacherPrimaryCenters = [null],
-    exceptionalReason = 'TEACHER_FOLLOW_CLASS',
+    exceptionalReason = DEFAULT_EXCEPTIONAL_REASON,
     note = '',
+    replaceSameRoleInTargetSession = false,
   } = params;
 
-  // SUPPLY role ID from the example
-  const SUPPLY_ROLE_ID = '661f5728c74b9b0012de6857';
+  const request = await findRequestTeacherForSession({
+    classId,
+    className,
+    classSiteId,
+    sessionId,
+    centreId,
+  });
+  const detail = await findOneRequestTeacher(request.id);
+  const classRoleId = resolveClassRoleId(detail, roleShortName, fallbackRoleId);
 
   const mutation = `
     mutation ApproveRequestTeacher($payload: ApprovePayload!) {
@@ -480,55 +863,90 @@ export async function addSupplyTeacherToSession(params: {
     }
   `;
 
-  const variables = {
-    payload: {
-      id: `temp-${Date.now()}`, // Temporary ID, will be replaced by backend
-      classId,
-      classSiteId,
-      exceptionalReason,
-      note,
-      sessions: [
-        {
-          id: sessionId,
-          startTime: sessionStartTime,
-          endTime: sessionEndTime,
-          teachers: [
-            {
-              teacherId,
-              classRoleId: SUPPLY_ROLE_ID,
-              teacherName,
-              teacherHandleScore,
-              primaryCenters: teacherPrimaryCenters,
-            },
-          ],
-        },
-      ],
-    },
-  };
+  const sourceSessions = detail.sessions?.length
+    ? detail.sessions
+    : (detail.class.slots || []).map(slot => ({
+      id: slot._id,
+      startTime: slot.startTime,
+      endTime: slot.endTime,
+      teachers: slot.teachers || [],
+    }));
 
-  const response = await fetch('https://lms-api.mindx.edu.vn/', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Accept': '*/*',
-    },
-    credentials: 'include',
-    body: JSON.stringify({
-      operationName: 'ApproveRequestTeacher',
-      variables,
-      query: mutation,
-    }),
+  const sessions = sourceSessions.map(session => {
+    let teachers = (session.teachers || []).map(toApproveTeacherInput);
+    const isTargetSession = session.id === sessionId;
+
+    if (isTargetSession && replaceSameRoleInTargetSession) {
+      teachers = teachers.filter(teacher => teacher.classRoleId !== classRoleId);
+    }
+
+    const alreadyAdded = teachers.some(teacher =>
+      teacher.teacherId === teacherId && teacher.classRoleId === classRoleId,
+    );
+
+    if (isTargetSession && !alreadyAdded) {
+      teachers.push({
+        teacherId,
+        classRoleId,
+        teacherName,
+        teacherHandleScore,
+        primaryCenters: teacherPrimaryCenters,
+      });
+    }
+
+    return {
+      id: session.id,
+      startTime: session.startTime,
+      endTime: session.endTime,
+      teachers,
+    };
   });
 
-  if (!response.ok) {
-    throw new Error(`Failed to add supply teacher: ${response.statusText}`);
+  if (!sessions.some(session => session.id === sessionId)) {
+    sessions.push({
+      id: sessionId,
+      startTime: sessionStartTime,
+      endTime: sessionEndTime,
+      teachers: [{
+        teacherId,
+        classRoleId,
+        teacherName,
+        teacherHandleScore,
+        primaryCenters: teacherPrimaryCenters,
+      }],
+    });
   }
 
-  const result = await response.json();
-
-  if (result.errors) {
-    throw new Error(result.errors[0]?.message || 'Failed to add supply teacher');
-  }
+  const result = await lmsQuery<{ data: { requestTeacher: { approve: unknown } } }>({
+    operationName: 'ApproveRequestTeacher',
+    query: mutation,
+    variables: {
+      payload: {
+        id: detail.id,
+        classId,
+        classSiteId: detail.classSite?._id || classSiteId,
+        exceptionalReason: detail.exceptionalReason || exceptionalReason,
+        note: detail.note || note,
+        sessions,
+      },
+    },
+  });
 
   return result.data.requestTeacher.approve;
+}
+
+export async function addSupplyTeacherToSession(params: Omit<Parameters<typeof addTeacherToSessionRole>[0], 'roleShortName' | 'fallbackRoleId'>): Promise<unknown> {
+  return addTeacherToSessionRole({
+    ...params,
+    roleShortName: 'SUPPLY',
+    fallbackRoleId: SUPPLY_ROLE_ID,
+  });
+}
+
+export async function addJudgeTeacherToSession(params: Omit<Parameters<typeof addTeacherToSessionRole>[0], 'roleShortName' | 'fallbackRoleId'>): Promise<unknown> {
+  return addTeacherToSessionRole({
+    ...params,
+    roleShortName: 'JUDGE',
+    replaceSameRoleInTargetSession: true,
+  });
 }

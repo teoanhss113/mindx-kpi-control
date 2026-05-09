@@ -72,7 +72,10 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
       );
 
       if (!res.ok) {
-        console.error('[PermissionsContext] Failed to load permissions:', res.status);
+        // 404 = user has no internal profile (normal teacher) — expected, not an error
+        if (res.status !== 404) {
+          console.error('[PermissionsContext] Failed to load permissions:', res.status);
+        }
         if (!silent) {
           setPermissions([]);
           setLoading(false);

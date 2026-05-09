@@ -38,7 +38,7 @@ import {
 import { useFilterOptions } from '@/hooks/useFilterOptions';
 import { useQuickFilterChips } from '@/hooks/useUserPreferences';
 import { useCSVExportPreferences } from '@/hooks/useCSVExportPreferences';
-import { CACHE_KEYS, MESSAGES, ENTITIES, CHART_COLORS } from '@/constants';
+import { CACHE_KEYS, LABELS, MESSAGES, ENTITIES, CHART_COLORS } from '@/constants';
 import { useSharedDateRange, useSharedCentres } from '@/hooks/useSharedFilterState';
 import { exportToCSV, CSVColumn, CSVFormatters } from '@/lib/csvExport';
 import styles from '@/app/dashboard.module.css';
@@ -103,7 +103,7 @@ function generateCheckpointContent(data: any): string {
   if (data.cp1TotalStudents > 0) {
     const cp1FailCount = data.cp1TotalStudents - data.cp1PassCount;
     lines.push(`**CP1:**`);
-    lines.push(`- Tỷ lệ học sinh đạt/không đạt: ${data.cp1PassCount}/${cp1FailCount} (${data.cp1PassRate.toFixed(1)}% đạt).`);
+    lines.push(`- Tỷ lệ học viên đạt/không đạt: ${data.cp1PassCount}/${cp1FailCount} (${data.cp1PassRate.toFixed(1)}% đạt).`);
     lines.push(`- Điểm CP1 trung bình: ${data.cp1AverageScore.toFixed(3)}.`);
     lines.push('');
   }
@@ -111,7 +111,7 @@ function generateCheckpointContent(data: any): string {
   if (data.cp2TotalStudents > 0) {
     const cp2FailCount = data.cp2TotalStudents - data.cp2PassCount;
     lines.push(`**CP2:**`);
-    lines.push(`- Tỷ lệ học sinh đạt/không đạt: ${data.cp2PassCount}/${cp2FailCount} (${data.cp2PassRate.toFixed(1)}% đạt).`);
+    lines.push(`- Tỷ lệ học viên đạt/không đạt: ${data.cp2PassCount}/${cp2FailCount} (${data.cp2PassRate.toFixed(1)}% đạt).`);
     lines.push(`- Điểm CP2 trung bình: ${data.cp2AverageScore.toFixed(3)}.`);
   }
   
@@ -122,7 +122,7 @@ function generateCheckpointContent(data: any): string {
   
   lines.push('');
   lines.push(`*Thang đo: Đạt khi điểm CP ≥ 3.5.*`);
-  lines.push(`*Lưu ý: Khối Coding có CP ở buổi 5 & 9; Robotics có CP ở buổi 4 & 8; Art chỉ có điểm cuối khóa (Demo).*`);
+  lines.push(`*Lưu ý: Khối Coding có CP ở buổi 5 & 9; Robotics có CP ở buổi 4 & 8; Art chỉ có điểm cuối khoá (Demo).*`);
   
   return lines.join('\n');
 }
@@ -131,7 +131,7 @@ function generateDemoContent(data: any): string {
   const lines: string[] = [];
   
   if (data.demoTotalStudents > 0) {
-    lines.push(`**Chất lượng sản phẩm học sinh:**`);
+    lines.push(`**Chất lượng sản phẩm học viên:**`);
     lines.push(`- Phân hóa (Tốt/Trung bình/Kém): ${data.demoGoodCount}/${data.demoMediumCount}/${data.demoPoorCount}.`);
     lines.push(`- Điểm Demo trung bình: ${data.demoAverageScore.toFixed(3)}.`);
     lines.push('');
@@ -143,10 +143,10 @@ function generateDemoContent(data: any): string {
     
     lines.push(`**Xếp loại TBCK (Tổng hợp CP & Demo):**`);
     lines.push(`- Tổng đạt (A+B+C): ${passedCount}/${data.totalStudentsWithTBCK} (${passedRate}%).`);
-    lines.push(`- Hạng A (Xuất sắc): ${data.rankACount} HV.`);
-    lines.push(`- Hạng B (Tốt): ${data.rankBCount} HV.`);
-    lines.push(`- Hạng C (Đạt): ${data.rankCCount} HV.`);
-    lines.push(`- Hạng D (Chưa đạt): ${data.rankDCount} HV.`);
+    lines.push(`- Hạng A (Xuất sắc): ${data.rankACount} học viên.`);
+    lines.push(`- Hạng B (Tốt): ${data.rankBCount} học viên.`);
+    lines.push(`- Hạng C (Đạt): ${data.rankCCount} học viên.`);
+    lines.push(`- Hạng D (Chưa đạt): ${data.rankDCount} học viên.`);
     lines.push('');
     lines.push(`*Thang đo: Tốt (≥4), Trung bình (≥3), Kém (<3).*`);
     lines.push(`*Công thức TBCK: 0.4 × (CP1+CP2)/2 + 0.6 × Demo (nếu không có CP thì 100% Demo).*`);
@@ -283,7 +283,7 @@ export default function ClassQualityPage() {
   );
 
   // Exemption sessions (1-indexed): sessions where comments are required even if student is absent
-  const [exemptSessions, setExemptSessions] = useState<number[]>([5, 9, 14]);
+  const [exemptedSessions, setExemptedSessions] = useState<number[]>(Array.from({length: 30}, (_, i) => i + 1).filter(s => ![5, 9, 14].includes(s)));
   
   // Rescheduling exemption rules
   const [exemptOneOnOneClasses, setExemptOneOnOneClasses] = useState(true); // Exempt (1:1) classes
@@ -337,7 +337,7 @@ export default function ClassQualityPage() {
         const saved = await getCache(CACHE_KEY);
         if (saved) {
           if (saved.classes) setClasses(saved.classes);
-          if (saved.exemptSessions) setExemptSessions(saved.exemptSessions);
+          if (saved.exemptedSessions) setExemptedSessions(saved.exemptedSessions);
           if (saved.exemptOneOnOneClasses !== undefined) setExemptOneOnOneClasses(saved.exemptOneOnOneClasses);
           
           // Merge default holidays with cached holidays (avoid duplicates)
@@ -396,7 +396,7 @@ export default function ClassQualityPage() {
         controller.signal
       );
       
-      await setCache(CACHE_KEY, { classes: result, exemptSessions, timestamp: Date.now() });
+      await setCache(CACHE_KEY, { classes: result, exemptedSessions, timestamp: Date.now() });
       removeToast(tid);
       addToast(MESSAGES.LOADING.SUCCESS(result.length, ENTITIES.CLASSES), 'success');
     } catch (err: any) {
@@ -428,12 +428,12 @@ export default function ClassQualityPage() {
 
   useEffect(() => {
     if (classes.length > 0 && !loading)
-      setCache(CACHE_KEY, { classes, exemptSessions, exemptOneOnOneClasses, holidayPeriods, timestamp: Date.now() }).catch(console.error);
-  }, [classes, loading, exemptSessions, exemptOneOnOneClasses, holidayPeriods]);
+      setCache(CACHE_KEY, { classes, exemptedSessions, exemptOneOnOneClasses, holidayPeriods, timestamp: Date.now() }).catch(console.error);
+  }, [classes, loading, exemptedSessions, exemptOneOnOneClasses, holidayPeriods]);
 
   const analyzedClasses = useMemo(() => {
-    return classes.map(cls => analyzeClassQuality(cls, exemptSessions));
-  }, [classes, exemptSessions]);
+    return classes.map(cls => analyzeClassQuality(cls, exemptedSessions));
+  }, [classes, exemptedSessions]);
 
   // Separate normal and cancelled classes
   const { normalClasses, cancelledClasses } = useMemo(() => {
@@ -1256,10 +1256,10 @@ export default function ClassQualityPage() {
   }, [normalClasses]);
 
   const handleToggleExemptSession = (session: number) => {
-    if (exemptSessions.includes(session)) {
-      setExemptSessions(exemptSessions.filter(s => s !== session));
+    if (exemptedSessions.includes(session)) {
+      setExemptedSessions(exemptedSessions.filter(s => s !== session));
     } else {
-      setExemptSessions([...exemptSessions, session].sort((a, b) => a - b));
+      setExemptedSessions([...exemptedSessions, session].sort((a, b) => a - b));
     }
   };
   
@@ -1293,7 +1293,7 @@ export default function ClassQualityPage() {
   
   const handleRemoveHolidayPeriod = (index: number) => {
     setHolidayPeriods(holidayPeriods.filter((_, i) => i !== index));
-    addToast('Đã xóa khoảng thời gian nghỉ', 'success');
+    addToast('Đã xoá khoảng thời gian nghỉ', 'success');
   };
   
   // Check if a class should be exempt from rescheduling analysis
@@ -1362,9 +1362,9 @@ export default function ClassQualityPage() {
                   <StatCard label="LỚP BÁO ĐỘNG" value={String(stats.classesWithAttendanceAlerts)} desc="Số lớp có học viên vi phạm chuyên cần" delay={0.21} />
                   <StatCard label="BUỔI HỌC BỊ DỜI" value={`${stats.reschedulingRate.toFixed(1)}%`} desc="Tỉ lệ buổi học bị thay đổi lịch" valueColor={stats.reschedulingRate <= 10 ? 'var(--status-success)' : (stats.reschedulingRate <= 20 ? 'var(--status-warning)' : 'var(--status-error)')} delay={0.28} />
                   <StatCard label="LỚP THAY ĐỔI LỊCH" value={String(stats.classesWithRescheduling)} desc="Số lớp có buổi học bị dời" delay={0.35} />
-                  <StatCard label="CP1 ĐẠT (BUỔI 5)" value={`${stats.cp1PassRate.toFixed(1)}%`} desc={`${stats.cp1TotalStudents} HV • Điểm TB: ${stats.cp1AverageScore.toFixed(1)}`} valueColor={stats.cp1PassRate >= 85 ? 'var(--status-success)' : (stats.cp1PassRate >= 70 ? 'var(--status-warning)' : 'var(--status-error)')} delay={0.42} />
-                  <StatCard label="CP2 ĐẠT (BUỔI 9)" value={`${stats.cp2PassRate.toFixed(1)}%`} desc={`${stats.cp2TotalStudents} HV • Điểm TB: ${stats.cp2AverageScore.toFixed(1)}`} valueColor={stats.cp2PassRate >= 85 ? 'var(--status-success)' : (stats.cp2PassRate >= 70 ? 'var(--status-warning)' : 'var(--status-error)')} delay={0.49} />
-                  <StatCard label="DEMO ĐẠT (BUỔI 14)" value={`${stats.demoPassRate.toFixed(1)}%`} desc={`${stats.demoTotalStudents} HV • Điểm TB: ${stats.demoAverageScore.toFixed(1)}`} valueColor={stats.demoPassRate >= 85 ? 'var(--status-success)' : (stats.demoPassRate >= 70 ? 'var(--status-warning)' : 'var(--status-error)')} delay={0.56} />
+                  <StatCard label="CP1 ĐẠT (BUỔI 5)" value={`${stats.cp1PassRate.toFixed(1)}%`} desc={`${stats.cp1TotalStudents} học viên • Điểm TB: ${stats.cp1AverageScore.toFixed(1)}`} valueColor={stats.cp1PassRate >= 85 ? 'var(--status-success)' : (stats.cp1PassRate >= 70 ? 'var(--status-warning)' : 'var(--status-error)')} delay={0.42} />
+                  <StatCard label="CP2 ĐẠT (BUỔI 9)" value={`${stats.cp2PassRate.toFixed(1)}%`} desc={`${stats.cp2TotalStudents} học viên • Điểm TB: ${stats.cp2AverageScore.toFixed(1)}`} valueColor={stats.cp2PassRate >= 85 ? 'var(--status-success)' : (stats.cp2PassRate >= 70 ? 'var(--status-warning)' : 'var(--status-error)')} delay={0.49} />
+                  <StatCard label="DEMO ĐẠT (BUỔI 14)" value={`${stats.demoPassRate.toFixed(1)}%`} desc={`${stats.demoTotalStudents} học viên • Điểm TB: ${stats.demoAverageScore.toFixed(1)}`} valueColor={stats.demoPassRate >= 85 ? 'var(--status-success)' : (stats.demoPassRate >= 70 ? 'var(--status-warning)' : 'var(--status-error)')} delay={0.56} />
                 </motion.div>
               )}
 
@@ -1738,7 +1738,7 @@ export default function ClassQualityPage() {
               
               <div className={styles.tableSection} id="section-attendance">
                 <TableGroupHeader
-                  title="Tình trạng Chuyên cần Học viên"
+                  title="Tình trạng Chuyên cần học viên"
                   count={filteredAttendanceClasses.length}
                   isExpanded={showAttendanceTable} onToggle={() => setShowAttendanceTable(!showAttendanceTable)}
                   actionSlot={
@@ -1764,7 +1764,7 @@ export default function ClassQualityPage() {
                       }}>
                         <div className={`${styles.sortableCol} ${sortKeyA === 'name' ? styles.activeSort : ''}`} onClick={() => handleSortA('name')} style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>Lớp học <SortIcon col="name" sortKey={sortKeyA} sortDir={sortDirA} /></div>
                         <div className={`${styles.sortableCol} ${sortKeyA === 'teacher' ? styles.activeSort : ''}`} onClick={() => handleSortA('teacher')} style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>Giáo viên <SortIcon col="teacher" sortKey={sortKeyA} sortDir={sortDirA} /></div>
-                        <div className={`${styles.sortableCol} ${sortKeyA === 'totalStudents' ? styles.activeSort : ''}`} onClick={() => handleSortA('totalStudents')} style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>Tổng Học viên <SortIcon col="totalStudents" sortKey={sortKeyA} sortDir={sortDirA} /></div>
+                        <div className={`${styles.sortableCol} ${sortKeyA === 'totalStudents' ? styles.activeSort : ''}`} onClick={() => handleSortA('totalStudents')} style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>Tổng học viên <SortIcon col="totalStudents" sortKey={sortKeyA} sortDir={sortDirA} /></div>
                         <div className={`${styles.sortableCol} ${sortKeyA === 'frequent' ? styles.activeSort : ''}`} onClick={() => handleSortA('frequent')} style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>{ATTENDANCE_ALERT_LABELS.frequent_absent} <SortIcon col="frequent" sortKey={sortKeyA} sortDir={sortDirA} /></div>
                         <div className={`${styles.sortableCol} ${sortKeyA === 'consecutive' ? styles.activeSort : ''}`} onClick={() => handleSortA('consecutive')} style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>{ATTENDANCE_ALERT_LABELS.consecutive_absent} (2+) <SortIcon col="consecutive" sortKey={sortKeyA} sortDir={sortDirA} /></div>
                         <div className={`${styles.sortableCol} ${sortKeyA === 'lateStage' ? styles.activeSort : ''}`} onClick={() => handleSortA('lateStage')} style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>{ATTENDANCE_ALERT_LABELS.late_stage_absent} (Buổi 10+) <SortIcon col="lateStage" sortKey={sortKeyA} sortDir={sortDirA} /></div>
@@ -1795,9 +1795,9 @@ export default function ClassQualityPage() {
                             </div>
                             <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{teacherName}</div>
                             <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{a.attendanceAnalysis.totalStudents}</div>
-                            <div style={{ fontSize: 13, color: freq > 0 ? 'var(--status-warning)' : 'var(--text-secondary)' }}>{freq} HV</div>
-                            <div style={{ fontSize: 13, color: cons > 0 ? 'var(--status-orange)' : 'var(--text-secondary)' }}>{cons} HV</div>
-                            <div style={{ fontSize: 13, color: late > 0 ? 'var(--status-error)' : 'var(--text-secondary)' }}>{late} HV</div>
+                            <div style={{ fontSize: 13, color: freq > 0 ? 'var(--status-warning)' : 'var(--text-secondary)' }}>{freq} học viên</div>
+                            <div style={{ fontSize: 13, color: cons > 0 ? 'var(--status-orange)' : 'var(--text-secondary)' }}>{cons} học viên</div>
+                            <div style={{ fontSize: 13, color: late > 0 ? 'var(--status-error)' : 'var(--text-secondary)' }}>{late} học viên</div>
                             <div style={{ fontSize: 13, fontWeight: 600, color: a.attendanceAnalysis.totalAlerts > 0 ? 'var(--status-error)' : 'var(--status-success)' }}>{a.attendanceAnalysis.totalAlerts}</div>
                           </div>
                         );
@@ -1855,7 +1855,7 @@ export default function ClassQualityPage() {
               
               <div className={styles.tableSection} id="section-rescheduling">
                 <TableGroupHeader
-                  title="Tình trạng Thay đổi Lịch Học"
+                  title="Tình trạng Thay đổi lịch học"
                   count={filteredReschedulingClasses.length}
                   isExpanded={showReschedulingTable} onToggle={() => setShowReschedulingTable(!showReschedulingTable)}
                   actionSlot={
@@ -2314,7 +2314,7 @@ export default function ClassQualityPage() {
                                   <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
                                   <path d="M16 3.13a4 4 0 0 1 0 7.75" />
                                 </svg>
-                                Chuyên cần Học viên
+                                Chuyên cần học viên
                               </div>
                               <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginLeft: 24, marginTop: 2 }}>
                                 {filteredAttendanceClasses.length} lớp
@@ -2349,7 +2349,7 @@ export default function ClassQualityPage() {
                                   <circle cx="12" cy="12" r="10" />
                                   <polyline points="12 6 12 12 16 14" />
                                 </svg>
-                                Thay đổi Lịch Học
+                                Thay đổi lịch học
                               </div>
                               <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginLeft: 24, marginTop: 2 }}>
                                 {filteredReschedulingClasses.length} lớp
@@ -2425,7 +2425,7 @@ export default function ClassQualityPage() {
                                 <input 
                                   type="checkbox" 
                                   className={styles.reasonCheckbox}
-                                  checked={exemptSessions.includes(session)}
+                                  checked={exemptedSessions.includes(session)}
                                   onChange={() => handleToggleExemptSession(session)}
                                 />
                                 <div className={styles.reasonLabel}>
@@ -2447,7 +2447,7 @@ export default function ClassQualityPage() {
                       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                         <path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                       </svg>
-                      Quy tắc Miễn trừ Lịch Học
+                      Quy tắc miễn trừ lịch học
                     </div>
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" 
                       style={{ 
@@ -2611,7 +2611,7 @@ export default function ClassQualityPage() {
                                         fontWeight: 600
                                       }}
                                     >
-                                      Hủy
+                                      Huỷ
                                     </button>
                                   </div>
                                 </motion.div>
@@ -2654,7 +2654,7 @@ export default function ClassQualityPage() {
                                       fontWeight: 600
                                     }}
                                   >
-                                    Xóa
+                                    Xoá
                                   </button>
                                 </div>
                               ))}
@@ -2740,7 +2740,7 @@ export default function ClassQualityPage() {
                    <table className={styles.studentTable}>
                      <thead>
                        <tr>
-                         <th style={{ minWidth: 160 }}>Học viên</th>
+                         <th style={{ minWidth: 160 }}>{LABELS.STUDENT}</th>
                          <th>Tổng quan</th>
                          {commentSessionStats.map(stat => (
                            <th
@@ -2828,7 +2828,7 @@ export default function ClassQualityPage() {
                          <thead>
                            <tr>
                              <th style={{ width: 28 }}>#</th>
-                             <th>Học viên</th>
+                             <th>{LABELS.STUDENT}</th>
                              <th>Giáo viên</th>
                              <th>Trạng thái</th>
                              <th>Nội dung nhận xét</th>
@@ -2845,7 +2845,7 @@ export default function ClassQualityPage() {
                                  <td style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{c?.teacherName || '—'}</td>
                                  <td>
                                    <CommentStatusBadge status={status}>
-                                     {status === 'duplicate_self' ? 'Trùng bản thân' : status === 'duplicate_other' ? 'Trùng HV khác' : undefined}
+                                     {status === 'duplicate_self' ? 'Trùng bản thân' : status === 'duplicate_other' ? 'Trùng học viên khác' : undefined}
                                    </CommentStatusBadge>
                                    {c?.isOverdue && c.overdueHours !== undefined && (
                                      <span style={{ fontSize: 10, marginLeft: 6, color: 'var(--text-tertiary)' }}>
@@ -2893,7 +2893,7 @@ export default function ClassQualityPage() {
       <Modal open={!!selectedClassForAttendance} onClose={() => setSelectedClassForAttendance(null)}>
         {selectedClassForAttendance && (
            <>
-             <ModalHeader title={`Chuyên cần Học viên: ${selectedClassForAttendance.cls.name}`}
+             <ModalHeader title={`Chuyên cần học viên: ${selectedClassForAttendance.cls.name}`}
                           subtitle={`${selectedClassForAttendance.cls.centre?.shortName}`}
                           onClose={() => setSelectedClassForAttendance(null)} />
              <div className={styles.modalBody} style={{ padding: '16px 20px 20px' }}>
@@ -2904,7 +2904,7 @@ export default function ClassQualityPage() {
                       <table className={styles.studentTable}>
                        <thead>
                           <tr>
-                             <th>Học viên</th>
+                             <th>{LABELS.STUDENT}</th>
                              <th>Cảnh báo</th>
                              <th>Lịch sử điểm danh</th>
                           </tr>
@@ -3276,7 +3276,7 @@ export default function ClassQualityPage() {
                     <table className={styles.studentTable}>
                       <thead>
                         <tr>
-                          <th>Học viên</th>
+                          <th>{LABELS.STUDENT}</th>
                           <th>Trạng thái</th>
                           {checkpointView !== 'demo' ? (
                             <>
@@ -3395,7 +3395,7 @@ export default function ClassQualityPage() {
         onClose={() => setShowReschedulingCSVSettings(false)}
         columns={reschedulingCSVColumns}
         onSave={saveReschedulingColumns}
-        title="Cài đặt xuất CSV - Thay đổi Lịch Học"
+        title="Cài đặt xuất CSV - Thay đổi lịch học"
       />
     </>
   );
