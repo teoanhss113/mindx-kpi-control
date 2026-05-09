@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo, useCallback, useRef, memo, Fragment } from 'react';
+import { useEffect, useState, useMemo, useCallback, useRef, memo, Fragment, useTransition, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -10,16 +10,22 @@ import {
 } from 'recharts';
 import { useAuth } from '@/lib/AuthContext';
 import { loadSession } from '@/services/authService';
+import { fetchAllClasses, haveSlotInToUtcRange } from '@/services/classesService';
 import { fetchAllCentres, Centre } from '@/services/centresService';
 import { getCache, setCache, clearCache } from '@/lib/idb';
 import { getCourseLineCategory } from '@/lib/courseCategories';
 import { getNavItemsWithRouter } from '@/lib/navigation';
 import { useAllowedPages } from '@/hooks/useAllowedPages';
-import { addSupplyTeacherToSession, fetchClassTeacherSchedules, fetchTeacherSchedules, findAvailableTeachers } from '@/services/teacherScheduleService';
+import { addSupplyTeacherToSession, fetchClassTeacherSchedules, fetchTeacherSchedules, findAvailableTeachers, fetchClassByIdFull } from '@/services/teacherScheduleService';
 import { searchUsers } from '@/services/ticketService';
 import { TeacherSchedule, TeacherScheduleSlot, CoordinationRequest, TeacherAvailability, Teacher } from '@/types/teacherSchedule';
-import { LmsUser } from '@/types/ticket';
+import { Class, Session } from '@/types/classes';
+import { AnalyzedClassForQuality } from '@/types/classQuality';
+import { analyzeClassQuality, DEFAULT_EXEMPTED_SESSIONS } from '@/lib/classQualityAnalysis';
+import { computeTBCK, determineRank } from '@/lib/courseGrading';
 import { PageLayout } from '@/components/PageLayout';
+import { ClassQualityUnifiedTable } from '@/components/ClassQualityUnifiedTable';
+
 import {
   Icon,
   Toolbar,
@@ -27,9 +33,13 @@ import {
   ChartSectionHeader,
   TableToolbar,
   TableGroupHeader,
+  AdminTableSection,
+  AdminToolbar,
   Modal,
   ModalHeader,
   EmptyState,
+  CompactSelect,
+  ViewModeToggle,
   initials,
   ToastContainer,
   useToast,
@@ -44,9 +54,31 @@ import {
   ComposedChartConfig,
   CentreSelect,
   QuickFilterChips,
+  FilterChip,
+  Badge,
+  CommentStatusBadge,
+  COMMENT_STATUS_GROUP_LABELS,
+  COMMENT_STATUS_COUNT_LABELS,
+  AttendanceAlertBadge,
+  AttendanceSessionCell,
+  RescheduleStatusBadge,
+  RESCHEDULE_STATUS_LABELS,
+  DateRangeInput,
 } from '@/components/ui';
 import { useQuickFilterChips } from '@/hooks/useUserPreferences';
-import { CACHE_KEYS, LABELS, MESSAGES, ENTITIES, CHART_COLORS } from '@/constants';
+import {
+  CACHE_KEYS,
+  LABELS,
+  MESSAGES,
+  ENTITIES,
+  CHART_COLORS,
+  COURSES,
+  FORMAT,
+  CLASS_QUALITY_LABELS,
+  TEACHER_SCHEDULE_LABELS,
+  TEACHER_SCHEDULE_TYPE_OPTIONS,
+  TEACHER_SCHEDULE_VIEW_OPTIONS,
+} from '@/constants';
 import { useSharedDateRange, useSharedCentres } from '@/hooks/useSharedFilterState';
 import styles from '@/app/dashboard.module.css';
 
@@ -80,6 +112,468 @@ const TIME_SLOTS = [
 ];
 
 const DAYS_OF_WEEK = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
+type HolidayPeriod = { name: string; from: string; to: string };
+
+const DEFAULT_HOLIDAY_PERIODS: HolidayPeriod[] = [
+  { name: 'Tết Dương lịch', from: '2026-01-01', to: '2026-01-01' },
+  { name: 'Tết Âm lịch', from: '2026-02-14', to: '2026-02-22' },
+  { name: 'Giỗ Tổ Hùng Vương', from: '2026-04-25', to: '2026-04-26' },
+  { name: 'Giải phóng miền Nam & Quốc tế Lao động', from: '2026-04-30', to: '2026-05-02' },
+];
+const TEACHER_SCHEDULE_CACHE_VERSION = 7;
+
+
+
+function CopyButton({ content, label }: { content: string; label: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy:', err);
+    }
+  };
+
+  return (
+    <button type="button" onClick={handleCopy} className={styles.copyBtn} title={`Copy ${label}`}>
+      {copied ? '✓ Đã copy' : 'Copy'}
+    </button>
+  );
+}
+
+function renderSummaryContent(content: string) {
+  return content.split('\n').map((line, index) => {
+    if (!line) return <div key={index}>{'\u00A0'}</div>;
+
+    const parts: ReactNode[] = [];
+    let key = 0;
+
+    line.split('**').forEach((part, boldIndex) => {
+      if (boldIndex % 2 === 1) {
+        parts.push(<strong key={`b${key++}`}>{part}</strong>);
+        return;
+      }
+
+      part.split('*').forEach((italicPart, italicIndex) => {
+        if (italicIndex % 2 === 1) {
+          parts.push(<em key={`i${key++}`} style={{ color: 'var(--text-tertiary)', fontSize: 12 }}>{italicPart}</em>);
+        } else if (italicPart) {
+          parts.push(italicPart);
+        }
+      });
+    });
+
+    return <div key={index}>{parts}</div>;
+  });
+}
+
+function generateCheckpointContent(data: any): string {
+  const lines: string[] = [];
+
+  if (data.cp1TotalStudents > 0) {
+    const cp1FailCount = data.cp1TotalStudents - data.cp1PassCount;
+    lines.push('**CP1:**');
+    lines.push(`- Tỷ lệ học viên đạt/không đạt: ${data.cp1PassCount}/${cp1FailCount} (${data.cp1PassRate.toFixed(1)}% đạt).`);
+    lines.push(`- Điểm CP1 trung bình: ${data.cp1AverageScore.toFixed(3)}.`);
+    lines.push('');
+  }
+
+  if (data.cp2TotalStudents > 0) {
+    const cp2FailCount = data.cp2TotalStudents - data.cp2PassCount;
+    lines.push('**CP2:**');
+    lines.push(`- Tỷ lệ học viên đạt/không đạt: ${data.cp2PassCount}/${cp2FailCount} (${data.cp2PassRate.toFixed(1)}% đạt).`);
+    lines.push(`- Điểm CP2 trung bình: ${data.cp2AverageScore.toFixed(3)}.`);
+  }
+
+  if (data.cp1TotalStudents === 0 && data.cp2TotalStudents === 0) {
+    lines.push('*Chưa có dữ liệu Checkpoint cho cơ sở này (hoặc chỉ có khối Art).*');
+    lines.push('');
+  }
+
+  lines.push('');
+  lines.push('*Thang đo: Đạt khi điểm CP >= 3.5.*');
+  lines.push('*Lưu ý: Khối Coding có CP ở buổi 5 & 9; Robotics có CP ở buổi 4 & 8; Art chỉ có điểm cuối khoá (Demo).*');
+
+  return lines.join('\n');
+}
+
+function generateDemoContent(data: any): string {
+  const lines: string[] = [];
+
+  if (data.demoTotalStudents > 0) {
+    lines.push('**Chất lượng sản phẩm học viên:**');
+    lines.push(`- Phân hóa (Tốt/Trung bình/Kém): ${data.demoGoodCount}/${data.demoMediumCount}/${data.demoPoorCount}.`);
+    lines.push(`- Điểm Demo trung bình: ${data.demoAverageScore.toFixed(3)}.`);
+    lines.push('');
+  }
+
+  if (data.totalStudentsWithTBCK > 0) {
+    const passedCount = data.rankACount + data.rankBCount + data.rankCCount;
+    const passedRate = ((passedCount / data.totalStudentsWithTBCK) * 100).toFixed(1);
+    lines.push('**Xếp loại TBCK (Tổng hợp CP & Demo):**');
+    lines.push(`- Tổng đạt (A+B+C): ${passedCount}/${data.totalStudentsWithTBCK} (${passedRate}%).`);
+    lines.push(`- Hạng A (Xuất sắc): ${data.rankACount} học viên.`);
+    lines.push(`- Hạng B (Tốt): ${data.rankBCount} học viên.`);
+    lines.push(`- Hạng C (Đạt): ${data.rankCCount} học viên.`);
+    lines.push(`- Hạng D (Chưa đạt): ${data.rankDCount} học viên.`);
+    lines.push('');
+    lines.push('*Thang đo: Tốt (>=4), Trung bình (>=3), Kém (<3).*');
+    lines.push('*Công thức TBCK: 0.4 x (CP1+CP2)/2 + 0.6 x Demo (nếu không có CP thì 100% Demo).*');
+    lines.push('*Xếp hạng: A (TBCK>=4.5 & Demo>=3.5); B (TBCK>=4.0 & Demo>=2.5); C (TBCK>=2.5); D (TBCK<2.5).*');
+  }
+
+  if (data.demoTotalStudents === 0) {
+    lines.push('*Chưa có dữ liệu Demo cho cơ sở này.*');
+  }
+
+  return lines.join('\n');
+}
+
+function generateOperationsContent(data: any): string {
+  const lines: string[] = [];
+  const totalClasses = data.totalClasses || 0;
+  const commentRate = totalClasses > 0 ? ((data.classesWithCommentIssues / totalClasses) * 100).toFixed(1) : '0.0';
+  const attendanceRate = totalClasses > 0 ? ((data.classesWithAttendanceAlerts / totalClasses) * 100).toFixed(1) : '0.0';
+
+  lines.push('**Tỷ lệ dời buổi học:**');
+  lines.push(`- ${data.reschedulingRate.toFixed(1)}% buổi học bị dời lịch.`);
+  lines.push(`- ${data.classesWithRescheduling}/${totalClasses} lớp có buổi bị dời.`);
+  lines.push('- *Tính dựa trên khoảng cách giữa các buổi học (chuẩn 7 ngày).*');
+  lines.push('');
+  lines.push('**Vi phạm nhận xét giáo viên:**');
+  lines.push(`- ${data.classesWithCommentIssues}/${totalClasses} lớp (${commentRate}%) có nhận xét quá ngắn/chưa có.`);
+  lines.push('- *Vi phạm: Chưa có nhận xét, dưới 20 ký tự, trùng nội dung, hoặc quá hạn trên 48 giờ.*');
+  lines.push('');
+  lines.push('**Cảnh báo chuyên cần:**');
+  lines.push(`- ${data.classesWithAttendanceAlerts}/${totalClasses} lớp (${attendanceRate}%) có học viên vi phạm chuyên cần.`);
+  lines.push('- *Cảnh báo: Nghỉ từ 3 buổi hoặc nghỉ liên tiếp từ 2 buổi.*');
+
+  return lines.join('\n');
+}
+
+type ScheduleTypeFilter = typeof TEACHER_SCHEDULE_TYPE_OPTIONS[number]['value'];
+type TeacherScheduleViewMode = typeof TEACHER_SCHEDULE_VIEW_OPTIONS[number]['value'];
+
+function ScheduleTypeSelect({
+  value,
+  onChange,
+}: {
+  value: ScheduleTypeFilter;
+  onChange: (value: ScheduleTypeFilter) => void;
+}) {
+  return (
+    <CompactSelect
+      label={TEACHER_SCHEDULE_LABELS.SCHEDULE_TYPE}
+      value={value}
+      options={TEACHER_SCHEDULE_TYPE_OPTIONS}
+      onChange={onChange}
+    />
+  );
+}
+
+function ScheduleViewToggle({
+  value,
+  onChange,
+}: {
+  value: TeacherScheduleViewMode;
+  onChange: (value: TeacherScheduleViewMode) => void;
+}) {
+  return (
+    <ViewModeToggle
+      value={value}
+      onChange={onChange}
+      options={[
+        { value: 'calendar', label: TEACHER_SCHEDULE_LABELS.CALENDAR_VIEW, icon: <Icon.Calendar /> },
+        { value: 'quality-table', label: TEACHER_SCHEDULE_LABELS.QUALITY_VIEW, icon: <Icon.Table /> },
+      ]}
+    />
+  );
+}
+
+function QualityExemptionRulesPanel({
+  maxSessions,
+  exemptedSessions,
+  onToggleExemptSession,
+  exemptOneOnOneClasses,
+  onExemptOneOnOneClassesChange,
+  holidayPeriods,
+  onAddHolidayPeriod,
+  onRemoveHolidayPeriod,
+  onResetDefaults,
+}: {
+  maxSessions: number;
+  exemptedSessions: number[];
+  onToggleExemptSession: (session: number) => void;
+  exemptOneOnOneClasses: boolean;
+  onExemptOneOnOneClassesChange: (checked: boolean) => void;
+  holidayPeriods: HolidayPeriod[];
+  onAddHolidayPeriod: (period: HolidayPeriod) => void;
+  onRemoveHolidayPeriod: (index: number) => void;
+  onResetDefaults: () => void;
+}) {
+  const [showRules, setShowRules] = useState(true);
+  const [showHolidayForm, setShowHolidayForm] = useState(false);
+  const [newHolidayName, setNewHolidayName] = useState('');
+  const [newHolidayFrom, setNewHolidayFrom] = useState('');
+  const [newHolidayTo, setNewHolidayTo] = useState('');
+
+  const handleSubmitHoliday = () => {
+    if (!newHolidayName.trim() || !newHolidayFrom || !newHolidayTo) return;
+    onAddHolidayPeriod({
+      name: newHolidayName.trim(),
+      from: newHolidayFrom,
+      to: newHolidayTo,
+    });
+    setNewHolidayName('');
+    setNewHolidayFrom('');
+    setNewHolidayTo('');
+    setShowHolidayForm(false);
+  };
+
+  return (
+    <div className={styles.chartsSection}>
+      <div className={styles.chartsSectionHeader} onClick={() => setShowRules(v => !v)} style={{ cursor: 'pointer' }}>
+        <div className={styles.chartsSectionTitle}>
+          <Icon.Settings />
+          Quy tắc miễn trừ
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+          <button
+            type="button"
+            className={styles.chartToggle}
+            aria-label="Khôi phục quy tắc mặc định"
+            title="Khôi phục quy tắc mặc định"
+            onClick={(event) => {
+              event.stopPropagation();
+              onResetDefaults();
+            }}
+          >
+            <Icon.Refresh />
+          </button>
+          <span style={{ transform: showRules ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s ease', display: 'flex' }}>
+            <Icon.ChevronDown />
+          </span>
+        </div>
+      </div>
+
+      <AnimatePresence initial={false}>
+        {showRules && (
+          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} style={{ overflow: 'hidden' }}>
+            <div style={{ padding: 'var(--space-4)' }}>
+              <div style={{ marginBottom: 'var(--space-4)' }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 'var(--space-1)' }}>
+                  Miễn trừ nhận xét
+                </div>
+                <div style={{ color: 'var(--text-quaternary)', fontSize: 12, lineHeight: 1.5, marginBottom: 'var(--space-2)' }}>
+                  Học viên vắng ở các buổi được chọn sẽ không bắt buộc có nhận xét.
+                </div>
+                  <div className={styles.reasonList}>
+                    {Array.from({ length: maxSessions }, (_, i) => i + 1).map(session => (
+                      <label key={session} className={styles.reasonItem}>
+                        <input
+                          type="checkbox"
+                          className={styles.reasonCheckbox}
+                          checked={exemptedSessions.includes(session)}
+                          onChange={() => onToggleExemptSession(session)}
+                        />
+                        <div className={styles.reasonLabel}>
+                          <span>Buổi {session}</span>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+              </div>
+
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 'var(--space-1)' }}>
+                  Miễn trừ lịch học
+                </div>
+                <div style={{ color: 'var(--text-quaternary)', fontSize: 12, lineHeight: 1.5, marginBottom: 'var(--space-2)' }}>
+                  Lớp 1:1 và khoảng cách giữa hai buổi học đi qua kỳ nghỉ sẽ không bị tính là dời lịch bất thường.
+                </div>
+
+                  <label className={styles.reasonItem}>
+                    <input
+                      type="checkbox"
+                      className={styles.reasonCheckbox}
+                      checked={exemptOneOnOneClasses}
+                      onChange={(event) => onExemptOneOnOneClassesChange(event.target.checked)}
+                    />
+                    <div className={styles.reasonLabel}>
+                      <span>Lớp (1:1)</span>
+                    </div>
+                  </label>
+
+                  <div style={{ marginTop: 'var(--space-4)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-2)', marginBottom: 'var(--space-2)' }}>
+                      <span style={{ fontSize: 13, fontWeight: 590, color: 'var(--text-primary)' }}>Khoảng thời gian nghỉ</span>
+                      <button type="button" className={styles.chartToggle} onClick={() => setShowHolidayForm(v => !v)}>
+                        {showHolidayForm ? 'Đóng' : 'Thêm'}
+                      </button>
+                    </div>
+
+                    <AnimatePresence initial={false}>
+                      {showHolidayForm && (
+                        <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} style={{ overflow: 'hidden' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)', padding: 'var(--space-3)', background: 'var(--bg-elevated)', border: '1px solid var(--border-primary)', borderRadius: '6px', marginBottom: 'var(--space-3)' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
+                              <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-quaternary)', textTransform: 'uppercase' }}>Tên dịp nghỉ</span>
+                              <input className={styles.dateInput} type="text" value={newHolidayName} onChange={(event) => setNewHolidayName(event.target.value)} placeholder="Ví dụ: Tết Nguyên Đán" style={{ width: '100%' }} />
+                            </div>
+                            
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
+                              <DateRangeInput
+                                dateFrom={newHolidayFrom}
+                                dateTo={newHolidayTo}
+                                onDateFromChange={setNewHolidayFrom}
+                                onDateToChange={setNewHolidayTo}
+                                label="Chọn thời gian nghỉ"
+                                layout="vertical"
+                                menuPosition="fixed"
+                              />
+                            </div>
+
+                            <button type="button" className={styles.primaryBtn} onClick={handleSubmitHoliday} style={{ marginTop: 'var(--space-2)', justifyContent: 'center' }}>
+                              <Icon.Plus />
+                              Thêm khoảng nghỉ
+                            </button>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+
+                    <div className={styles.reasonList}>
+                      {holidayPeriods.map((period, index) => (
+                        <div key={`${period.name}-${period.from}-${period.to}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-2)', padding: 'var(--space-2) var(--space-3)', background: 'var(--bg-elevated)', borderRadius: '4px' }}>
+                          <div>
+                            <div style={{ fontSize: 12, fontWeight: 590, color: 'var(--text-primary)' }}>{period.name}</div>
+                            <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                              {new Date(period.from).toLocaleDateString('vi-VN')} - {new Date(period.to).toLocaleDateString('vi-VN')}
+                            </div>
+                          </div>
+                          <button type="button" className={styles.chartToggle} onClick={() => onRemoveHolidayPeriod(index)}>
+                            <Icon.Trash />
+                          </button>
+                        </div>
+                      ))}
+                      {holidayPeriods.length === 0 && (
+                        <div style={{ padding: 'var(--space-3)', color: 'var(--text-quaternary)', fontSize: 12, textAlign: 'center' }}>
+                          Chưa có khoảng nghỉ nào
+                        </div>
+                      )}
+                    </div>
+                  </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function ScheduleFilterSummary({
+  filteredTeacherCount,
+  selectedCentres,
+  selectedCourseLines,
+  selectedTeachers,
+}: {
+  filteredTeacherCount: number;
+  selectedCentres: string[];
+  selectedCourseLines: string[];
+  selectedTeachers: string[];
+}) {
+  const chips = [
+    selectedCentres.length > 0 ? `${selectedCentres.length} cơ sở` : '',
+    selectedCourseLines.length > 0 ? `${selectedCourseLines.length} khối` : '',
+    selectedTeachers.length > 0 ? `${selectedTeachers.length} giáo viên` : '',
+  ].filter(Boolean);
+
+  if (chips.length === 0) return null;
+
+  return (
+    <div className={styles.tableToolbar}>
+      <span className={styles.metricText}>
+        <Icon.Filter />
+        {FORMAT.number(filteredTeacherCount)} {TEACHER_SCHEDULE_LABELS.FILTERED_TEACHERS}
+      </span>
+      <div className={styles.inlineCluster}>
+        {chips.map(chip => (
+          <Badge key={chip} variant="info" size="sm">
+            {chip}
+          </Badge>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function WeekNavigator({
+  weeks,
+  currentWeekIndex,
+  onWeekChange,
+}: {
+  weeks: Date[][];
+  currentWeekIndex: number;
+  onWeekChange: (index: number) => void;
+}) {
+  if (weeks.length <= 1) return null;
+
+  const currentWeek = weeks[currentWeekIndex];
+  const rangeLabel = currentWeek
+    ? `${FORMAT.date(currentWeek[0])} - ${FORMAT.date(currentWeek[6])}`
+    : '';
+
+  const goToToday = () => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const index = weeks.findIndex(week => {
+      const start = new Date(week[0]);
+      const end = new Date(week[6]);
+      start.setHours(0, 0, 0, 0);
+      end.setHours(23, 59, 59, 999);
+      return today >= start && today <= end;
+    });
+    if (index >= 0) onWeekChange(index);
+  };
+
+  return (
+    <div className={styles.weekNavigator}>
+      <button
+        type="button"
+        className={`${styles.clearCacheBtn} ${styles.viewModeButton}`}
+        onClick={() => onWeekChange(Math.max(0, currentWeekIndex - 1))}
+        disabled={currentWeekIndex === 0}
+      >
+        <Icon.ChevronLeft />
+        {TEACHER_SCHEDULE_LABELS.PREVIOUS_WEEK}
+      </button>
+
+      <div className={styles.weekNavigatorCenter}>
+        <div className={styles.inlineCluster}>
+          {TEACHER_SCHEDULE_LABELS.WEEK_PREFIX} {currentWeekIndex + 1} / {weeks.length}
+          <FilterChip onClick={goToToday}>
+            {TEACHER_SCHEDULE_LABELS.TODAY}
+          </FilterChip>
+        </div>
+        <span className={styles.metricText}>{rangeLabel}</span>
+      </div>
+
+      <button
+        type="button"
+        className={`${styles.clearCacheBtn} ${styles.viewModeButton}`}
+        onClick={() => onWeekChange(Math.min(weeks.length - 1, currentWeekIndex + 1))}
+        disabled={currentWeekIndex === weeks.length - 1}
+      >
+        {TEACHER_SCHEDULE_LABELS.NEXT_WEEK}
+        <Icon.ChevronRight />
+      </button>
+    </div>
+  );
+}
 
 // ─── Helper Functions ─────────────────────────────────────────────────────────
 
@@ -96,12 +590,185 @@ function calculateSlotHours(startTime: string, endTime: string): number {
 
 function formatTime(isoString: string): string {
   const date = new Date(isoString);
+  if (Number.isNaN(date.getTime())) return '--:--';
   return date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', hour12: false });
 }
 
 function formatDate(isoString: string): string {
   const date = new Date(isoString);
+  if (Number.isNaN(date.getTime())) return 'Chưa có ngày';
   return date.toLocaleDateString('vi-VN');
+}
+
+function formatSessionDateLabel(isoString: string): string {
+  const date = new Date(isoString);
+  if (Number.isNaN(date.getTime())) return 'Chưa có ngày';
+  return date.toLocaleDateString('vi-VN', {
+    weekday: 'short',
+    day: '2-digit',
+    month: '2-digit',
+  });
+}
+
+function getSessionDateTime(slot: Session) {
+  const dateSource = slot.date || slot.startTime;
+  const datePart = dateSource ? dateSource.split('T')[0] : '';
+  const startTime = slot.startTime?.includes('T')
+    ? slot.startTime
+    : `${datePart}T${slot.startTime || '00:00'}:00`;
+  const endTime = slot.endTime?.includes('T')
+    ? slot.endTime
+    : `${datePart}T${slot.endTime || '00:00'}:00`;
+
+  return { startTime, endTime };
+}
+
+function getSlotSessionIndex(cls: Class, slot?: Pick<TeacherScheduleSlot, 'sessionId' | 'startTime'> | null): number | null {
+  if (!slot) return null;
+  const sessions = [...(cls.slots || [])].sort((a, b) =>
+    new Date(a.date || a.startTime).getTime() - new Date(b.date || b.startTime).getTime()
+  );
+
+  if (slot.sessionId) {
+    const byId = sessions.findIndex(session => session._id === slot.sessionId);
+    if (byId >= 0) return byId;
+  }
+
+  if (slot.startTime) {
+    const slotTime = new Date(slot.startTime).getTime();
+    const byTime = sessions.findIndex(session => {
+      const { startTime } = getSessionDateTime(session);
+      return Math.abs(new Date(startTime).getTime() - slotTime) < 60_000;
+    });
+    if (byTime >= 0) return byTime;
+  }
+
+  return null;
+}
+
+function pickDefaultClassSessionIndex(cls: Class): number {
+  const sessions = [...(cls.slots || [])]
+    .map((slot, index) => ({ slot, index, time: new Date(slot.date || slot.startTime).getTime() }))
+    .filter(item => Number.isFinite(item.time))
+    .sort((a, b) => a.time - b.time);
+
+  if (sessions.length === 0) return 0;
+
+  const now = Date.now();
+  const latestPast = [...sessions].reverse().find(item => item.time <= now);
+  return (latestPast || sessions[0]).index;
+}
+
+function createScheduleSlotFromClassSession(cls: Class, sessionIndex: number): TeacherScheduleSlot | null {
+  const sessions = [...(cls.slots || [])].sort((a, b) =>
+    new Date(a.date || a.startTime).getTime() - new Date(b.date || b.startTime).getTime()
+  );
+  const session = sessions[sessionIndex];
+  if (!session) return null;
+
+  const { startTime, endTime } = getSessionDateTime(session);
+  const sessionTeachers = (session.teachers?.length ? session.teachers : cls.teachers || [])
+    .filter(item => item.isActive !== false)
+    .map(item => ({
+      teacher: item.teacher,
+      roleId: item.role?.id,
+      roleName: item.role?.name,
+      roleShortName: item.role?.shortName,
+    }));
+
+  return {
+    id: session._id,
+    type: 'class',
+    teacher: sessionTeachers[0]?.teacher,
+    sessionTeachers,
+    startTime,
+    endTime,
+    className: cls.name,
+    classId: cls.id,
+    classSiteId: cls.classSites?.[0]?._id,
+    sessionId: session._id,
+    centreId: cls.centre?.id || '',
+    centreName: cls.centre?.name || '',
+    centreShortName: cls.centre?.shortName || '',
+    courseLine: cls.course?.courseLine?.name || cls.course?.shortName,
+    status: cls.status,
+    studentCount: cls.students?.filter(student => student.activeInClass).length,
+    sessionHour: session.sessionHour,
+  };
+}
+
+function normalizeDateOnly(value?: string | null): Date | null {
+  if (!value) return null;
+  const datePart = value.includes('T') ? value.split('T')[0] : value;
+  const date = new Date(`${datePart}T00:00:00`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function doDateRangesOverlap(aStart: Date, aEnd: Date, bStart: Date, bEnd: Date): boolean {
+  return aStart <= bEnd && bStart <= aEnd;
+}
+
+function mergeHolidayPeriods(periods: HolidayPeriod[]): HolidayPeriod[] {
+  const merged = new Map<string, HolidayPeriod>();
+  [...DEFAULT_HOLIDAY_PERIODS, ...periods].forEach(period => {
+    merged.set(`${period.name}-${period.from}-${period.to}`, period);
+  });
+  return Array.from(merged.values());
+}
+
+function sessionGapCrossesHoliday(
+  sessions: AnalyzedClassForQuality['reschedulingAnalysis']['sessions'],
+  sessionIndex: number,
+  holidayPeriods: HolidayPeriod[],
+): boolean {
+  const session = sessions[sessionIndex];
+  const previous = sessionIndex > 0 ? sessions[sessionIndex - 1] : null;
+  const currentDate = normalizeDateOnly(session?.date);
+  const previousDate = normalizeDateOnly(previous?.date);
+  if (!currentDate || !previousDate) return false;
+
+  const gapStart = previousDate <= currentDate ? previousDate : currentDate;
+  const gapEnd = previousDate <= currentDate ? currentDate : previousDate;
+
+  return holidayPeriods.some(period => {
+    const holidayStart = normalizeDateOnly(period.from);
+    const holidayEnd = normalizeDateOnly(period.to);
+    return holidayStart && holidayEnd && doDateRangesOverlap(gapStart, gapEnd, holidayStart, holidayEnd);
+  });
+}
+
+function applyQualityExemptionRules(
+  analysis: AnalyzedClassForQuality,
+  options: {
+    exemptOneOnOneClasses: boolean;
+    holidayPeriods: HolidayPeriod[];
+  },
+): AnalyzedClassForQuality {
+  const shouldExemptClass = options.exemptOneOnOneClasses && analysis.cls.name.includes('(1:1)');
+  const sessions = analysis.reschedulingAnalysis.sessions.map((session, index) => {
+    const isHolidayExempt = session.isRescheduled && sessionGapCrossesHoliday(
+      analysis.reschedulingAnalysis.sessions,
+      index,
+      options.holidayPeriods,
+    );
+
+    if (!shouldExemptClass && !isHolidayExempt) return session;
+
+    return {
+      ...session,
+      isRescheduled: false,
+      reschedulingType: 'normal' as const,
+    };
+  });
+
+  return {
+    ...analysis,
+    reschedulingAnalysis: {
+      ...analysis.reschedulingAnalysis,
+      rescheduledSessions: sessions.filter(session => session.isRescheduled).length,
+      sessions,
+    },
+  };
 }
 
 function getWeekDates(startDate: Date): Date[] {
@@ -514,7 +1181,7 @@ const CalendarGrid = memo(({
   onToggleCollapse
 }: {
   calendarData: any[];
-  slotMap: Map<string, any[]>;
+  slotMap: Map<string, Map<string, any[]>>;
   TIME_SLOTS: Array<{ time: string; label: string }>;
   onCardClick: (slot: any) => void;
   collapsedTimeSlots: Set<string>;
@@ -577,109 +1244,84 @@ const CalendarGrid = memo(({
               {isCollapsed ? (
                 calendarData.map((day) => {
                   const key = `${day.date}-${timeSlot.time}`;
-                  const daySlots = slotMap.get(key) || [];
-                  
-                  const slotsByCentre = daySlots.reduce((acc, slot) => {
-                    const k = slot.centreShortName;
-                    if (!acc[k]) acc[k] = [];
-                    acc[k].push(slot);
-                    return acc;
-                  }, {} as Record<string, any[]>);
-                  
-                  Object.keys(slotsByCentre).forEach(centreName => {
-                    slotsByCentre[centreName].sort((a: any, b: any) => {
-                      if (a.type !== b.type) return a.type === 'class' ? -1 : 1;
-                      
-                      const getCourseOrder = (slot: any) => {
-                        if (!slot.courseLine) return 4;
-                        const line = slot.courseLine.toUpperCase();
-                        if (line.match(/C4K|C4T|JSA|JSI|PYA|WEB|GAME|PRO|CODING|PYTHON|CSB|CSI|1:1/)) return 1;
-                        if (line.includes('ROB')) return 2;
-                        if (line.includes('ART') || line.includes('XART')) return 3;
-                        return 4;
-                      };
-                      const orderA = getCourseOrder(a);
-                      const orderB = getCourseOrder(b);
-                      if (orderA !== orderB) return orderA - orderB;
-                      return (a.className || '').localeCompare(b.className || '');
-                    });
-                  });
+                  const centreMap = slotMap.get(key); // Map<string, any[]>
+                  const hasSlots = centreMap && centreMap.size > 0;
 
                   return (
                     <div key={`${day.date}-${timeSlot.time}-collapsed`} style={{ 
                       background: 'var(--bg-surface)', 
-                      padding: daySlots.length > 0 ? 'var(--space-2)' : '24px 0 0 0', 
+                      padding: hasSlots ? 'var(--space-2)' : '24px 0 0 0', 
                       display: 'flex', 
                       flexDirection: 'column', 
                       alignItems: 'flex-start',
-                      justifyContent: daySlots.length > 0 ? 'flex-start' : 'center',
+                      justifyContent: hasSlots ? 'flex-start' : 'center',
                       gap: 8, 
                       minHeight: 44,
                     }}>
-                      {daySlots.length > 0 ? (
-                        Object.entries(slotsByCentre).map(([centreName, centreSlots]: [string, any]) => {
-                          return (
-                            <div key={centreName} style={{ display: 'flex', flexDirection: 'column', gap: 4, width: '100%' }}>
-                              <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-quaternary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                                {centreName}
-                              </div>
-                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                                {centreSlots.map((slot: any, i: number) => {
-                                  const isOfficeHour = slot.type === 'office-hour';
-                                  let accentColor = 'var(--text-tertiary)';
-                                  let borderColor = 'var(--border-primary)';
-                                  let bgColor = 'var(--bg-elevated)';
-                                  
-                                  if (slot.status === 'ABANDONED') {
-                                    accentColor = 'var(--text-quaternary)';
-                                    borderColor = 'var(--border-secondary)';
-                                  } else if (slot.courseLine) {
-                                    const courseLineUpper = slot.courseLine.toUpperCase();
-                                    if (courseLineUpper.includes('ART') || courseLineUpper.includes('XART')) {
-                                      accentColor = isOfficeHour ? '#fbbf24' : '#b45309';
-                                      borderColor = isOfficeHour ? '#fde68a' : 'var(--status-warning)';
-                                    } else if (courseLineUpper.includes('ROB')) {
-                                      accentColor = isOfficeHour ? '#60a5fa' : '#1e40af';
-                                      borderColor = isOfficeHour ? 'rgba(94, 106, 210, 0.3)' : 'var(--brand-indigo)';
-                                    } else if (courseLineUpper.match(/C4K|C4T|JSA|JSI|PYA|WEB|GAME|PRO|CODING|PYTHON|CSB|CSI|1:1/)) {
-                                      accentColor = isOfficeHour ? '#34d399' : '#047857';
-                                      borderColor = isOfficeHour ? '#a7f3d0' : 'var(--status-emerald)';
-                                    }
-                                  }
-                                  
-                                  const name = slot.className || (isOfficeHour ? 'Ca trực' : 'Lớp học');
-                                  
-                                  return (
-                                    <div 
-                                      key={i} 
-                                      onClick={() => onCardClick(slot)}
-                                      style={{ 
-                                        fontSize: 9, 
-                                        fontWeight: 600, 
-                                        padding: '2px 5px', 
-                                        borderRadius: 'var(--radius-micro)', 
-                                        background: bgColor, 
-                                        border: `1px solid ${borderColor}`,
-                                        borderLeft: `3px solid ${accentColor}`,
-                                        color: 'var(--text-primary)',
-                                        whiteSpace: 'nowrap',
-                                        overflow: 'hidden',
-                                        textOverflow: 'ellipsis',
-                                        maxWidth: '100%',
-                                        boxShadow: '0 1px 2px rgba(0,0,0,0.02)',
-                                        cursor: 'pointer'
-                                      }} 
-                                      title={name}
-                                    >
-                                      {name}
-                                    </div>
-                                  );
-                                })}
-                              </div>
+                      {centreMap && Array.from(centreMap.entries()).map(([centreName, centreSlots]: [string, any[]]) => {
+                        return (
+                          <div key={centreName} style={{ display: 'flex', flexDirection: 'column', gap: 4, width: '100%' }}>
+                            <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-quaternary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                              {centreName}
                             </div>
-                          );
-                        })
-                      ) : (
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                              {centreSlots.map((slot: any, i: number) => {
+                                const isOfficeHour = slot.type === 'office-hour';
+                                let accentColor = 'var(--text-tertiary)';
+                                let borderColor = 'var(--border-primary)';
+                                let bgColor = 'var(--bg-elevated)';
+                                
+                                if (slot.status === 'ABANDONED') {
+                                  accentColor = 'var(--text-quaternary)';
+                                  borderColor = 'var(--border-secondary)';
+                                } else if (slot.courseLine) {
+                                  const courseLineUpper = slot.courseLine.toUpperCase();
+                                  if (courseLineUpper.includes('ART') || courseLineUpper.includes('XART')) {
+                                    accentColor = isOfficeHour ? '#fbbf24' : '#b45309';
+                                    borderColor = isOfficeHour ? '#fde68a' : 'var(--status-warning)';
+                                  } else if (courseLineUpper.includes('ROB')) {
+                                    accentColor = isOfficeHour ? '#60a5fa' : '#1e40af';
+                                    borderColor = isOfficeHour ? 'rgba(94, 106, 210, 0.3)' : 'var(--brand-indigo)';
+                                  } else if (courseLineUpper.match(/C4K|C4T|JSA|JSI|PYA|WEB|GAME|PRO|CODING|PYTHON|CSB|CSI|1:1/)) {
+                                    accentColor = isOfficeHour ? '#34d399' : '#047857';
+                                    borderColor = isOfficeHour ? '#a7f3d0' : 'var(--status-emerald)';
+                                  }
+                                }
+                                
+                                const name = slot.className || (isOfficeHour ? 'Ca trực' : 'Lớp học');
+                                
+                                return (
+                                  <div 
+                                    key={i} 
+                                    onClick={() => onCardClick(slot)}
+                                    style={{ 
+                                      fontSize: 9, 
+                                      fontWeight: 600, 
+                                      padding: '2px 5px', 
+                                      borderRadius: 'var(--radius-micro)', 
+                                      background: bgColor, 
+                                      border: `1px solid ${borderColor}`,
+                                      borderLeft: `3px solid ${accentColor}`,
+                                      color: 'var(--text-primary)',
+                                      whiteSpace: 'nowrap',
+                                      overflow: 'hidden',
+                                      textOverflow: 'ellipsis',
+                                      maxWidth: '100%',
+                                      boxShadow: '0 1px 2px rgba(0,0,0,0.02)',
+                                      cursor: 'pointer'
+                                    }} 
+                                    title={name}
+                                  >
+                                    {name}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
+                      
+                      {!hasSlots && (
                         <div style={{ width: '100%', display: 'flex', justifyContent: 'center' }}>
                           <span style={{ color: 'var(--text-quaternary)', fontSize: 11 }}>—</span>
                         </div>
@@ -691,92 +1333,66 @@ const CalendarGrid = memo(({
                 calendarData.map((day) => {
                   // O(1) lookup from pre-computed map instead of O(n) flatMap each cell
                   const key = `${day.date}-${timeSlot.time}`;
-                  const daySlots = slotMap.get(key) || [];
+                  const centreMap = slotMap.get(key); // Map<string, any[]>
+                  const hasSlots = centreMap && centreMap.size > 0;
 
-                // Group by centre, then sort by course line within each centre
-                const slotsByCentre = daySlots.reduce((acc, slot) => {
-                  const k = slot.centreShortName;
-                  if (!acc[k]) acc[k] = [];
-                  acc[k].push(slot);
-                  return acc;
-                }, {} as Record<string, any[]>);
-                
-                Object.keys(slotsByCentre).forEach(centreName => {
-                  slotsByCentre[centreName].sort((a: any, b: any) => {
-                    if (a.type !== b.type) return a.type === 'class' ? -1 : 1;
-                    
-                    const getCourseOrder = (slot: typeof daySlots[0]) => {
-                      if (!slot.courseLine) return 4;
-                      const line = slot.courseLine.toUpperCase();
-                      if (line.match(/C4K|C4T|JSA|JSI|PYA|WEB|GAME|PRO|CODING|PYTHON|CSB|CSI|1:1/)) return 1;
-                      if (line.includes('ROB')) return 2;
-                      if (line.includes('ART') || line.includes('XART')) return 3;
-                      return 4;
-                    };
-                    const orderA = getCourseOrder(a);
-                    const orderB = getCourseOrder(b);
-                    if (orderA !== orderB) return orderA - orderB;
-                    return (a.className || '').localeCompare(b.className || '');
-                  });
-                });
-
-                return (
-                  <div key={`${day.date}-${timeSlot.time}`} style={{ background: 'var(--bg-surface)', padding: 'var(--space-2)', minHeight: 120, display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-                    {Object.entries(slotsByCentre).map(([centreName, centreSlots]: [string, any]) => (
-                      <div key={centreName} style={{ 
-                        background: 'var(--bg-elevated)', 
-                        border: '1px solid var(--border-primary)', 
-                        borderRadius: "var(--radius-comfortable)", 
-                        padding: '8px',
-                        boxShadow: '0 1px 2px rgba(0,0,0,0.02)'
-                      }}>
-                        {/* Centre Label */}
-                        <div style={{ 
-                          fontSize: 10, 
-                          fontWeight: 600, 
-                          color: 'var(--text-secondary)', 
-                          marginBottom: 'var(--space-2)', 
-                          textTransform: 'uppercase', 
-                          letterSpacing: '0.04em',
-                          paddingBottom: 6,
-                          borderBottom: '1px solid var(--border-secondary)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 'var(--space-1)'
+                  return (
+                    <div key={`${day.date}-${timeSlot.time}`} style={{ background: 'var(--bg-surface)', padding: 'var(--space-2)', minHeight: 120, display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                      {centreMap && Array.from(centreMap.entries()).map(([centreName, centreSlots]: [string, any[]]) => (
+                        <div key={centreName} style={{ 
+                          background: 'var(--bg-elevated)', 
+                          border: '1px solid var(--border-primary)', 
+                          borderRadius: "var(--radius-comfortable)", 
+                          padding: '8px',
+                          boxShadow: '0 1px 2px rgba(0,0,0,0.02)'
                         }}>
-                          <Icon.MapPin size={10} />
-                          <span>{centreName}</span>
-                          <span style={{ 
-                            fontSize: 9, 
-                            fontWeight: 510, 
-                            color: 'var(--text-quaternary)',
-                            background: 'var(--bg-surface)',
-                            padding: '1px 5px',
-                            borderRadius: 'var(--radius-standard)',
-                            marginLeft: 'auto'
+                          {/* Centre Label */}
+                          <div style={{ 
+                            fontSize: 10, 
+                            fontWeight: 600, 
+                            color: 'var(--text-secondary)', 
+                            marginBottom: 'var(--space-2)', 
+                            textTransform: 'uppercase', 
+                            letterSpacing: '0.04em',
+                            paddingBottom: 6,
+                            borderBottom: '1px solid var(--border-secondary)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 'var(--space-1)'
                           }}>
-                            {centreSlots.length}
-                          </span>
+                            <Icon.MapPin size={10} />
+                            <span>{centreName}</span>
+                            <span style={{ 
+                              fontSize: 9, 
+                              fontWeight: 510, 
+                              color: 'var(--text-quaternary)',
+                              background: 'var(--bg-surface)',
+                              padding: '1px 5px',
+                              borderRadius: 'var(--radius-standard)',
+                              marginLeft: 'auto'
+                            }}>
+                              {centreSlots.length}
+                            </span>
+                          </div>
+                          
+                          {/* Class Cards */}
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
+                            {centreSlots.map((slot: any) => (
+                              <ClassCard key={slot.id || `${slot.className}-${slot.teacher?.id}`} slot={slot} onClick={() => onCardClick(slot)} />
+                            ))}
+                          </div>
                         </div>
-                        
-                        {/* Class Cards */}
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
-                          {centreSlots.map((slot: any) => (
-                            <ClassCard key={slot.id} slot={slot} onClick={() => onCardClick(slot)} />
-                          ))}
+                      ))}
+                      
+                      {/* Empty State */}
+                      {!hasSlots && (
+                        <div style={{ display: 'flex', alignItems: 'flex-start', paddingTop: 24, justifyContent: 'center', height: '100%', color: 'var(--text-quaternary)', fontSize: 11 }}>
+                          —
                         </div>
-                      </div>
-                    ))}
-                    
-                    {/* Empty State */}
-                    {daySlots.length === 0 && (
-                      <div style={{ display: 'flex', alignItems: 'flex-start', paddingTop: 24, justifyContent: 'center', height: '100%', color: 'var(--text-quaternary)', fontSize: 11 }}>
-                        —
-                      </div>
-                    )}
-                  </div>
-                );
-              }))}
+                      )}
+                    </div>
+                  );
+                }))}
             </Fragment>
           );
           })}
@@ -1635,7 +2251,6 @@ export default function TeacherSchedulePage() {
 
   // ── Data states ─────────────────────────────────────────────────────────────
   const [centres, setCentres] = useState<Centre[]>([]);
-  const [teachers, setTeachers] = useState<LmsUser[]>([]);
   const [schedules, setSchedules] = useState<TeacherSchedule[]>([]);
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState({ loaded: 0, total: 100 });
@@ -1657,23 +2272,22 @@ export default function TeacherSchedulePage() {
   // Shared filter state (synced across pages)
   const [fromDate, toDate, setFromDate, setToDate, datesLoaded] = useSharedDateRange();
   const [selectedCentres, setSelectedCentres, centresLoaded] = useSharedCentres();
+  const [isPending, startTransition] = useTransition();
 
   // ── Filter states ──────────────────────────────────────────────────────────
   const [selectedTeachers, setSelectedTeachers] = useState<string[]>([]);
   const [selectedCourseLines, setSelectedCourseLines] = useState<string[]>([]);
-  const [viewMode, setViewMode] = useState<'calendar' | 'table-all' | 'table-individual'>('calendar');
+  const [loadedCentreIds, setLoadedCentreIds] = useState<string[]>([]);
+  const [calendarCentreFilter, setCalendarCentreFilter] = useState<string[]>([]);
+  const [viewMode, setViewMode] = useState<TeacherScheduleViewMode>('calendar');
   
   // ── Week navigation state ──────────────────────────────────────────────────
   const [currentWeekIndex, setCurrentWeekIndex] = useState(0);
   
   // ── Table filter states ────────────────────────────────────────────────────
   const [searchTerm, setSearchTerm] = useState('');
-  const [tableSelectedCentres, setTableSelectedCentres] = useState<string[]>([]);
-  const [tableSelectedCourseLines, setTableSelectedCourseLines] = useState<string[]>([]);
-  const [tableSelectedTypes, setTableSelectedTypes] = useState<string[]>([]); // Lớp học / Ca trải nghiệm
-  const [tableSelectedStatuses, setTableSelectedStatuses] = useState<string[]>([]); // Trạng thái lớp
-  const [tableProgressFrom, setTableProgressFrom] = useState<string>(''); // Tiến độ từ buổi
-  const [tableProgressTo, setTableProgressTo] = useState<string>(''); // Tiến độ đến buổi
+  const [scheduleTypeFilter, setScheduleTypeFilter] = useState<ScheduleTypeFilter>('ALL');
+  const [rawClasses, setRawClasses] = useState<Class[]>([]);
   
   // ── Calendar collapse states ───────────────────────────────────────────────
   const [collapsedTimeSlots, setCollapsedTimeSlots] = useState<Set<string>>(new Set());
@@ -1692,6 +2306,18 @@ export default function TeacherSchedulePage() {
   const [calculatingTeachers, setCalculatingTeachers] = useState(false);
   const [addingSupplyTeacherId, setAddingSupplyTeacherId] = useState<string | null>(null);
   const [reloadingClassId, setReloadingClassId] = useState<string | null>(null);
+
+  // ── Class quality states ────────────────────────────────────────────────────
+  const [classQualityData, setClassQualityData] = useState<AnalyzedClassForQuality | null>(null);
+  const [classQualityLoading, setClassQualityLoading] = useState(false);
+  const [qualityTab, setQualityTab] = useState<'comments' | 'attendance' | 'rescheduling'>('comments');
+  const [commentModalSessionIndex, setCommentModalSessionIndex] = useState<number | null>(null);
+  const [exemptedSessions, setExemptedSessions] = useState<number[]>(DEFAULT_EXEMPTED_SESSIONS);
+  const [exemptOneOnOneClasses, setExemptOneOnOneClasses] = useState(true);
+  const [holidayPeriods, setHolidayPeriods] = useState<HolidayPeriod[]>(DEFAULT_HOLIDAY_PERIODS);
+  const [showSummarySection, setShowSummarySection] = useState(true);
+  const [selectedSummaryCentre, setSelectedSummaryCentre] = useState<string>('all');
+  const [summaryStatusFilter, setSummaryStatusFilter] = useState<string[]>([]);
   
   // ── Group expansion states for teacher categorization ──────────────────────
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
@@ -1699,8 +2325,25 @@ export default function TeacherSchedulePage() {
     'no-match': false   // Default collapse "Khối khác"
   });
   const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({});
+  const [coordinationCourseLineFilter, setCoordinationCourseLineFilter] = useState<string[]>([]);
 
   const abortRef = useRef<AbortController | null>(null);
+  const [isHydrated, setIsHydrated] = useState(false);
+  const [loadedRange, setLoadedRange] = useState<{ from: string; to: string } | null>(null);
+  const analyzedClassesRef = useRef<AnalyzedClassForQuality[]>([]);
+
+  // ── Sync with URL parameters ──────────────────────────────────────────────
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const view = params.get('view');
+    const tab = params.get('tab');
+    
+    if (view === 'quality-table') setViewMode('quality-table');
+    if (tab === 'violations') setQualityTab('comments');
+    if (tab === 'attendance') setQualityTab('attendance');
+    if (tab === 'rescheduling') setQualityTab('rescheduling');
+  }, []);
 
   // ── Toggle collapse handler ────────────────────────────────────────────────
   const toggleTimeSlotCollapse = useCallback((timeSlotKey: string) => {
@@ -1715,16 +2358,57 @@ export default function TeacherSchedulePage() {
     });
   }, []);
 
+  const handleToggleExemptSession = useCallback((sessionNumber: number) => {
+    setExemptedSessions(prev => (
+      prev.includes(sessionNumber)
+        ? prev.filter(session => session !== sessionNumber)
+        : [...prev, sessionNumber].sort((a, b) => a - b)
+    ));
+  }, []);
+
+  const handleAddHolidayPeriod = useCallback((period: HolidayPeriod) => {
+    if (!period.name || !period.from || !period.to) {
+      addToast('Vui lòng nhập đầy đủ tên và khoảng ngày nghỉ', 'info');
+      return;
+    }
+    if (period.from > period.to) {
+      addToast('Ngày bắt đầu phải trước ngày kết thúc', 'error');
+      return;
+    }
+
+    setHolidayPeriods(prev => [...prev, period]);
+    addToast('Đã thêm khoảng thời gian nghỉ', 'success');
+  }, [addToast]);
+
+  const handleRemoveHolidayPeriod = useCallback((index: number) => {
+    setHolidayPeriods(prev => prev.filter((_, itemIndex) => itemIndex !== index));
+    addToast('Đã xoá khoảng thời gian nghỉ', 'success');
+  }, [addToast]);
+
+  const handleResetQualityRules = useCallback(() => {
+    setExemptedSessions(DEFAULT_EXEMPTED_SESSIONS);
+    setExemptOneOnOneClasses(true);
+    setHolidayPeriods(DEFAULT_HOLIDAY_PERIODS);
+    addToast('Đã khôi phục quy tắc miễn trừ mặc định', 'success');
+  }, [addToast]);
+
   // ── Data Fetching ───────────────────────────────────────────────────────────
   const loadData = useCallback(async (start: string, end: string) => {
-    if (!start || !end) return;
+    if (!start || !end) {
+      addToast(MESSAGES.ERROR.DATE_RANGE_REQUIRED, 'error');
+      return;
+    }
+    if (start > end) {
+      addToast(MESSAGES.ERROR.DATE_RANGE_INVALID, 'error');
+      return;
+    }
     if (abortRef.current) abortRef.current.abort();
     abortRef.current = new AbortController();
     const signal = abortRef.current.signal;
 
     setLoading(true);
     setProgress({ loaded: 0, total: 100 });
-    setSchedules([]);
+    const teacherIds = selectedTeachers.length > 0 ? [...selectedTeachers] : undefined;
 
     try {
       // Load centres if not loaded
@@ -1736,32 +2420,75 @@ export default function TeacherSchedulePage() {
         setCentres(_centres);
         await setCache(CACHE_KEYS.CENTRES, { centres: _centres });
       }
+      const centreIds = selectedCentres.length > 0
+        ? [...selectedCentres]
+        : _centres.map(centre => centre.id);
+      setLoadedCentreIds(centreIds);
+      setCalendarCentreFilter([]);
 
       // Note: Teachers are loaded on-demand in coordination panel, not here
       // to avoid API issues with empty search
 
-      // Fetch schedules
-      const dateFrom = new Date(start);
-      const dateTo = new Date(end);
-      dateTo.setHours(23, 59, 59, 999);
+      // We need to fetch the FULL MONTH of classes so that `haveSlotIn` doesn't truncate the `slots` array
+      // to just 1 week. If it truncates to 1 week, we miss Checkpoint sessions (which only happen every ~5 sessions),
+      // and Checkpoint analysis will fail. This matches how `/admin/class-quality` works perfectly.
+      const monthDateFrom = new Date(fromDate);
+      const monthDateTo = new Date(toDate);
+      monthDateTo.setHours(23, 59, 59, 999);
+      const monthHaveSlotIn = haveSlotInToUtcRange(monthDateFrom, monthDateTo);
 
-      const result = await fetchTeacherSchedules(
-        dateFrom,
-        dateTo,
-        selectedCentres.length > 0 ? selectedCentres : undefined,
-        selectedTeachers.length > 0 ? selectedTeachers : undefined,
+      const scopedClasses = await fetchAllClasses(
+        {
+          haveSlotIn: { from: monthHaveSlotIn.from, to: monthHaveSlotIn.to },
+          statusIn: ['RUNNING', 'FINISHED'],
+          ...(centreIds && centreIds.length > 0 ? { centres: centreIds } : {}),
+        },
         (loaded, total) => setProgress({ loaded, total: total || Math.max(loaded, 1) }),
         signal
       );
 
+      // But we ONLY fetch and display teacher schedules for the SPECIFIC WEEK the user is viewing
+      const weekDateFrom = new Date(start);
+      const weekDateTo = new Date(end);
+      weekDateTo.setHours(23, 59, 59, 999);
+
+      const { schedules: result, rawClasses: classes } = await fetchTeacherSchedules(
+        weekDateFrom,
+        weekDateTo,
+        centreIds,
+        teacherIds,
+        (loaded, total) => setProgress({ loaded, total: total || Math.max(loaded, 1) }),
+        signal,
+        scopedClasses
+      );
+
+      console.log(`[TeacherSchedule] Loaded ${scopedClasses.length} scoped classes and ${classes.length} filtered classes for week ${start} to ${end}`);
+      if (classes.length > 0) {
+        console.log(`[TeacherSchedule] Example class ${classes[0].name} has ${classes[0].slots?.length} slots`);
+      }
+
       if (!signal.aborted) {
+        setLoadedRange({ from: start, to: end });
         setSchedules(result);
+        setRawClasses(classes);
         await setCache(CACHE_KEYS.TEACHER_SCHEDULE, {
+          version: TEACHER_SCHEDULE_CACHE_VERSION,
           schedules: result,
+          rawClasses: classes,
+          dateFrom: start,
+          dateTo: end,
+          selectedCentres: centreIds || [],
+          loadedCentreIds: centreIds,
+          calendarCentreFilter: [],
           selectedTeachers,
+          selectedCourseLines,
+          scheduleTypeFilter,
+          exemptedSessions,
+          exemptOneOnOneClasses,
+          holidayPeriods,
           timestamp: Date.now(),
         });
-        addToast(`Đã tải ${result.length} lịch giáo viên`, 'success');
+        addToast(MESSAGES.LOADING.SUCCESS(result.length, ENTITIES.TEACHERS), 'success');
       }
     } catch (err: any) {
       if (!signal.aborted) {
@@ -1774,7 +2501,7 @@ export default function TeacherSchedulePage() {
         setProgress({ loaded: 100, total: 100 });
       }
     }
-  }, [centres, teachers, selectedCentres, selectedTeachers, addToast]);
+  }, [centres, selectedCentres, selectedTeachers, selectedCourseLines, scheduleTypeFilter, exemptedSessions, exemptOneOnOneClasses, holidayPeriods, addToast]);
 
   const handleCancelFetch = () => {
     if (abortRef.current) {
@@ -1809,6 +2536,10 @@ export default function TeacherSchedulePage() {
     // Clear previous results and show loading
     setAvailableTeachers([]);
     setCalculatingTeachers(true);
+    setClassQualityData(null);
+    setCommentModalSessionIndex(null);
+    setQualityTab('comments');
+    setCoordinationCourseLineFilter([]);
     
     // Open modal immediately
     setShowCoordinationPanel(true);
@@ -1838,7 +2569,40 @@ export default function TeacherSchedulePage() {
         addToast('Không có giáo viên rảnh trong khung giờ này', 'info');
       }
     }, 0);
-  }, [schedules, addToast]);
+
+    // Fetch full class quality data if this is a class slot
+    if (slot.classId) {
+      const existingAnalysis = analyzedClassesRef.current.find(a => a.cls.id === slot.classId);
+      if (existingAnalysis) {
+        setCommentModalSessionIndex(getSlotSessionIndex(existingAnalysis.cls, slot));
+        setClassQualityData(existingAnalysis);
+        return;
+      }
+
+      const existingClass = rawClasses.find(c => c.id === slot.classId);
+      if (existingClass) {
+        setCommentModalSessionIndex(getSlotSessionIndex(existingClass, slot));
+        setClassQualityData(applyQualityExemptionRules(
+          analyzeClassQuality(existingClass, exemptedSessions),
+          { exemptOneOnOneClasses, holidayPeriods },
+        ));
+      } else {
+        setClassQualityLoading(true);
+        fetchClassByIdFull(slot.classId)
+          .then(cls => {
+            if (cls) {
+              setCommentModalSessionIndex(getSlotSessionIndex(cls, slot));
+              setClassQualityData(applyQualityExemptionRules(
+                analyzeClassQuality(cls, exemptedSessions),
+                { exemptOneOnOneClasses, holidayPeriods },
+              ));
+            }
+          })
+          .catch(err => console.error('Error fetching class quality:', err))
+          .finally(() => setClassQualityLoading(false));
+      }
+    }
+  }, [schedules, rawClasses, exemptedSessions, exemptOneOnOneClasses, holidayPeriods, addToast]);
 
   const handleSearchAvailableTeachers = useCallback(() => {
     if (!coordinationRequest.date || !coordinationRequest.centreId) {
@@ -1890,7 +2654,16 @@ export default function TeacherSchedulePage() {
       setSchedules(nextSchedules);
       await setCache(CACHE_KEYS.TEACHER_SCHEDULE, {
         schedules: nextSchedules,
+        rawClasses,
+        dateFrom: fromDate,
+        dateTo: toDate,
+        selectedCentres,
         selectedTeachers,
+        selectedCourseLines,
+        scheduleTypeFilter,
+        exemptedSessions,
+        exemptOneOnOneClasses,
+        holidayPeriods,
         timestamp: Date.now(),
       });
 
@@ -1923,7 +2696,7 @@ export default function TeacherSchedulePage() {
     } finally {
       setReloadingClassId(null);
     }
-  }, [addToast, schedules, selectedSlot, selectedTeachers]);
+  }, [addToast, schedules, rawClasses, fromDate, toDate, selectedCentres, selectedSlot, selectedTeachers, selectedCourseLines, scheduleTypeFilter, exemptedSessions, exemptOneOnOneClasses, holidayPeriods]);
 
   const handleAddSupplyTeacher = useCallback(async (ta: TeacherAvailability) => {
     if (!selectedSlot) return;
@@ -2004,13 +2777,51 @@ export default function TeacherSchedulePage() {
         const cached = await getCache(CACHE_KEYS.TEACHER_SCHEDULE);
         if (cached) {
           if (cached.selectedTeachers) setSelectedTeachers(cached.selectedTeachers);
-          if (cached.schedules) setSchedules(cached.schedules);
+          if (cached.selectedCourseLines) setSelectedCourseLines(cached.selectedCourseLines);
+          if (cached.loadedCentreIds) setLoadedCentreIds(cached.loadedCentreIds);
+          if (cached.calendarCentreFilter) setCalendarCentreFilter(cached.calendarCentreFilter);
+          if (cached.scheduleTypeFilter) setScheduleTypeFilter(cached.scheduleTypeFilter);
+          if (cached.exemptedSessions) setExemptedSessions(cached.exemptedSessions);
+          if (cached.exemptOneOnOneClasses !== undefined) setExemptOneOnOneClasses(cached.exemptOneOnOneClasses);
+          if (cached.holidayPeriods) setHolidayPeriods(mergeHolidayPeriods(cached.holidayPeriods));
+          if (cached.loadedRange) setLoadedRange(cached.loadedRange);
+          if (cached.version === TEACHER_SCHEDULE_CACHE_VERSION) {
+            if (cached.schedules) setSchedules(cached.schedules);
+            if (cached.rawClasses) setRawClasses(cached.rawClasses);
+          }
         }
       } catch (e) {
         console.error('State parse error', e);
+      } finally {
+        setIsHydrated(true);
       }
     })();
   }, []);
+
+  useEffect(() => {
+    if (!isHydrated) return;
+    if (loading) return;
+    
+    // Only save if we have data or if it's a clear state
+    // This prevents overwriting the cache with empty arrays during initial hydration
+    if (schedules.length === 0 && rawClasses.length === 0 && loadedCentreIds === undefined) return;
+
+    setCache(CACHE_KEYS.TEACHER_SCHEDULE, {
+      version: TEACHER_SCHEDULE_CACHE_VERSION,
+      schedules,
+      rawClasses,
+      loadedCentreIds,
+      calendarCentreFilter,
+      selectedTeachers,
+      selectedCourseLines,
+      scheduleTypeFilter,
+      exemptedSessions,
+      exemptOneOnOneClasses,
+      holidayPeriods,
+      loadedRange,
+      timestamp: Date.now(),
+    }).catch(console.error);
+  }, [loading, schedules, rawClasses, loadedCentreIds, calendarCentreFilter, selectedTeachers, selectedCourseLines, scheduleTypeFilter, exemptedSessions, exemptOneOnOneClasses, holidayPeriods, loadedRange]);
 
   // ── Derived Data ────────────────────────────────────────────────────────────
   // No longer need centreOptions - using CentreSelect component
@@ -2025,14 +2836,13 @@ export default function TeacherSchedulePage() {
     return Array.from(ids);
   }, [schedules]);
 
+  const calendarFilterCentreIds = useMemo(() => (
+    loadedCentreIds.length > 0 ? loadedCentreIds : tableCentreIds
+  ), [loadedCentreIds, tableCentreIds]);
+
   // Course line options for filtering
   const courseLineOptions: SelectOption[] = useMemo(() => {
-    return [
-      { value: 'Coding', label: 'Coding' },
-      { value: 'Robotics', label: 'Robotics' },
-      { value: 'Art', label: 'Art' },
-      { value: 'Others', label: 'Others' },
-    ];
+    return COURSES.map(course => ({ value: course, label: course }));
   }, []);
 
   // Generate teacher options from schedules data
@@ -2050,34 +2860,177 @@ export default function TeacherSchedulePage() {
 
   // ── Filtered Schedules for Calendar ────────────────────────────────────────
   const filteredSchedulesForCalendar = useMemo(() => {
-    return schedules.filter(schedule => {
-      const matchesCentre = selectedCentres.length === 0 || 
-        schedule.slots.some(slot => selectedCentres.includes(slot.centreId));
-      
-      const matchesTeacher = selectedTeachers.length === 0 || 
-        selectedTeachers.includes(schedule.teacher.id);
-      
-      const matchesCourseLine = selectedCourseLines.length === 0 ||
-        schedule.slots.some(slot => {
+    return schedules.map(schedule => {
+      const filteredSlots = schedule.slots.filter(slot => {
+        if (calendarCentreFilter.length > 0 && !calendarCentreFilter.includes(slot.centreId)) return false;
+        if (selectedCourseLines.length > 0) {
           const category = getCourseLineCategory(slot.courseLine, slot.className);
-          return selectedCourseLines.includes(category);
-        });
+          if (!selectedCourseLines.includes(category)) return false;
+        }
+        if (scheduleTypeFilter === 'CLASS' && slot.type !== 'class') return false;
+        if (scheduleTypeFilter === 'TRIAL' && slot.type !== 'office-hour') return false;
+        return true;
+      });
       
-      return matchesCentre && matchesTeacher && matchesCourseLine;
+      return { ...schedule, slots: filteredSlots };
+    }).filter(schedule => {
+      if (schedule.slots.length === 0) return false;
+      if (selectedTeachers.length > 0 && !selectedTeachers.includes(schedule.teacher.id)) return false;
+      return true;
     });
-  }, [schedules, selectedCentres, selectedTeachers, selectedCourseLines]);
+  }, [schedules, calendarCentreFilter, selectedTeachers, selectedCourseLines, scheduleTypeFilter]);
+
+  // ── Analyzed Classes for Quality Table ───────────────────────────────────────
+  const analyzedClasses = useMemo(() => {
+    return rawClasses.map(cls => applyQualityExemptionRules(
+      analyzeClassQuality(cls, exemptedSessions),
+      { exemptOneOnOneClasses, holidayPeriods },
+    ));
+  }, [rawClasses, exemptedSessions, exemptOneOnOneClasses, holidayPeriods]);
+
+  useEffect(() => {
+    analyzedClassesRef.current = analyzedClasses;
+  }, [analyzedClasses]);
+
+  const normalQualityClasses = useMemo(() => {
+    return analyzedClasses.filter(a => {
+      const status = a.cls.status?.toUpperCase() || '';
+      return status !== 'ABANDONED' && status !== 'REJECTED';
+    });
+  }, [analyzedClasses]);
+
+  const summaryCentreOptions = useMemo(() => {
+    const centresByName = new Set<string>();
+    normalQualityClasses.forEach(a => {
+      const centreName = a.cls.centre?.shortName;
+      if (centreName) centresByName.add(centreName);
+    });
+
+    return [
+      { id: 'all', shortName: 'Tất cả', name: 'Tất cả cơ sở', isActive: true },
+      ...Array.from(centresByName).sort().map(name => ({ id: name, shortName: name, name, isActive: true })),
+    ] as Centre[];
+  }, [normalQualityClasses]);
+
+  const summaryCentreSelectOptions = useMemo<SelectOption[]>(() => {
+    return summaryCentreOptions
+      .filter(centre => centre.id !== 'all')
+      .map(centre => ({
+        value: centre.id,
+        label: `${centre.shortName} – ${centre.name}`,
+        searchTerms: [centre.shortName, centre.name],
+      }));
+  }, [summaryCentreOptions]);
+
+  const summaryFilteredClasses = useMemo(() => {
+    const statusFiltered = summaryStatusFilter.length === 0
+      ? normalQualityClasses
+      : normalQualityClasses.filter(a => summaryStatusFilter.includes(a.cls.status?.toUpperCase() || ''));
+
+    if (!selectedSummaryCentre || selectedSummaryCentre === 'all') return statusFiltered;
+    return statusFiltered.filter(a => a.cls.centre?.shortName === selectedSummaryCentre);
+  }, [normalQualityClasses, selectedSummaryCentre, summaryStatusFilter]);
+
+  const selectedCentreData = useMemo(() => {
+    let cp1Total = 0, cp1Pass = 0, cp1Sum = 0;
+    let cp2Total = 0, cp2Pass = 0, cp2Sum = 0;
+    let demoTotal = 0, demoSum = 0, demoGood = 0, demoMedium = 0, demoPoor = 0;
+    let rankA = 0, rankB = 0, rankC = 0, rankD = 0, totalWithTBCK = 0;
+    let classesWithCommentIssues = 0, classesWithAttendanceAlerts = 0, classesWithRescheduling = 0;
+    let totalRescheduledSessions = 0, totalSessions = 0;
+
+    summaryFilteredClasses.forEach(a => {
+      if (a.cp1Analysis.studentsWithScores > 0) {
+        cp1Total += a.cp1Analysis.studentsWithScores;
+        cp1Pass += a.cp1Analysis.passCount;
+        if (a.cp1Analysis.averageScore !== null) cp1Sum += a.cp1Analysis.averageScore * a.cp1Analysis.studentsWithScores;
+      }
+      if (a.cp2Analysis.studentsWithScores > 0) {
+        cp2Total += a.cp2Analysis.studentsWithScores;
+        cp2Pass += a.cp2Analysis.passCount;
+        if (a.cp2Analysis.averageScore !== null) cp2Sum += a.cp2Analysis.averageScore * a.cp2Analysis.studentsWithScores;
+      }
+      if (a.demoAnalysis.studentsWithScores > 0) {
+        demoTotal += a.demoAnalysis.studentsWithScores;
+        if (a.demoAnalysis.averageScore !== null) demoSum += a.demoAnalysis.averageScore * a.demoAnalysis.studentsWithScores;
+        demoGood += a.demoAnalysis.goodCount;
+        demoMedium += a.demoAnalysis.averageCount;
+        demoPoor += a.demoAnalysis.poorCount;
+      }
+
+      const studentScores = new Map<string, { cp1?: number; cp2?: number; demo?: number }>();
+      a.cp1Analysis.students.forEach((student: any) => {
+        if (student.checkpointScore !== null) studentScores.set(student.studentId, { ...(studentScores.get(student.studentId) || {}), cp1: student.checkpointScore });
+      });
+      a.cp2Analysis.students.forEach((student: any) => {
+        if (student.checkpointScore !== null) studentScores.set(student.studentId, { ...(studentScores.get(student.studentId) || {}), cp2: student.checkpointScore });
+      });
+      a.demoAnalysis.students.forEach((student: any) => {
+        if (student.demoScore !== null) studentScores.set(student.studentId, { ...(studentScores.get(student.studentId) || {}), demo: student.demoScore });
+      });
+      studentScores.forEach(scores => {
+        const tbck = computeTBCK(scores.cp1 ?? null, scores.cp2 ?? null, scores.demo ?? null);
+        if (tbck === null) return;
+        totalWithTBCK++;
+        const { rank } = determineRank(tbck, scores.demo ?? null);
+        if (rank === 'A') rankA++;
+        else if (rank === 'B') rankB++;
+        else if (rank === 'C') rankC++;
+        else if (rank === 'D') rankD++;
+      });
+
+      const commentIssues = a.commentAnalysis.emptyCount + a.commentAnalysis.briefCount + a.commentAnalysis.duplicateCount + a.commentAnalysis.overdueCount;
+      if (commentIssues > 0) classesWithCommentIssues++;
+      if (a.attendanceAnalysis.totalAlerts > 0) classesWithAttendanceAlerts++;
+      if (a.reschedulingAnalysis.rescheduledSessions > 0) classesWithRescheduling++;
+      totalRescheduledSessions += a.reschedulingAnalysis.rescheduledSessions;
+      totalSessions += a.reschedulingAnalysis.totalSessions;
+    });
+
+    return {
+      name: selectedSummaryCentre === 'all' ? 'Tất cả cơ sở' : selectedSummaryCentre,
+      cp1PassRate: cp1Total > 0 ? (cp1Pass / cp1Total) * 100 : 0,
+      cp1AverageScore: cp1Total > 0 ? cp1Sum / cp1Total : 0,
+      cp1TotalStudents: cp1Total,
+      cp1PassCount: cp1Pass,
+      cp2PassRate: cp2Total > 0 ? (cp2Pass / cp2Total) * 100 : 0,
+      cp2AverageScore: cp2Total > 0 ? cp2Sum / cp2Total : 0,
+      cp2TotalStudents: cp2Total,
+      cp2PassCount: cp2Pass,
+      demoPassRate: demoTotal > 0 ? ((demoGood + demoMedium) / demoTotal) * 100 : 0,
+      demoAverageScore: demoTotal > 0 ? demoSum / demoTotal : 0,
+      demoTotalStudents: demoTotal,
+      demoGoodCount: demoGood,
+      demoMediumCount: demoMedium,
+      demoPoorCount: demoPoor,
+      rankACount: rankA,
+      rankBCount: rankB,
+      rankCCount: rankC,
+      rankDCount: rankD,
+      totalStudentsWithTBCK: totalWithTBCK,
+      reschedulingRate: totalSessions > 0 ? (totalRescheduledSessions / totalSessions) * 100 : 0,
+      classesWithCommentIssues,
+      classesWithAttendanceAlerts,
+      classesWithRescheduling,
+      totalClasses: summaryFilteredClasses.length,
+    };
+  }, [selectedSummaryCentre, summaryFilteredClasses]);
+
+  const maxQualitySessions = useMemo(() => {
+    if (rawClasses.length === 0) return 14;
+    return Math.max(...rawClasses.map(cls => cls.numberOfSessions || cls.slots?.length || 14));
+  }, [rawClasses]);
 
   // ── Calendar View Data ──────────────────────────────────────────────────────
   
-  // Calculate all weeks in the date range
   const allWeeks = useMemo(() => {
-    if (!fromDate || !toDate) return [];
+    const rangeFrom = loadedRange?.from || fromDate;
+    const rangeTo = loadedRange?.to || toDate;
+    if (!rangeFrom || !rangeTo) return [];
     
     const weeks: Date[][] = [];
-    const start = new Date(fromDate);
-    const end = new Date(toDate);
-    
-    // Start from Monday of the first week
+    const start = new Date(rangeFrom);
+    const end = new Date(rangeTo);
     const current = new Date(start);
     const day = current.getDay();
     const diff = current.getDate() - day + (day === 0 ? -6 : 1);
@@ -2088,23 +3041,15 @@ export default function TeacherSchedulePage() {
       weeks.push(weekDates);
       current.setDate(current.getDate() + 7);
     }
-    
     return weeks;
-  }, [fromDate, toDate]);
+  }, [loadedRange, fromDate, toDate]);
   
-  // Reset currentWeekIndex when date range changes
   useEffect(() => {
     setCurrentWeekIndex(0);
-  }, [fromDate, toDate]);
+  }, [loadedRange]);
 
-  /**
-   * Dynamically generate TIME_SLOTS from actual schedule data.
-   * Uses exact startTime-endTime pairs. Each unique time range gets its own row.
-   * Only scans slots that fall within the CURRENT WEEK to avoid empty rows.
-   */
   const dynamicTimeSlots = useMemo(() => {
     const timeRangeSet = new Set<string>();
-    
     if (allWeeks.length === 0 || !allWeeks[currentWeekIndex]) return TIME_SLOTS;
     
     const currentWeekDates = allWeeks[currentWeekIndex];
@@ -2116,13 +3061,9 @@ export default function TeacherSchedulePage() {
     filteredSchedulesForCalendar.forEach(schedule => {
       schedule.slots.forEach((slot: any) => {
         const start = new Date(slot.startTime);
-        
-        // Skip slots not in this week
         if (start < weekStart || start > weekEnd) return;
-        
-        const end = new Date(slot.endTime);
-        const startStr = start.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false });
-        const endStr = end.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false });
+        const startStr = slot.startTime.includes('T') ? slot.startTime.split('T')[1].substring(0, 5) : '00:00';
+        const endStr = slot.endTime.includes('T') ? slot.endTime.split('T')[1].substring(0, 5) : '00:00';
         timeRangeSet.add(`${startStr} - ${endStr}`);
       });
     });
@@ -2135,7 +3076,6 @@ export default function TeacherSchedulePage() {
         const [bH, bM] = bStart.split(':').map(Number);
         if (aH !== bH) return aH - bH;
         if (aM !== bM) return aM - bM;
-        // Same start time: sort by end time
         const [aEnd] = a.split(' - ').slice(1);
         const [bEnd] = b.split(' - ').slice(1);
         const [aeH, aeM] = aEnd.split(':').map(Number);
@@ -2156,68 +3096,18 @@ export default function TeacherSchedulePage() {
   }, [filteredSchedulesForCalendar, allWeeks, currentWeekIndex]);
 
   const stats = useMemo(() => {
-    if (viewMode === 'calendar') {
-      // For calendar view, calculate stats based on current week only
-      if (allWeeks.length === 0 || !allWeeks[currentWeekIndex]) {
-        return { totalTeachers: 0, totalSlots: 0, avgSlotsPerTeacher: '0' };
-      }
-      
-      const currentWeekDates = allWeeks[currentWeekIndex];
-      const weekStart = new Date(currentWeekDates[0]);
-      weekStart.setHours(0, 0, 0, 0);
-      const weekEnd = new Date(currentWeekDates[6]);
-      weekEnd.setHours(23, 59, 59, 999);
-      
-      // Count unique teachers and slots for current week only
-      const teachersInWeek = new Set<string>();
-      let slotsInWeek = 0;
-      
-      filteredSchedulesForCalendar.forEach(schedule => {
-        let hasSlotInWeek = false;
-        schedule.slots.forEach(slot => {
-          const slotStartTime = new Date(slot.startTime);
-          if (slotStartTime >= weekStart && slotStartTime <= weekEnd) {
-            slotsInWeek++;
-            hasSlotInWeek = true;
-          }
-        });
-        if (hasSlotInWeek) {
-          teachersInWeek.add(schedule.teacher.id);
-        }
-      });
-      
-      const totalTeachers = teachersInWeek.size;
-      const avgSlotsPerTeacher = totalTeachers > 0 ? (slotsInWeek / totalTeachers).toFixed(1) : '0';
-      
-      return {
-        totalTeachers,
-        totalSlots: slotsInWeek,
-        avgSlotsPerTeacher,
-      };
-    } else {
-      // For table view, use all schedules
-      const totalTeachers = schedules.length;
-      const totalSlots = schedules.reduce((sum, s) => sum + s.slots.length, 0);
-      const avgSlotsPerTeacher = totalTeachers > 0 ? (totalSlots / totalTeachers).toFixed(1) : '0';
-      
-      return {
-        totalTeachers,
-        totalSlots,
-        avgSlotsPerTeacher,
-      };
-    }
-  }, [schedules, filteredSchedulesForCalendar, viewMode, allWeeks, currentWeekIndex]);
+    const totalTeachers = schedules.length;
+    const totalSlots = schedules.reduce((sum, schedule) => sum + schedule.slots.length, 0);
+    const avgSlotsPerTeacher = totalTeachers > 0 ? (totalSlots / totalTeachers).toFixed(1) : '0';
+    return { totalTeachers, totalSlots, avgSlotsPerTeacher };
+  }, [schedules]);
   
-  // Get calendar data for current week
   const calendarData = useMemo(() => {
     if (allWeeks.length === 0) return [];
-    
     const weekDates = allWeeks[currentWeekIndex] || allWeeks[0];
-    
     return weekDates.map(date => {
       const dateStr = date.toISOString().split('T')[0];
       const dayOfWeek = DAYS_OF_WEEK[date.getDay()];
-      
       return {
         date: dateStr,
         dayOfWeek,
@@ -2226,138 +3116,104 @@ export default function TeacherSchedulePage() {
     });
   }, [allWeeks, currentWeekIndex]);
 
-  /**
-   * Pre-compute slot lookup map for CalendarGrid.
-   * Key: `${date}-${startTimeStr}` where startTimeStr matches the start of the TIME_SLOT
-   * Value: array of slots (with teacher injected) that belong to that time row
-   * 
-   * DEDUPLICATION: Each class (className+teacherId+date) only appears in ONE row.
-   * Priority: type 'class' over 'office-hour', then longest duration.
-   * This prevents a class from showing up in both '18:30 - 19:30' and '18:30 - 20:30'.
-   */
   const calendarSlotMap = useMemo(() => {
-    const map = new Map<string, any[]>();
-    
+    const map = new Map<string, Map<string, any[]>>(); 
     if (allWeeks.length === 0 || !allWeeks[currentWeekIndex]) return map;
     
     const currentWeekDates = allWeeks[currentWeekIndex];
-    const weekStart = currentWeekDates[0];
-    const weekEnd = currentWeekDates[6];
+    const weekStartTime = currentWeekDates[0].getTime();
+    const weekEndTime = currentWeekDates[6].getTime() + 86399999; 
     
-    const weekStartTime = new Date(weekStart);
-    weekStartTime.setHours(0, 0, 0, 0);
-    const weekEndTime = new Date(weekEnd);
-    weekEndTime.setHours(23, 59, 59, 999);
-    
-    // Step 1: Collect all slot entries for this week, compute their time range key
     type SlotEntry = { slot: any; teacher: any; slotDate: string; startStr: string; endStr: string; durationMs: number };
-    const allEntries: SlotEntry[] = [];
+    const bestEntryMap = new Map<string, SlotEntry>();
     
     filteredSchedulesForCalendar.forEach(schedule => {
+      const teacher = schedule.teacher;
       schedule.slots.forEach((slot: any) => {
-        const slotStart = new Date(slot.startTime);
-        const slotEnd = new Date(slot.endTime);
+        const slotStartMs = new Date(slot.startTime).getTime();
+        if (slotStartMs < weekStartTime || slotStartMs > weekEndTime) return;
         
-        if (slotStart < weekStartTime || slotStart > weekEndTime) return;
+        const slotEndMs = new Date(slot.endTime).getTime();
+        const slotDate = slot.startTime.split('T')[0];
+        const startStr = slot.startTime.includes('T') ? slot.startTime.split('T')[1].substring(0, 5) : '00:00';
+        const endStr = slot.endTime.includes('T') ? slot.endTime.split('T')[1].substring(0, 5) : '00:00';
+        const durationMs = slotEndMs - slotStartMs;
         
-        const slotDate = slotStart.toISOString().split('T')[0];
-        const startStr = slotStart.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false });
-        const endStr = slotEnd.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false });
-        const durationMs = slotEnd.getTime() - slotStart.getTime();
+        const dedupeKey = slot.type === 'class'
+          ? `class-${slot.classId || slot.className}-${slot.sessionId || startStr}-${slotDate}`
+          : `${slot.className || slot.id}-${teacher.id}-${slotDate}`;
+          
+        const entrySessionTeachers = getSlotSessionTeacherItems({ ...slot, teacher });
+        const existing = bestEntryMap.get(dedupeKey);
         
-        allEntries.push({
-          slot: { ...slot, teacher: schedule.teacher },
-          teacher: schedule.teacher,
-          slotDate,
-          startStr,
-          endStr,
-          durationMs,
-        });
+        if (!existing) {
+          const lecTeacher = entrySessionTeachers.find((item: any) =>
+            (item.roleShortName || item.roleName || '').toUpperCase() === 'LEC'
+          )?.teacher;
+          bestEntryMap.set(dedupeKey, {
+            slot: { ...slot, teacher: lecTeacher || teacher, sessionTeachers: entrySessionTeachers },
+            teacher,
+            slotDate,
+            startStr,
+            endStr,
+            durationMs,
+          });
+        } else {
+          const mergedSessionTeachers = mergeSessionTeachers(existing.slot.sessionTeachers, entrySessionTeachers);
+          const lecTeacher = mergedSessionTeachers.find(item =>
+            (item.roleShortName || item.roleName || '').toUpperCase() === 'LEC'
+          )?.teacher;
+          const entryIsClass = slot.type === 'class';
+          const existingIsClass = existing.slot.type === 'class';
+          if ((entryIsClass && !existingIsClass) || (entryIsClass === existingIsClass && durationMs > existing.durationMs)) {
+            bestEntryMap.set(dedupeKey, {
+              slot: { ...slot, teacher: lecTeacher || teacher, sessionTeachers: mergedSessionTeachers },
+              teacher,
+              slotDate,
+              startStr,
+              endStr,
+              durationMs,
+            });
+          } else {
+            existing.slot.sessionTeachers = mergedSessionTeachers;
+            if (lecTeacher) existing.slot.teacher = lecTeacher;
+          }
+        }
       });
     });
     
-    // Step 2: Deduplicate — each class session appears once, even when it has LEC/TA/SUPPLY.
-    // (prefer type 'class' over 'office-hour', then longest duration)
-    const bestEntryMap = new Map<string, SlotEntry>();
-    
-    allEntries.forEach(entry => {
-      const dedupeKey = entry.slot.type === 'class'
-        ? `class-${entry.slot.classId || entry.slot.className}-${entry.slot.sessionId || entry.startStr}-${entry.slotDate}`
-        : `${entry.slot.className || entry.slot.id}-${entry.teacher.id}-${entry.slotDate}`;
-      const existing = bestEntryMap.get(dedupeKey);
-      const entrySessionTeachers = getSlotSessionTeacherItems(entry.slot);
-      
-      if (!existing) {
-        const lecTeacher = entrySessionTeachers.find((item: NonNullable<TeacherScheduleSlot['sessionTeachers']>[number]) =>
-          (item.roleShortName || item.roleName || '').toUpperCase() === 'LEC'
-        )?.teacher;
-        bestEntryMap.set(dedupeKey, {
-          ...entry,
-          slot: {
-            ...entry.slot,
-            sessionTeachers: entrySessionTeachers,
-            teacher: lecTeacher || entry.slot.teacher || entry.teacher,
-          },
-        });
-      } else {
-        const mergedSessionTeachers = mergeSessionTeachers(
-          existing.slot.sessionTeachers,
-          entrySessionTeachers,
-        );
-        const lecTeacher = mergedSessionTeachers.find(item =>
-          (item.roleShortName || item.roleName || '').toUpperCase() === 'LEC'
-        )?.teacher;
-        const mergedEntry: SlotEntry = {
-          ...existing,
-          durationMs: Math.max(existing.durationMs, entry.durationMs),
-          slot: {
-            ...existing.slot,
-            sessionTeachers: mergedSessionTeachers,
-            teacher: lecTeacher || existing.slot.teacher || entry.slot.teacher || existing.teacher,
-          },
-        };
-
-        // Prefer 'class' type over 'office-hour'
-        const entryIsClass = entry.slot.type === 'class';
-        const existingIsClass = existing.slot.type === 'class';
-        if (entryIsClass && !existingIsClass) {
-          bestEntryMap.set(dedupeKey, {
-            ...entry,
-            slot: {
-              ...entry.slot,
-              sessionTeachers: mergedSessionTeachers,
-              teacher: lecTeacher || entry.slot.teacher || existing.slot.teacher || entry.teacher,
-            },
-          });
-        } else if (entryIsClass === existingIsClass && entry.durationMs > existing.durationMs) {
-          // Same type: prefer longer duration
-          bestEntryMap.set(dedupeKey, {
-            ...entry,
-            slot: {
-              ...entry.slot,
-              sessionTeachers: mergedSessionTeachers,
-              teacher: lecTeacher || entry.slot.teacher || existing.slot.teacher || entry.teacher,
-            },
-          });
-        } else {
-          bestEntryMap.set(dedupeKey, mergedEntry);
-        }
-      }
-    });
-    
-    // Step 3: Build the map from deduplicated entries
     bestEntryMap.forEach(entry => {
-      const key = `${entry.slotDate}-${entry.startStr} - ${entry.endStr}`;
-      if (!map.has(key)) map.set(key, []);
-      map.get(key)!.push(entry.slot);
+      const timeKey = `${entry.startStr} - ${entry.endStr}`;
+      const cellKey = `${entry.slotDate}-${timeKey}`;
+      if (!map.has(cellKey)) map.set(cellKey, new Map<string, any[]>());
+      const centreMap = map.get(cellKey)!;
+      const centreName = entry.slot.centreShortName || 'Unknown';
+      if (!centreMap.has(centreName)) centreMap.set(centreName, []);
+      centreMap.get(centreName)!.push(entry.slot);
     });
     
+    map.forEach(centreMap => {
+      centreMap.forEach(slots => {
+        slots.sort((a, b) => {
+          if (a.type !== b.type) return a.type === 'class' ? -1 : 1;
+          const getOrder = (s: any) => {
+            const line = (s.courseLine || '').toUpperCase();
+            if (line.match(/C4K|C4T|JSA|JSI|PYA|WEB|GAME|PRO|CODING|PYTHON|CSB|CSI|1:1/)) return 1;
+            if (line.includes('ROB')) return 2;
+            if (line.includes('ART') || line.includes('XART')) return 3;
+            return 4;
+          };
+          const orderA = getOrder(a);
+          const orderB = getOrder(b);
+          if (orderA !== orderB) return orderA - orderB;
+          return (a.className || '').localeCompare(b.className || '');
+        });
+      });
+    });
     return map;
-  }, [filteredSchedulesForCalendar, allWeeks, currentWeekIndex, dynamicTimeSlots]);
+  }, [filteredSchedulesForCalendar, allWeeks, currentWeekIndex]);
 
-  // Allowed pages (for navigation filtering)
   const { allowedPages } = useAllowedPages();
-
   const navItems = getNavItemsWithRouter('teacher-schedule', router, allowedPages);
 
   const _displayName = session?.displayName?.trim() || '';
@@ -2369,12 +3225,11 @@ export default function TeacherSchedulePage() {
     <>
       <ToastContainer toasts={toasts} onRemove={removeToast} />
       <PageLayout
-        title="Lịch Giảng dạy"
-        activePage="teacher-schedule"
+        title={TEACHER_SCHEDULE_LABELS.PAGE_TITLE}
+        activePage="operations"
         sidebarOpen={sidebarOpen}
         onSidebarToggle={setSidebarOpen}
       >
-        {/* TOOLBAR */}
         <Toolbar
           centres={centres}
           selectedCentres={selectedCentres}
@@ -2395,293 +3250,134 @@ export default function TeacherSchedulePage() {
           }}
           showRegionQuickSelect={true}
           quickFilterSlots={
-            hasPreferences && (
-              <QuickFilterChips
-                centres={centres}
-                selectedCentres={selectedCentres}
-                onCentresChange={setSelectedCentres}
-                selectedCourses={selectedCourseLines}
-                onCoursesChange={setSelectedCourseLines}
-                showCentres={true}
-                showCourses={true}
+            <div className={styles.toolbarCluster}>
+              {hasPreferences && (
+                <QuickFilterChips
+                  centres={centres}
+                  selectedCentres={selectedCentres}
+                  onCentresChange={setSelectedCentres}
+                  selectedCourses={selectedCourseLines}
+                  onCoursesChange={setSelectedCourseLines}
+                  showCentres={true}
+                  showCourses={true}
+                />
+              )}
+              <ScheduleTypeSelect
+                value={scheduleTypeFilter}
+                onChange={setScheduleTypeFilter}
               />
-            )
+            </div>
           }
         />
 
-        {/* KPI Stats */}
         {(stats.totalTeachers > 0 || loading) && (
           <motion.div className={styles.statsGrid} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
-            <StatCard label="TỔNG GIÁO VIÊN" value={String(stats.totalTeachers)} desc="Giáo viên có lịch" delay={0.0} />
-            <StatCard label="TỔNG CA DẠY" value={String(stats.totalSlots)} desc="Ca dạy trong kỳ" delay={0.07} />
-            <StatCard label="TRUNG BÌNH" value={stats.avgSlotsPerTeacher} desc="Ca/giáo viên" delay={0.14} />
+            <StatCard label={LABELS.TEACHER.toUpperCase()} value={FORMAT.number(stats.totalTeachers)} desc={TEACHER_SCHEDULE_LABELS.TEACHERS_WITH_SCHEDULE} delay={0.0} />
+            <StatCard label={LABELS.TOTAL_SESSIONS.toUpperCase()} value={FORMAT.number(stats.totalSlots)} desc={TEACHER_SCHEDULE_LABELS.TEACHING_SLOTS_IN_RANGE} delay={0.07} />
+            <StatCard label="TRUNG BÌNH" value={stats.avgSlotsPerTeacher} desc={TEACHER_SCHEDULE_LABELS.AVG_SLOTS_PER_TEACHER} delay={0.14} />
           </motion.div>
         )}
 
-        {/* Coordination Panel Button */}
         {schedules.length > 0 && (
-          <div style={{ marginBottom: 16 }}>
-            <button
-              onClick={() => {
-                setSelectedSlot(null);
-                setCoordinationRequest({
-                  date: '',
-                  startTime: '08:00',
-                  endTime: '10:00',
-                  centreId: '',
-                });
-                setAvailableTeachers([]);
-                setUnavailableTeachers([]);
-                setShowCoordinationPanel(true);
-              }}
-              className={styles.primaryBtn}
-              style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-              <Icon.Search />
-              Tìm giáo viên rảnh để điều phối
-            </button>
-          </div>
+          <ScheduleViewToggle value={viewMode} onChange={setViewMode} />
         )}
 
-        {/* Charts */}
-        {schedules.length > 0 && filteredSchedulesForCalendar.length > 0 && (
-          <TeacherStatsChart schedules={filteredSchedulesForCalendar} />
+        {(schedules.length > 0 || loading) && (
+          <AdminToolbar
+            search={searchTerm}
+            onSearchChange={setSearchTerm}
+            searchPlaceholder="Tìm giáo viên (mã, tên, email)..."
+            actionLabel="Tìm giáo viên rảnh"
+            actionIcon={<Icon.Search />}
+            onAction={() => {
+              setSelectedSlot(null);
+              setCoordinationRequest({
+                date: '',
+                startTime: '08:00',
+                endTime: '10:00',
+                centreId: '',
+              });
+              setAvailableTeachers([]);
+              setUnavailableTeachers([]);
+              setShowCoordinationPanel(true);
+            }}
+          />
         )}
 
-        {/* View Mode Toggle */}
-        {schedules.length > 0 && (
-          <div style={{ display: 'flex', gap: 'var(--space-2)', marginBottom: 'var(--space-4)', padding: '0 var(--space-1)' }}>
-            <button
-              className={viewMode === 'calendar' ? styles.primaryBtn : styles.clearCacheBtn}
-              onClick={() => setViewMode('calendar')}
-              style={{ flex: 1, justifyContent: 'center', fontSize: 13, padding: '7px 12px' }}>
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-                <line x1="16" y1="2" x2="16" y2="6" />
-                <line x1="8" y1="2" x2="8" y2="6" />
-                <line x1="3" y1="10" x2="21" y2="10" />
-              </svg>
-              Lịch tuần
-            </button>
-            <button
-              className={viewMode === 'table-all' ? styles.primaryBtn : styles.clearCacheBtn}
-              onClick={() => setViewMode('table-all')}
-              style={{ flex: 1, justifyContent: 'center', fontSize: 13, padding: '7px 12px' }}>
-              <Icon.Table /> Bảng tổng hợp
-            </button>
-          </div>
-        )}
-
-        {/* Calendar View */}
         {viewMode === 'calendar' && schedules.length > 0 && (
-          <>
-            {/* Calendar Toolbar */}
-            <TableToolbar
-              search=""
-              onSearchChange={() => {}}
-              searchPlaceholder=""
-              quickFilterSlots={
-                <>
-                  {/* User preference chips */}
-                  {hasPreferences && (
+          <AdminTableSection
+            title={TEACHER_SCHEDULE_LABELS.WEEKLY_SCHEDULE}
+            count={filteredSchedulesForCalendar.length}
+            loading={loading}
+            progress={progress}
+            isExpanded={true}
+            toolbarSlot={
+              <>
+                <TableToolbar
+                  search={searchTerm}
+                  onSearchChange={(val) => startTransition(() => setSearchTerm(val))}
+                  searchPlaceholder="Tìm giáo viên..."
+                  filterSlots={
+                    <>
+                      <CentreSelect menuPosition="fixed"
+                        centres={centres}
+                        selected={calendarCentreFilter}
+                        onChange={(ids) => startTransition(() => setCalendarCentreFilter(ids))}
+                        filterToIds={calendarFilterCentreIds}
+                        placeholder={LABELS.ALL_CENTRES}
+                        searchable
+                        maxDisplay={1}
+                      />
+                      <MultiSelect menuPosition="fixed"
+                        options={courseLineOptions}
+                        selected={selectedCourseLines}
+                        onChange={(ids) => startTransition(() => setSelectedCourseLines(ids))}
+                        placeholder="Tất cả khối"
+                        maxDisplay={1}
+                      />
+                      <MultiSelect menuPosition="fixed"
+                        options={teacherOptions}
+                        selected={selectedTeachers}
+                        onChange={(ids) => startTransition(() => setSelectedTeachers(ids))}
+                        placeholder="Tất cả giáo viên"
+                        searchable
+                        maxDisplay={1}
+                      />
+                    </>
+                  }
+                  quickFilterSlots={hasPreferences && (
                     <QuickFilterChips
                       centres={centres}
-                      selectedCentres={selectedCentres}
-                      onCentresChange={setSelectedCentres}
+                      selectedCentres={calendarCentreFilter}
+                      onCentresChange={(ids) => startTransition(() => setCalendarCentreFilter(ids.filter(id => calendarFilterCentreIds.includes(id))))}
                       selectedCourses={selectedCourseLines}
-                      onCoursesChange={setSelectedCourseLines}
+                      onCoursesChange={(ids) => startTransition(() => setSelectedCourseLines(ids))}
                       showCentres={true}
                       showCourses={true}
                     />
                   )}
-                </>
-              }
-              filterSlots={
-                <>
-                  {/* 1. Centre */}
-                  <CentreSelect
-                    centres={centres}
-                    selected={selectedCentres}
-                    onChange={setSelectedCentres}
-                    placeholder="Tất cả cơ sở"
-                    searchable
-                    maxDisplay={2}
-                  />
-                  {/* 2. Course Line */}
-                  <MultiSelect
-                    options={courseLineOptions}
-                    selected={selectedCourseLines}
-                    onChange={setSelectedCourseLines}
-                    placeholder="Tất cả khối"
-                    maxDisplay={2}
-                  />
-                  <MultiSelect
-                    options={teacherOptions}
-                    selected={selectedTeachers}
-                    onChange={setSelectedTeachers}
-                    placeholder="Tất cả giáo viên"
-                    searchable
-                    maxDisplay={2}
-                  />
-                </>
-              }
-              hasFilter={selectedCentres.length > 0 || selectedTeachers.length > 0 || selectedCourseLines.length > 0}
-              onClearFilter={() => {
-                setSelectedCentres([]);
-                setSelectedTeachers([]);
-                setSelectedCourseLines([]);
-              }}
-            />
-            
-            {/* Filter Status Indicator */}
-            {(selectedCentres.length > 0 || selectedTeachers.length > 0 || selectedCourseLines.length > 0) && (
-              <div style={{ 
-                padding: '8px 12px', 
-                background: 'rgba(94, 106, 210, 0.1)', 
-                border: '1px solid rgba(94, 106, 210, 0.3)', 
-                borderRadius: "var(--radius-comfortable)", 
-                marginBottom: 'var(--space-4)',
-                fontSize: 12,
-                color: 'var(--brand-indigo)'
-              }}>
-                <Icon.Filter />
-                Đang hiển thị {filteredSchedulesForCalendar.length} giáo viên
-                {selectedCentres.length > 0 && ` tại ${selectedCentres.length} cơ sở`}
-                {selectedCourseLines.length > 0 && ` (${selectedCourseLines.length} khối)`}
-                {selectedTeachers.length > 0 && ` (${selectedTeachers.length} giáo viên được chọn)`}
-              </div>
-            )}
-            
-            <div className={styles.tableSection}>
-              <TableGroupHeader
-                title="Lịch giảng dạy theo tuần"
-                count={filteredSchedulesForCalendar.length}
-                loading={loading}
-                progress={progress}
-                isExpanded={true}
-                onToggle={() => {}}
+                  hasFilter={calendarCentreFilter.length > 0 || selectedTeachers.length > 0 || selectedCourseLines.length > 0 || searchTerm !== ''}
+                  onClearFilter={() => startTransition(() => {
+                    setCalendarCentreFilter([]);
+                    setSelectedTeachers([]);
+                    setSelectedCourseLines([]);
+                    setSearchTerm('');
+                  })}
+                />
+
+                <ScheduleFilterSummary
+                  filteredTeacherCount={filteredSchedulesForCalendar.length}
+                  selectedCentres={calendarCentreFilter}
+                  selectedCourseLines={selectedCourseLines}
+                  selectedTeachers={selectedTeachers}
+                />
+              </>
+            }
+          >              <WeekNavigator
+                weeks={allWeeks}
+                currentWeekIndex={currentWeekIndex}
+                onWeekChange={setCurrentWeekIndex}
               />
-              
-              {/* Week Navigation */}
-              {allWeeks.length > 1 && (
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: 'var(--space-4)',
-                  background: 'var(--bg-elevated)',
-                  borderBottom: '1px solid var(--border-primary)',
-                  gap: 'var(--space-3)'
-                }}>
-                  <button
-                    onClick={() => setCurrentWeekIndex(prev => Math.max(0, prev - 1))}
-                    disabled={currentWeekIndex === 0}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 'var(--space-2)',
-                      padding: '8px 12px',
-                      background: currentWeekIndex === 0 ? 'var(--bg-surface)' : 'var(--brand-indigo)',
-                      color: currentWeekIndex === 0 ? 'var(--text-quaternary)' : '#ffffff',
-                      border: '1px solid var(--border-primary)',
-                      borderRadius: "var(--radius-comfortable)",
-                      fontSize: 13,
-                      fontWeight: 510,
-                      cursor: currentWeekIndex === 0 ? 'not-allowed' : 'pointer',
-                      transition: 'all 0.15s ease',
-                      opacity: currentWeekIndex === 0 ? 0.5 : 1
-                    }}
-                  >
-                    <Icon.ChevronLeft size={16} />
-                    Tuần trước
-                  </button>
-                  
-                  <div style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    gap: 'var(--space-1)'
-                  }}>
-                    <div style={{
-                      fontSize: 14,
-                      fontWeight: 590,
-                      color: 'var(--text-primary)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 'var(--space-2)'
-                    }}>
-                      Tuần {currentWeekIndex + 1} / {allWeeks.length}
-                      <button
-                        onClick={() => {
-                          const today = new Date();
-                          today.setHours(0,0,0,0);
-                          const idx = allWeeks.findIndex(w => {
-                            if (!w || !w[0] || !w[6]) return false;
-                            const start = new Date(w[0]); start.setHours(0,0,0,0);
-                            const end = new Date(w[6]); end.setHours(23,59,59,999);
-                            return today >= start && today <= end;
-                          });
-                          if (idx !== -1) setCurrentWeekIndex(idx);
-                        }}
-                        style={{
-                          fontSize: 11,
-                          padding: '2px 8px',
-                          background: 'var(--bg-surface)',
-                          border: '1px solid var(--border-primary)',
-                          borderRadius: 'var(--radius-standard)',
-                          color: 'var(--text-secondary)',
-                          cursor: 'pointer',
-                          fontWeight: 500,
-                          transition: 'all 0.15s ease'
-                        }}
-                        onMouseEnter={e => {
-                          e.currentTarget.style.background = 'var(--bg-elevated)';
-                          e.currentTarget.style.borderColor = 'var(--text-tertiary)';
-                        }}
-                        onMouseLeave={e => {
-                          e.currentTarget.style.background = 'var(--bg-surface)';
-                          e.currentTarget.style.borderColor = 'var(--border-primary)';
-                        }}
-                        title="Chuyển đến tuần hiện tại"
-                      >
-                        Hôm nay
-                      </button>
-                    </div>
-                    {allWeeks[currentWeekIndex] && (
-                      <div style={{
-                        fontSize: 12,
-                        color: 'var(--text-tertiary)'
-                      }}>
-                        {allWeeks[currentWeekIndex][0].toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })}
-                        {' - '}
-                        {allWeeks[currentWeekIndex][6].toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })}
-                      </div>
-                    )}
-                  </div>
-                  
-                  <button
-                    onClick={() => setCurrentWeekIndex(prev => Math.min(allWeeks.length - 1, prev + 1))}
-                    disabled={currentWeekIndex === allWeeks.length - 1}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 'var(--space-2)',
-                      padding: '8px 12px',
-                      background: currentWeekIndex === allWeeks.length - 1 ? 'var(--bg-surface)' : 'var(--brand-indigo)',
-                      color: currentWeekIndex === allWeeks.length - 1 ? 'var(--text-quaternary)' : '#ffffff',
-                      border: '1px solid var(--border-primary)',
-                      borderRadius: "var(--radius-comfortable)",
-                      fontSize: 13,
-                      fontWeight: 510,
-                      cursor: currentWeekIndex === allWeeks.length - 1 ? 'not-allowed' : 'pointer',
-                      transition: 'all 0.15s ease',
-                      opacity: currentWeekIndex === allWeeks.length - 1 ? 0.5 : 1
-                    }}
-                  >
-                    Tuần sau
-                    <Icon.ChevronRight size={16} />
-                  </button>
-                </div>
-              )}
               
               <CalendarGrid
                 calendarData={calendarData}
@@ -2691,84 +3387,174 @@ export default function TeacherSchedulePage() {
                 collapsedTimeSlots={collapsedTimeSlots}
                 onToggleCollapse={toggleTimeSlotCollapse}
               />
-            </div>
-          </>
+          </AdminTableSection>
         )}
 
-        {/* Table View - All Teachers */}
-        {viewMode === 'table-all' && schedules.length > 0 && (
-          <>
-            {/* Table Toolbar */}
-            <TableToolbar
-              search={searchTerm}
-              onSearchChange={setSearchTerm}
-              searchPlaceholder="Tìm giáo viên..."
-              quickFilterSlots={
-                <>
-                  {/* User preference chips */}
-                  {hasPreferences && (
-                    <QuickFilterChips
-                      centres={centres}
-                      selectedCentres={tableSelectedCentres}
-                      onCentresChange={setTableSelectedCentres}
-                      selectedCourses={tableSelectedCourseLines}
-                      onCoursesChange={setTableSelectedCourseLines}
-                      showCentres={true}
-                      showCourses={true}
-                    />
-                  )}
-                </>
-              }
-              filterSlots={
-                  <>
-                    {/* 1. Centre */}
-                    {tableCentreIds.length > 1 && <CentreSelect
-                    centres={centres}
-                    selected={tableSelectedCentres}
-                    onChange={setTableSelectedCentres}
-                    filterToIds={tableCentreIds}
-                    placeholder="Tất cả cơ sở"
-                    searchable
-                    maxDisplay={2}
-                  />}
-                  {/* 2. Course Line */}
-                  {courseLineOptions.length > 1 && (
-                    <MultiSelect
-                      options={courseLineOptions}
-                      selected={tableSelectedCourseLines}
-                      onChange={setTableSelectedCourseLines}
-                      placeholder="Tất cả khối"
-                      maxDisplay={2}
-                    />
-                  )}
-                </>
-              }
-              hasFilter={searchTerm.length > 0 || tableSelectedCentres.length > 0 || tableSelectedCourseLines.length > 0}
-              onClearFilter={() => {
-                setSearchTerm('');
-                setTableSelectedCentres([]);
-                setTableSelectedCourseLines([]);
-              }}
-            />
-            
-            <TableView
-              schedules={schedules}
-              loading={loading}
-              progress={progress}
-              searchTerm={searchTerm}
-              onSearchChange={setSearchTerm}
-              selectedCentres={tableSelectedCentres}
-              onCentresChange={setTableSelectedCentres}
-              centres={centres}
-              selectedCourseLines={tableSelectedCourseLines}
-              onCourseLinesChange={setTableSelectedCourseLines}
-              courseLineOptions={courseLineOptions}
-            />
-          </>
+        {/* Quality Table View */}
+        {viewMode === 'quality-table' && (
+          <div style={{ marginTop: 'var(--space-2)' }}>
+            {!loading && rawClasses.length === 0 ? (
+              <EmptyState
+                icon={<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                </svg>}
+                title={TEACHER_SCHEDULE_LABELS.EMPTY_QUALITY_TITLE}
+                subtitle={TEACHER_SCHEDULE_LABELS.EMPTY_SUBTITLE}
+              />
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+                {normalQualityClasses.length > 0 && (
+                  <div>
+                    <div className={styles.tableSection} id="section-quality-summary">
+                      <TableGroupHeader
+                        title="Tóm tắt Phân tích Chất lượng"
+                        count={selectedCentreData.totalClasses}
+                        isExpanded={showSummarySection}
+                        onToggle={() => setShowSummarySection(!showSummarySection)}
+                      />
+                      <AnimatePresence initial={false}>
+                        {showSummarySection && (
+                          <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: 'auto', opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            style={{ overflow: 'hidden' }}
+                          >
+                            <div style={{ padding: 'var(--space-4)', display: 'grid', gap: 'var(--space-4)' }}>
+                              <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', flexWrap: 'wrap' }}>
+                                <MultiSelect
+                                  menuPosition="fixed"
+                                  options={summaryCentreSelectOptions}
+                                  selected={selectedSummaryCentre === 'all' ? [] : [selectedSummaryCentre]}
+                                  onChange={(selected) => setSelectedSummaryCentre(selected[selected.length - 1] || 'all')}
+                                  placeholder="Tất cả cơ sở"
+                                  searchable
+                                  maxDisplay={1}
+                                />
+                                <MultiSelect
+                                  menuPosition="fixed"
+                                  options={[
+                                    { value: 'RUNNING', label: 'Đang học' },
+                                    { value: 'FINISHED', label: 'Đã kết thúc' },
+                                  ]}
+                                  selected={summaryStatusFilter}
+                                  onChange={setSummaryStatusFilter}
+                                  placeholder="Tất cả trạng thái"
+                                  maxDisplay={2}
+                                />
+                              </div>
+
+                              <div className={styles.summaryBlock}>
+                                <div className={styles.summaryBlockHeader}>
+                                  <div className={styles.summaryBlockTitle}>
+                                    <Icon.ClipboardCheck size={16} /> Điểm Checkpoint (CP1 & CP2)
+                                  </div>
+                                  <CopyButton content={generateCheckpointContent(selectedCentreData)} label="Checkpoint" />
+                                </div>
+                                <div className={styles.summaryBlockContent}>
+                                  {renderSummaryContent(generateCheckpointContent(selectedCentreData))}
+                                </div>
+                              </div>
+
+                              <div className={styles.summaryBlock}>
+                                <div className={styles.summaryBlockHeader}>
+                                  <div className={styles.summaryBlockTitle}>
+                                    <Icon.Target size={16} /> Tiêu chí Cuối khoá (Demo & Xếp loại TBCK)
+                                  </div>
+                                  <CopyButton content={generateDemoContent(selectedCentreData)} label="Demo" />
+                                </div>
+                                <div className={styles.summaryBlockContent}>
+                                  {renderSummaryContent(generateDemoContent(selectedCentreData))}
+                                </div>
+                              </div>
+
+                              <div className={styles.summaryBlock}>
+                                <div className={styles.summaryBlockHeader}>
+                                  <div className={styles.summaryBlockTitle}>
+                                    <Icon.Settings size={16} /> Tiêu chí Vận hành (Ổn định & Rủi ro)
+                                  </div>
+                                  <CopyButton content={generateOperationsContent(selectedCentreData)} label="Vận hành" />
+                                </div>
+                                <div className={styles.summaryBlockContent}>
+                                  {renderSummaryContent(generateOperationsContent(selectedCentreData))}
+                                </div>
+                              </div>
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  </div>
+                )}
+
+                <div className={styles.dashboardLayout}>
+                  <ClassQualityUnifiedTable
+                    classes={analyzedClasses}
+                    search={searchTerm}
+                    onSearchChange={setSearchTerm}
+                    onRowClick={(a) => {
+                      const carriedSlot = selectedSlot?.classId === a.cls.id ? selectedSlot : null;
+                      const sessionIndex = getSlotSessionIndex(a.cls, carriedSlot) ?? pickDefaultClassSessionIndex(a.cls);
+                      const slot = createScheduleSlotFromClassSession(a.cls, sessionIndex);
+                      setSelectedSlot(slot);
+                      setCommentModalSessionIndex(sessionIndex);
+
+                      const dateStr = slot?.startTime ? new Date(slot.startTime).toISOString().split('T')[0] : '';
+                      const startTimeStr = slot?.startTime ? formatTime(slot.startTime) : '';
+                      const endTimeStr = slot?.endTime ? formatTime(slot.endTime) : '';
+                      const centreIdStr = slot?.centreId || a.cls.centre?.id || '';
+
+                      setCoordinationRequest({
+                        date: dateStr,
+                        startTime: startTimeStr,
+                        endTime: endTimeStr,
+                        centreId: centreIdStr,
+                      });
+                      setQualityTab('comments');
+                      setCoordinationCourseLineFilter([]);
+                      setShowCoordinationPanel(true);
+                      setClassQualityData(a);
+                      setClassQualityLoading(false);
+
+                      setCalculatingTeachers(true);
+                      setTimeout(() => {
+                        const available = calculateAvailableTeachers(
+                          schedules,
+                          dateStr,
+                          startTimeStr,
+                          endTimeStr,
+                          centreIdStr,
+                          slot?.courseLine
+                        );
+
+                        const currentTeacherIds = slot ? getSlotTeacherIds(slot) : new Set<string>();
+                        const filteredAvailable = available.filter(ta => !currentTeacherIds.has(ta.teacher.id));
+
+                        setAvailableTeachers(filteredAvailable);
+                        setUnavailableTeachers([]);
+                        setCalculatingTeachers(false);
+                      }, 0);
+                    }}
+                  />
+                  <QualityExemptionRulesPanel
+                    maxSessions={maxQualitySessions}
+                    exemptedSessions={exemptedSessions}
+                    onToggleExemptSession={handleToggleExemptSession}
+                    exemptOneOnOneClasses={exemptOneOnOneClasses}
+                    onExemptOneOnOneClassesChange={setExemptOneOnOneClasses}
+                    holidayPeriods={holidayPeriods}
+                    onAddHolidayPeriod={handleAddHolidayPeriod}
+                    onRemoveHolidayPeriod={handleRemoveHolidayPeriod}
+                    onResetDefaults={handleResetQualityRules}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
         )}
 
         {/* Empty State */}
-        {!loading && schedules.length === 0 && (
+        {viewMode === 'calendar' && !loading && schedules.length === 0 && (
           <EmptyState
             icon={<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
               <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
@@ -2776,8 +3562,8 @@ export default function TeacherSchedulePage() {
               <line x1="8" y1="2" x2="8" y2="6" />
               <line x1="3" y1="10" x2="21" y2="10" />
             </svg>}
-            title="Chưa có dữ liệu lịch giảng dạy"
-            subtitle={'Chọn khoảng thời gian và nhấn "Tải dữ liệu"'}
+            title={TEACHER_SCHEDULE_LABELS.EMPTY_SCHEDULE_TITLE}
+            subtitle={TEACHER_SCHEDULE_LABELS.EMPTY_SUBTITLE}
           />
         )}
 
@@ -2788,6 +3574,7 @@ export default function TeacherSchedulePage() {
           setAvailableTeachers([]);
           setUnavailableTeachers([]);
           setCalculatingTeachers(false);
+          setClassQualityData(null);
         }}>
           <ModalHeader
             title={selectedSlot ? "Tìm giáo viên thay thế" : "Tìm giáo viên rảnh"}
@@ -2806,7 +3593,7 @@ export default function TeacherSchedulePage() {
               maxWidth: '100%',
               width: '100%',
               boxSizing: 'border-box',
-              overflow: 'hidden',
+              overflow: 'visible',
               margin: '0 auto'
             }}>
             <div style={{ 
@@ -2815,7 +3602,7 @@ export default function TeacherSchedulePage() {
               maxWidth: '100%',
               boxSizing: 'border-box',
               minWidth: 0,
-              overflow: 'hidden' // CRITICAL: Prevent children from expanding
+              overflow: 'visible' // CRITICAL: Prevent clipping dropdowns
             }}>
             {/* Selected Slot Info */}
             {selectedSlot && (
@@ -2830,7 +3617,7 @@ export default function TeacherSchedulePage() {
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-2)', marginBottom: 'var(--space-2)' }}>
                   <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>
-                    Thông tin ca hiện tại
+                    {TEACHER_SCHEDULE_LABELS.CURRENT_SLOT_INFO}
                   </div>
                   {selectedSlot.classId && (
                     <button
@@ -2858,17 +3645,17 @@ export default function TeacherSchedulePage() {
                       ) : (
                         <Icon.Refresh size={11} />
                       )}
-                      Reload
+                      {TEACHER_SCHEDULE_LABELS.RELOAD_DATA}
                     </button>
                   )}
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', fontSize: 12 }}>
                   <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? 2 : 8 }}>
-                    <span style={{ color: 'var(--text-tertiary)', minWidth: isMobile ? 'auto' : 100, fontSize: isMobile ? 10 : 12 }}>Lớp/Ca:</span>
+                    <span style={{ color: 'var(--text-tertiary)', minWidth: isMobile ? 'auto' : 100, fontSize: isMobile ? 10 : 12 }}>{LABELS.CLASS_NAME}/Ca:</span>
                     <span style={{ color: 'var(--text-primary)', fontWeight: 510, wordBreak: 'break-word' }}>{selectedSlot.className}</span>
                   </div>
                   <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? 2 : 8 }}>
-                    <span style={{ color: 'var(--text-tertiary)', minWidth: isMobile ? 'auto' : 100, fontSize: isMobile ? 10 : 12 }}>Giáo viên:</span>
+                    <span style={{ color: 'var(--text-tertiary)', minWidth: isMobile ? 'auto' : 100, fontSize: isMobile ? 10 : 12 }}>{LABELS.TEACHER}:</span>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)', minWidth: 0 }}>
                       {getSessionTeacherRoleRows(selectedSlot).map(row => (
                         <span
@@ -2881,18 +3668,18 @@ export default function TeacherSchedulePage() {
                     </div>
                   </div>
                   <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? 2 : 8 }}>
-                    <span style={{ color: 'var(--text-tertiary)', minWidth: isMobile ? 'auto' : 100, fontSize: isMobile ? 10 : 12 }}>Cơ sở:</span>
+                    <span style={{ color: 'var(--text-tertiary)', minWidth: isMobile ? 'auto' : 100, fontSize: isMobile ? 10 : 12 }}>{LABELS.CENTRE}:</span>
                     <span style={{ color: 'var(--text-primary)' }}>{selectedSlot.centreShortName}</span>
                   </div>
                   <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? 2 : 8 }}>
-                    <span style={{ color: 'var(--text-tertiary)', minWidth: isMobile ? 'auto' : 100, fontSize: isMobile ? 10 : 12 }}>Thời gian:</span>
+                    <span style={{ color: 'var(--text-tertiary)', minWidth: isMobile ? 'auto' : 100, fontSize: isMobile ? 10 : 12 }}>{LABELS.TIME}:</span>
                     <span style={{ color: 'var(--text-primary)', wordBreak: 'break-word' }}>
                       {formatDate(selectedSlot.startTime)} • {formatTime(selectedSlot.startTime)} - {formatTime(selectedSlot.endTime)}
                     </span>
                   </div>
                   {selectedSlot.courseLine && (
                     <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? 2 : 8 }}>
-                      <span style={{ color: 'var(--text-tertiary)', minWidth: isMobile ? 'auto' : 100, fontSize: isMobile ? 10 : 12 }}>Khối:</span>
+                      <span style={{ color: 'var(--text-tertiary)', minWidth: isMobile ? 'auto' : 100, fontSize: isMobile ? 10 : 12 }}>{LABELS.COURSE_LINE}:</span>
                       <span style={{ color: 'var(--text-primary)' }}>
                         {getCourseLineCategory(selectedSlot.courseLine, selectedSlot.className)}
                       </span>
@@ -2902,159 +3689,591 @@ export default function TeacherSchedulePage() {
               </div>
             )}
 
+            {/* ── Class Quality Section ──────────────────────────────── */}
+            {selectedSlot?.classId && (
+              <div className={styles.tableSection} style={{ marginBottom: 'var(--space-4)' }}>
+                <TableGroupHeader
+                  title={CLASS_QUALITY_LABELS.PANEL_TITLE}
+                  loading={classQualityLoading}
+                  isExpanded={true}
+                  actionSlot={classQualityData && !classQualityLoading ? (
+                    <div className={styles.toolbarCluster}>
+                      <span className={classQualityData.commentAnalysis.emptyCount + classQualityData.commentAnalysis.briefCount > 0 ? styles.warningText : styles.successText}>
+                        {CLASS_QUALITY_LABELS.TEACHER_COMMENTS}: {classQualityData.commentAnalysis.emptyCount + classQualityData.commentAnalysis.briefCount} lỗi
+                      </span>
+                      <span className={classQualityData.attendanceAnalysis.totalAlerts > 0 ? styles.errorText : styles.successText}>
+                        {CLASS_QUALITY_LABELS.ATTENDANCE}: {classQualityData.attendanceAnalysis.studentsWithAlerts.length} {LABELS.STUDENTS.toLowerCase()}
+                      </span>
+                      <span className={classQualityData.reschedulingAnalysis.rescheduledSessions > 0 ? styles.warningText : styles.successText}>
+                        {CLASS_QUALITY_LABELS.SCHEDULE_CHANGES}: {classQualityData.reschedulingAnalysis.rescheduledSessions} buổi
+                      </span>
+                    </div>
+                  ) : undefined}
+                />
+
+                {/* Tabs */}
+                <div style={{ display: 'flex', borderBottom: '1px solid var(--border-primary)', background: 'var(--bg-surface)' }}>
+                  {(['comments', 'attendance', 'rescheduling'] as const).map(tab => {
+                    const labels = {
+                      comments: CLASS_QUALITY_LABELS.TEACHER_COMMENTS,
+                      attendance: CLASS_QUALITY_LABELS.ATTENDANCE,
+                      rescheduling: CLASS_QUALITY_LABELS.SCHEDULE_CHANGES,
+                    };
+                    const isActive = qualityTab === tab;
+                    return (
+                      <button
+                        key={tab}
+                        onClick={() => setQualityTab(tab)}
+                        style={{
+                          padding: '8px 12px',
+                          fontSize: 12,
+                          fontWeight: isActive ? 600 : 400,
+                          color: isActive ? 'var(--brand-indigo)' : 'var(--text-secondary)',
+                          background: 'transparent',
+                          border: 'none',
+                          borderBottom: isActive ? '2px solid var(--brand-indigo)' : '2px solid transparent',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease',
+                          marginBottom: -1,
+                        }}
+                      >
+                        {labels[tab]}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Tab body */}
+                <div style={{ padding: '12px 14px', maxHeight: 320, overflowY: 'auto' }}>
+                  {classQualityLoading && (
+                    <div style={{ display: 'flex', justifyContent: 'center', padding: 20 }}>
+                      <Spinner size={20} />
+                    </div>
+                  )}
+                  {!classQualityLoading && !classQualityData && (
+                    <div style={{ textAlign: 'center', color: 'var(--text-quaternary)', fontSize: 12, padding: 16 }}>
+                      Không có dữ liệu chất lượng lớp
+                    </div>
+                  )}
+
+                  {/* ── Comments Tab ── */}
+                  {!classQualityLoading && classQualityData && qualityTab === 'comments' && (() => {
+                    const ca = classQualityData.commentAnalysis;
+                    const slots = (classQualityData.cls.slots ?? [])
+                      .filter(s => s.date)
+                      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+                    const sessionStats = slots.map((slot, sessionIndex) => {
+                      const comments = ca.students.map(st => st.comments.find(c => c.sessionIndex === sessionIndex)).filter(Boolean);
+                      const ok = comments.filter(c => c?.status === 'ok').length;
+                      const brief = comments.filter(c => c?.status === 'brief').length;
+                      const empty = comments.filter(c => c?.status === 'empty' || c?.status === 'overdue').length;
+                      const duplicate = comments.filter(c => c?.status === 'duplicate_self' || c?.status === 'duplicate_other').length;
+                      const hasIssues = brief > 0 || empty > 0 || duplicate > 0;
+                      return { slot, sessionIndex, ok, brief, empty, duplicate, hasIssues };
+                    });
+
+                    const issueIndex = sessionStats.findIndex(s => s.hasIssues);
+                    const fallbackIndex = issueIndex >= 0 ? issueIndex : Math.max(ca.passedSlots - 1, 0);
+                    const activeIndex = Math.min(
+                      Math.max(commentModalSessionIndex ?? fallbackIndex, 0),
+                      Math.max(sessionStats.length - 1, 0),
+                    );
+
+                    return (
+                      <div>
+                        {/* Summary row */}
+                        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 10, padding: '8px 10px', background: 'var(--bg-elevated)', borderRadius: 6 }}>
+                          {([
+                            [COMMENT_STATUS_GROUP_LABELS.ok, ca.okCount, 'var(--status-success)'],
+                            [COMMENT_STATUS_GROUP_LABELS.brief, ca.briefCount, 'var(--status-warning)'],
+                            [COMMENT_STATUS_GROUP_LABELS.emptyOrOverdue, ca.emptyCount + ca.overdueCount, 'var(--status-error)'],
+                            [COMMENT_STATUS_GROUP_LABELS.duplicate, ca.duplicateCount, 'var(--status-dark-orange)'],
+                          ] as [string, number, string][]).map(([label, value, color]) => (
+                            <div key={label} style={{ minWidth: 80 }}>
+                              <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginBottom: 2 }}>{label}</div>
+                              <div style={{ fontSize: 13, fontWeight: 590, color }}>{value}</div>
+                            </div>
+                          ))}
+                        </div>
+                        {/* Session mini-tabs */}
+                        <div className={styles.sessionTimeline}>
+                          {sessionStats.map(stat => {
+                            const sessionDate = new Date(stat.slot.date || stat.slot.startTime);
+                            const isUpcoming = sessionDate.getTime() > Date.now();
+                            const isActive = stat.sessionIndex === activeIndex;
+                            return (
+                            <button
+                              key={stat.sessionIndex}
+                              onClick={() => setCommentModalSessionIndex(stat.sessionIndex)}
+                              className={[
+                                styles.sessionButton,
+                                isActive ? styles.sessionButtonActive : '',
+                                !isActive && stat.hasIssues ? styles.sessionButtonIssue : '',
+                                !isActive && isUpcoming ? styles.sessionButtonUpcoming : styles.sessionButtonPast,
+                              ].filter(Boolean).join(' ')}
+                            >
+                              <span className={styles.sessionButtonTitle}>B{stat.sessionIndex + 1}</span>
+                              <span className={styles.sessionButtonMeta}>{formatSessionDateLabel(stat.slot.date || stat.slot.startTime)}</span>
+                            </button>
+                            );
+                          })}
+                        </div>
+                        {/* Student comment table for active session */}
+                        {sessionStats[activeIndex] && (
+                          <div style={{ overflowX: 'auto' }}>
+                            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 6 }}>
+                              Buổi {activeIndex + 1} - {formatSessionDateLabel(sessionStats[activeIndex].slot.date || sessionStats[activeIndex].slot.startTime)}
+                            </div>
+                            <table className={styles.studentTable} style={{ width: '100%', fontSize: 12 }}>
+                              <thead>
+                                <tr>
+                                  <th>Học viên</th>
+                                  <th>Trạng thái</th>
+                                  <th style={{ minWidth: 200 }}>Nội dung</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {ca.students.map(st => {
+                                  const c = st.comments.find(x => x.sessionIndex === activeIndex);
+                                  const status = c?.status ?? 'not_required';
+                                  return (
+                                    <tr key={st.studentId}>
+                                      <td style={{ fontWeight: 510, fontSize: 12 }}>{st.studentName}</td>
+                                      <td><CommentStatusBadge status={status} /></td>
+                                      <td style={{ fontSize: 11, color: c?.text ? 'var(--text-primary)' : 'var(--text-quaternary)', lineHeight: 1.4 }}>
+                                        {c?.text ? (
+                                          <span style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                                            {c.text}
+                                          </span>
+                                        ) : (
+                                          <em>{c ? 'Không có nội dung' : 'Không yêu cầu'}</em>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                  {/* ── Attendance Tab ── */}
+                  {!classQualityLoading && classQualityData && qualityTab === 'attendance' && (() => {
+                    const cls = classQualityData.cls;
+                    const aa = classQualityData.attendanceAnalysis;
+
+                    // Build sorted slot list (all sessions with dates)
+                    const sortedSlots = (cls.slots ?? [])
+                      .filter(s => s.date)
+                      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+                    // Build student map from raw class data (all active students)
+                    const studentMap = new Map<string, { id: string; name: string; sessions: Map<string, { date: string; status: string }> }>();
+                    (cls.students ?? []).forEach(s => {
+                      if (!s.activeInClass) return;
+                      studentMap.set(s.student.id, {
+                        id: s.student.id,
+                        name: s.student.fullName || s.student.customer?.fullName || '',
+                        sessions: new Map(),
+                      });
+                    });
+
+                    sortedSlots.forEach(slot => {
+                      (slot.studentAttendance ?? []).forEach(sa => {
+                        const st = studentMap.get(sa.student.id);
+                        if (!st) return;
+                        st.sessions.set(slot._id, { date: slot.date, status: sa.status || 'UNKNOWN' });
+                      });
+                    });
+
+                    const allStudents = Array.from(studentMap.values());
+                    // Sort: students with alerts first
+                    const alertStudentIds = new Set(aa.studentsWithAlerts.map(s => s.studentId));
+                    allStudents.sort((a, b) => {
+                      const aHasAlert = alertStudentIds.has(a.id) ? 0 : 1;
+                      const bHasAlert = alertStudentIds.has(b.id) ? 0 : 1;
+                      return aHasAlert - bHasAlert;
+                    });
+
+                    // Summary stats
+                    const totalStudents = allStudents.length;
+                    const studentsWithAlerts = aa.studentsWithAlerts.length;
+                    const totalAbsents = aa.studentsWithAlerts.reduce((sum, s) => sum + s.absentCount, 0);
+
+                    return (
+                      <div>
+                        {/* Summary bar */}
+                        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 10, padding: '8px 10px', background: 'var(--bg-elevated)', borderRadius: 6 }}>
+                          <div style={{ minWidth: 80 }}>
+                            <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginBottom: 2 }}>Học viên</div>
+                            <div style={{ fontSize: 13, fontWeight: 590, color: 'var(--text-primary)' }}>{totalStudents}</div>
+                          </div>
+                          <div style={{ minWidth: 80 }}>
+                            <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginBottom: 2 }}>Có cảnh báo</div>
+                            <div style={{ fontSize: 13, fontWeight: 590, color: studentsWithAlerts > 0 ? 'var(--status-error)' : 'var(--status-success)' }}>{studentsWithAlerts}</div>
+                          </div>
+                          <div style={{ minWidth: 80 }}>
+                            <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginBottom: 2 }}>Tổng buổi nghỉ</div>
+                            <div style={{ fontSize: 13, fontWeight: 590, color: totalAbsents > 0 ? 'var(--status-warning)' : 'var(--status-success)' }}>{totalAbsents}</div>
+                          </div>
+                          <div style={{ minWidth: 80 }}>
+                            <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginBottom: 2 }}>Tổng buổi</div>
+                            <div style={{ fontSize: 13, fontWeight: 590, color: 'var(--text-primary)' }}>{sortedSlots.length}</div>
+                          </div>
+                        </div>
+
+                        {allStudents.length === 0 ? (
+                          <div style={{ textAlign: 'center', padding: '16px 0', color: 'var(--text-quaternary)', fontSize: 12 }}>
+                            Chưa có dữ liệu điểm danh
+                          </div>
+                        ) : (
+                          <div style={{ overflowX: 'auto' }}>
+                            <table className={styles.studentTable} style={{ width: '100%', fontSize: 12 }}>
+                              <thead>
+                                <tr>
+                                  <th style={{ minWidth: 120, textAlign: 'left' }}>Học viên</th>
+                                  <th style={{ minWidth: 80 }}>Cảnh báo</th>
+                                  {sortedSlots.map((slot, idx) => {
+                                    const isUpcoming = new Date(slot.date || slot.startTime).getTime() > Date.now();
+                                    const isActive = idx === commentModalSessionIndex;
+                                    return (
+                                    <th key={slot._id} style={{ textAlign: 'center', minWidth: 36, padding: '4px 2px' }}>
+                                      <div style={{ fontSize: 10, fontWeight: 600, color: isActive ? 'var(--brand-indigo)' : undefined, opacity: isUpcoming ? 0.5 : 1 }}>B{idx + 1}</div>
+                                      <div style={{ fontSize: 9, color: 'var(--text-tertiary)', fontWeight: 400 }}>
+                                        {formatSessionDateLabel(slot.date || slot.startTime)}
+                                      </div>
+                                    </th>
+                                    );
+                                  })}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {allStudents.map(st => {
+                                  const alertData = aa.studentsWithAlerts.find(a => a.studentId === st.id);
+                                  const hasAlert = !!alertData;
+                                  return (
+                                    <tr key={st.id} style={{ background: hasAlert ? 'rgba(220,38,38,0.02)' : 'transparent' }}>
+                                      <td style={{ fontWeight: hasAlert ? 590 : 510, fontSize: 12, color: hasAlert ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
+                                        {st.name}
+                                      </td>
+                                      <td>
+                                        {alertData ? (
+                                          <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+                                            {alertData.alerts.includes('frequent_absent') && <AttendanceAlertBadge type="frequent_absent" />}
+                                            {alertData.alerts.includes('consecutive_absent') && <AttendanceAlertBadge type="consecutive_absent" />}
+                                            {alertData.alerts.includes('late_stage_absent') && <AttendanceAlertBadge type="late_stage_absent" />}
+                                          </div>
+                                        ) : (
+                                          <span style={{ fontSize: 10, color: 'var(--status-success)', fontWeight: 600 }}>✓</span>
+                                        )}
+                                      </td>
+                                      {sortedSlots.map((slot, idx) => {
+                                        const sess = st.sessions.get(slot._id);
+                                        const isUpcoming = new Date(slot.date || slot.startTime).getTime() > Date.now();
+                                        return (
+                                        <td key={slot._id} style={{ textAlign: 'center', padding: '2px', opacity: isUpcoming ? 0.45 : 1 }}>
+                                          <AttendanceSessionCell
+                                            status={sess?.status || 'UNKNOWN'}
+                                            index={idx}
+                                            date={slot.date}
+                                            size={26}
+                                          />
+                                        </td>
+                                        );
+                                      })}
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+
+                  {/* ── Rescheduling Tab ── */}
+                  {!classQualityLoading && classQualityData && qualityTab === 'rescheduling' && (() => {
+                    const ra = classQualityData.reschedulingAnalysis;
+                    return (
+                      <div>
+                        {/* Summary */}
+                        <div style={{ display: 'flex', gap: 16, marginBottom: 10, padding: '8px 10px', background: 'var(--bg-elevated)', borderRadius: 6, fontSize: 12 }}>
+                          <div>
+                            <div style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>Tổng buổi</div>
+                            <div style={{ fontWeight: 590 }}>{ra.totalSessions}</div>
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>Buổi bị dời</div>
+                            <div style={{ fontWeight: 590, color: ra.rescheduledSessions > 0 ? 'var(--status-warning)' : 'var(--status-success)' }}>{ra.rescheduledSessions}</div>
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>TB khoảng cách</div>
+                            <div style={{ fontWeight: 590 }}>{ra.averageDaysBetweenSessions.toFixed(1)} ngày</div>
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>Loại lớp</div>
+                            <div style={{ fontWeight: 590 }}>{ra.classType === 'regular' ? 'Thường' : 'Tăng cường'}</div>
+                          </div>
+                        </div>
+                        <div style={{ overflowX: 'auto' }}>
+                          <table className={styles.studentTable} style={{ width: '100%', fontSize: 12 }}>
+                            <thead>
+                              <tr>
+                                <th>Buổi</th>
+                                <th>Ngày học</th>
+                                <th>Khoảng cách</th>
+                                <th>Trạng thái</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {ra.sessions.map(sess => {
+                                const isSameDay = sess.daysSincePrevious === 0;
+                                const isActive = sess.sessionIndex === commentModalSessionIndex;
+                                const isUpcoming = new Date(sess.date).getTime() > Date.now();
+                                return (
+                                  <tr
+                                    key={sess.sessionIndex}
+                                    style={{
+                                      background: isActive ? 'rgba(99,102,241,0.08)' : sess.isRescheduled ? 'rgba(245,158,11,0.04)' : 'transparent',
+                                      opacity: isUpcoming && !isActive ? 0.5 : 1,
+                                    }}
+                                  >
+                                    <td style={{ textAlign: 'center', fontWeight: 510 }}>B{sess.sessionIndex + 1}</td>
+                                    <td style={{ whiteSpace: 'nowrap' }}>{formatSessionDateLabel(sess.date)}</td>
+                                    <td style={{ textAlign: 'center', color: sess.isRescheduled ? 'var(--status-warning)' : 'var(--text-tertiary)' }}>
+                                      {sess.daysSincePrevious !== null ? (isSameDay ? RESCHEDULE_STATUS_LABELS.same_day : `${sess.daysSincePrevious}d`) : '—'}
+                                    </td>
+                                    <td>
+                                      {isSameDay ? (
+                                        <RescheduleStatusBadge status="same_day" />
+                                      ) : sess.isRescheduled ? (
+                                        <RescheduleStatusBadge status={sess.reschedulingType === 'early' ? 'early' : 'late'} />
+                                      ) : (
+                                        <RescheduleStatusBadge status="on_schedule" />
+                                      )}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+            )}
+
             <div style={{ 
-              display: 'grid',
-              gridTemplateColumns: 'minmax(0, 1fr)',
-              gap: 'var(--space-4)', 
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 'var(--space-5)', 
               width: '100%', 
               maxWidth: '100%',
               boxSizing: 'border-box', 
-              minWidth: 0,
-              overflow: 'hidden'
+              minWidth: 0
             }}>
-              {/* Date */}
-              <div style={{ width: '100%', maxWidth: '100%', minWidth: 0, boxSizing: 'border-box', overflow: 'hidden' }}>
-                <label style={{ display: 'block', fontSize: 13, fontWeight: 590, color: 'var(--text-primary)', marginBottom: 'var(--space-2)' }}>
-                  Ngày
-                </label>
-                <input
-                  type="date"
-                  value={coordinationRequest.date}
-                  onChange={(e) => setCoordinationRequest(prev => ({ ...prev, date: e.target.value }))}
-                  style={{
-                    width: '100%',
-                    maxWidth: '100%',
-                    minWidth: 0,
-                    padding: isMobile ? '8px 10px' : '8px 12px',
-                    fontSize: 13,
-                    border: '1px solid var(--border-primary)',
-                    borderRadius: "var(--radius-comfortable)",
-                    background: 'var(--bg-surface)',
-                    color: 'var(--text-primary)',
-                    boxSizing: 'border-box',
-                    display: 'block'
-                  }}
-                />
-              </div>
-
-              {/* Time Range */}
-              <div style={{ 
-                display: 'grid', 
-                gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(0, 1fr) minmax(0, 1fr)', 
-                gap: isMobile ? 16 : 12,
-                rowGap: 16,
-                width: '100%',
+              {/* --- FORM SECTION --- */}
+              {!selectedSlot && (
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'minmax(0, 1fr)',
+                gap: 'var(--space-4)', 
+                width: '100%', 
                 maxWidth: '100%',
-                minWidth: 0,
-                boxSizing: 'border-box',
-                overflow: 'hidden'
+                boxSizing: 'border-box', 
+                minWidth: 0
               }}>
-                <div style={{ width: '100%', maxWidth: '100%', minWidth: 0, boxSizing: 'border-box', overflow: 'hidden' }}>
-                  <label style={{ display: 'block', fontSize: 13, fontWeight: 590, color: 'var(--text-primary)', marginBottom: 'var(--space-2)' }}>
-                    Giờ bắt đầu
-                  </label>
-                  <input
-                    type="time"
-                    value={coordinationRequest.startTime}
-                    onChange={(e) => setCoordinationRequest(prev => ({ ...prev, startTime: e.target.value }))}
-                    style={{
-                      width: '100%',
-                      maxWidth: '100%',
-                      minWidth: 0,
-                      padding: isMobile ? '8px 10px' : '8px 12px',
-                      fontSize: 13,
-                      border: '1px solid var(--border-primary)',
-                      borderRadius: "var(--radius-comfortable)",
-                      background: 'var(--bg-surface)',
-                      color: 'var(--text-primary)',
-                      boxSizing: 'border-box',
-                      display: 'block'
-                    }}
-                  />
-                </div>
-                <div style={{ width: '100%', maxWidth: '100%', minWidth: 0, boxSizing: 'border-box', overflow: 'hidden' }}>
-                  <label style={{ display: 'block', fontSize: 13, fontWeight: 590, color: 'var(--text-primary)', marginBottom: 'var(--space-2)' }}>
-                    Giờ kết thúc
-                  </label>
-                  <input
-                    type="time"
-                    value={coordinationRequest.endTime}
-                    onChange={(e) => setCoordinationRequest(prev => ({ ...prev, endTime: e.target.value }))}
-                    style={{
-                      width: '100%',
-                      maxWidth: '100%',
-                      minWidth: 0,
-                      padding: isMobile ? '8px 10px' : '8px 12px',
-                      fontSize: 13,
-                      border: '1px solid var(--border-primary)',
-                      borderRadius: "var(--radius-comfortable)",
-                      background: 'var(--bg-surface)',
-                      color: 'var(--text-primary)',
-                      boxSizing: 'border-box',
-                      display: 'block'
-                    }}
-                  />
-                </div>
-              </div>
-
-              {/* Centre */}
-              <div style={{ width: '100%', maxWidth: '100%', minWidth: 0, boxSizing: 'border-box', overflow: 'hidden' }}>
-                <label style={{ display: 'block', fontSize: 13, fontWeight: 590, color: 'var(--text-primary)', marginBottom: 'var(--space-2)' }}>
-                  Cơ sở cần điều phối
-                </label>
+                {/* Date */}
                 <div style={{ width: '100%', maxWidth: '100%', minWidth: 0, boxSizing: 'border-box' }}>
-                <CentreSelect
-                  centres={centres}
-                  selected={coordinationRequest.centreId ? [coordinationRequest.centreId] : []}
-                  onChange={(selected) => {
-                    // Only allow single selection
-                    const newCentreId = selected.length > 0 ? selected[selected.length - 1] : '';
-                    setCoordinationRequest(prev => ({ ...prev, centreId: newCentreId }));
-                  }}
-                  placeholder="-- Chọn cơ sở --"
-                  searchable={true}
-                  maxDisplay={1}
-                />
+                  <label style={{ display: 'block', fontSize: 13, fontWeight: 590, color: 'var(--text-primary)', marginBottom: 'var(--space-2)' }}>
+                    Ngày
+                  </label>
+                  <input
+                    type="date"
+                    value={coordinationRequest.date}
+                    onChange={(e) => setCoordinationRequest(prev => ({ ...prev, date: e.target.value }))}
+                    style={{
+                      width: '100%',
+                      maxWidth: '100%',
+                      minWidth: 0,
+                      padding: isMobile ? '8px 10px' : '8px 12px',
+                      fontSize: 13,
+                      border: '1px solid var(--border-primary)',
+                      borderRadius: "var(--radius-comfortable)",
+                      background: 'var(--bg-surface)',
+                      color: 'var(--text-primary)',
+                      boxSizing: 'border-box',
+                      display: 'block'
+                    }}
+                  />
                 </div>
-              </div>
 
-              {/* Search Button - Only show if user modified the form */}
-              <div style={{ width: '100%', maxWidth: '100%', minWidth: 0, boxSizing: 'border-box' }}>
-              <button
-                onClick={handleSearchAvailableTeachers}
-                disabled={calculatingTeachers}
-                className={styles.primaryBtn}
-                style={{
-                  padding: isMobile ? '10px 14px' : '10px 16px',
-                  fontSize: 14,
-                  fontWeight: 600,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
+                {/* Time Range */}
+                <div style={{ 
+                  display: 'grid', 
+                  gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(0, 1fr) minmax(0, 1fr)', 
+                  gap: isMobile ? 16 : 12,
+                  rowGap: 16,
                   width: '100%',
                   maxWidth: '100%',
                   minWidth: 0,
-                  boxSizing: 'border-box',
-                  gap: 'var(--space-2)',
-                  opacity: calculatingTeachers ? 0.6 : 1,
-                  cursor: calculatingTeachers ? 'not-allowed' : 'pointer'
+                  boxSizing: 'border-box'
                 }}>
-                {calculatingTeachers ? (
-                  <>
-                    <Spinner size={14} />
-                    Đang tính toán...
-                  </>
-                ) : (
-                  <>
-                    <Icon.Search />
-                    Tìm lại với thông tin mới
-                  </>
-                )}
-              </button>
-              </div>
+                  <div style={{ width: '100%', maxWidth: '100%', minWidth: 0, boxSizing: 'border-box' }}>
+                    <label style={{ display: 'block', fontSize: 13, fontWeight: 590, color: 'var(--text-primary)', marginBottom: 'var(--space-2)' }}>
+                      Giờ bắt đầu
+                    </label>
+                    <input
+                      type="time"
+                      value={coordinationRequest.startTime}
+                      onChange={(e) => setCoordinationRequest(prev => ({ ...prev, startTime: e.target.value }))}
+                      style={{
+                        width: '100%',
+                        maxWidth: '100%',
+                        minWidth: 0,
+                        padding: isMobile ? '8px 10px' : '8px 12px',
+                        fontSize: 13,
+                        border: '1px solid var(--border-primary)',
+                        borderRadius: "var(--radius-comfortable)",
+                        background: 'var(--bg-surface)',
+                        color: 'var(--text-primary)',
+                        boxSizing: 'border-box',
+                        display: 'block'
+                      }}
+                    />
+                  </div>
+                  <div style={{ width: '100%', maxWidth: '100%', minWidth: 0, boxSizing: 'border-box' }}>
+                    <label style={{ display: 'block', fontSize: 13, fontWeight: 590, color: 'var(--text-primary)', marginBottom: 'var(--space-2)' }}>
+                      Giờ kết thúc
+                    </label>
+                    <input
+                      type="time"
+                      value={coordinationRequest.endTime}
+                      onChange={(e) => setCoordinationRequest(prev => ({ ...prev, endTime: e.target.value }))}
+                      style={{
+                        width: '100%',
+                        maxWidth: '100%',
+                        minWidth: 0,
+                        padding: isMobile ? '8px 10px' : '8px 12px',
+                        fontSize: 13,
+                        border: '1px solid var(--border-primary)',
+                        borderRadius: "var(--radius-comfortable)",
+                        background: 'var(--bg-surface)',
+                        color: 'var(--text-primary)',
+                        boxSizing: 'border-box',
+                        display: 'block'
+                      }}
+                    />
+                  </div>
+                </div>
 
+                {/* Centre & Course Line */}
+                <div style={{ 
+                  display: 'grid', 
+                  gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(0, 1fr) minmax(0, 1fr)', 
+                  gap: isMobile ? 16 : 12,
+                  rowGap: 16,
+                  width: '100%',
+                  maxWidth: '100%',
+                  minWidth: 0,
+                  boxSizing: 'border-box'
+                }}>
+                  {/* Centre */}
+                  <div style={{ width: '100%', maxWidth: '100%', minWidth: 0, boxSizing: 'border-box' }}>
+                    <label style={{ display: 'block', fontSize: 13, fontWeight: 590, color: 'var(--text-primary)', marginBottom: 'var(--space-2)' }}>
+                      Cơ sở cần điều phối
+                    </label>
+                    <div style={{ width: '100%', maxWidth: '100%', minWidth: 0, boxSizing: 'border-box' }}>
+                    <CentreSelect menuPosition="fixed"
+                      centres={centres}
+                      selected={coordinationRequest.centreId ? [coordinationRequest.centreId] : []}
+                      onChange={(selected) => {
+                        // Only allow single selection
+                        const newCentreId = selected.length > 0 ? selected[selected.length - 1] : '';
+                        setCoordinationRequest(prev => ({ ...prev, centreId: newCentreId }));
+                      }}
+                      placeholder="-- Chọn cơ sở --"
+                      searchable={true}
+                      maxDisplay={1}
+                    />
+                    </div>
+                  </div>
+                  {/* Course Line */}
+                  <div style={{ width: '100%', maxWidth: '100%', minWidth: 0, boxSizing: 'border-box' }}>
+                    <label style={{ display: 'block', fontSize: 13, fontWeight: 590, color: 'var(--text-primary)', marginBottom: 'var(--space-2)' }}>
+                      Khối
+                    </label>
+                    <div style={{ width: '100%', maxWidth: '100%', minWidth: 0, boxSizing: 'border-box' }}>
+                    <MultiSelect menuPosition="fixed"
+                      options={[
+                        { value: 'Coding', label: 'Coding' },
+                        { value: 'Robotics', label: 'Robotics' },
+                        { value: 'Art', label: 'Art' },
+                        { value: 'Others', label: 'Khác' }
+                      ]}
+                      selected={coordinationRequest.courseLineId ? [coordinationRequest.courseLineId] : []}
+                      onChange={(selected) => {
+                        // Only allow single selection
+                        const newCourseLineId = selected.length > 0 ? selected[selected.length - 1] : '';
+                        setCoordinationRequest(prev => ({ ...prev, courseLineId: newCourseLineId }));
+                      }}
+                      placeholder="-- Tất cả khối --"
+                      maxDisplay={1}
+                    />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Search Button - Only show if user modified the form */}
+                <div style={{ width: '100%', maxWidth: '100%', minWidth: 0, boxSizing: 'border-box' }}>
+                <button
+                  onClick={handleSearchAvailableTeachers}
+                  disabled={calculatingTeachers}
+                  className={styles.primaryBtn}
+                  style={{
+                    padding: isMobile ? '10px 14px' : '10px 16px',
+                    fontSize: 14,
+                    fontWeight: 600,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    width: '100%',
+                    maxWidth: '100%',
+                    minWidth: 0,
+                    boxSizing: 'border-box',
+                    gap: 'var(--space-2)',
+                    opacity: calculatingTeachers ? 0.6 : 1,
+                    cursor: calculatingTeachers ? 'not-allowed' : 'pointer'
+                  }}>
+                  {calculatingTeachers ? (
+                    <>
+                      <Spinner size={14} />
+                      Đang tính toán...
+                    </>
+                  ) : (
+                    <>
+                      <Icon.Search />
+                      Tìm lại với thông tin mới
+                    </>
+                  )}
+                </button>
+                </div>
+              </div>
+              )}
+
+              {/* --- RESULTS SECTION --- */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
               {/* Loading State */}
               {calculatingTeachers && (
+
                 <div style={{ 
                   padding: '24px', 
                   textAlign: 'center',
@@ -3072,27 +4291,66 @@ export default function TeacherSchedulePage() {
               {/* Results - Grouped by Category */}
               {!calculatingTeachers && availableTeachers.length > 0 && (
                 <div style={{ marginTop: 8, width: '100%', boxSizing: 'border-box', minWidth: 0 }}>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-                    <span style={{ 
-                      background: 'rgba(5, 150, 105, 0.08)', 
-                      color: 'var(--status-success)', 
-                      padding: '4px 10px', 
-                      borderRadius: "var(--radius-comfortable)", 
-                      fontSize: 13,
-                      fontWeight: 600
-                    }}>
-                      {availableTeachers.length} giáo viên rảnh
-                    </span>
-                    <span style={{ fontSize: 12, color: 'var(--text-tertiary)', fontWeight: 400 }}>
-                      (đã loại trừ giáo viên hiện tại)
-                    </span>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-3)', flexWrap: 'wrap', marginBottom: 16 }}>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                      <span style={{ 
+                        background: 'rgba(5, 150, 105, 0.08)', 
+                        color: 'var(--status-success)', 
+                        padding: '4px 10px', 
+                        borderRadius: "var(--radius-comfortable)", 
+                        fontSize: 13,
+                        fontWeight: 600
+                      }}>
+                        {availableTeachers.length} giáo viên rảnh
+                      </span>
+                      <span style={{ fontSize: 12, color: 'var(--text-tertiary)', fontWeight: 400 }}>
+                        (đã loại trừ giáo viên hiện tại)
+                      </span>
+                    </div>
+                    {!selectedSlot && (() => {
+                      const courseLineOptions = [
+                        { value: 'Coding', label: 'Coding' },
+                        { value: 'Robotics', label: 'Robotics' },
+                        { value: 'Art', label: 'Art' },
+                        { value: 'Others', label: 'Khác' }
+                      ];
+                      
+                      return (
+                        <div style={{ minWidth: 200, flex: '1 1 200px', maxWidth: 300 }}>
+                          <MultiSelect menuPosition="fixed"
+                            options={courseLineOptions}
+                            selected={coordinationCourseLineFilter}
+                            onChange={setCoordinationCourseLineFilter}
+                            placeholder="Lọc theo Khối"
+                          />
+                        </div>
+                      );
+                    })()}
                   </div>
                   
                   {/* Group by course line match FIRST, then by category */}
                   {(() => {
+                    // Apply course line filter if any
+                    const filteredTeachers = coordinationCourseLineFilter.length > 0
+                      ? availableTeachers.filter(t => {
+                          const teacherSchedule = schedules.find(s => s.teacher.id === t.teacher.id);
+                          if (!teacherSchedule) return false;
+                          const categories = new Set(teacherSchedule.slots.map(s => getCourseLineCategory(s.courseLine, s.className)));
+                          return coordinationCourseLineFilter.some(cl => categories.has(cl as any));
+                        })
+                      : availableTeachers;
+
+                    if (filteredTeachers.length === 0) {
+                      return (
+                        <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 13 }}>
+                          Không có giáo viên rảnh phù hợp với bộ lọc Khối.
+                        </div>
+                      );
+                    }
+
                     // Separate by course line match
-                    const withMatch = availableTeachers.filter(t => t.courseLineMatch);
-                    const withoutMatch = availableTeachers.filter(t => !t.courseLineMatch);
+                    const withMatch = filteredTeachers.filter(t => t.courseLineMatch);
+                    const withoutMatch = filteredTeachers.filter(t => !t.courseLineMatch);
                     
                     // Define category order for display
                     const categoryOrder = [
@@ -3467,6 +4725,7 @@ export default function TeacherSchedulePage() {
                   </div>
                 </div>
               )}
+            </div>
             </div>
             </div>
             </div> {/* Close inner wrapper */}

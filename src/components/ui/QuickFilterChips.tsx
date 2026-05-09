@@ -15,7 +15,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { useQuickFilterChips } from '@/hooks/useUserPreferences';
-import { Icon } from './index';
+import { Icon, FilterChip } from './index';
 import styles from '@/app/dashboard.module.css';
 
 interface QuickFilterChipsProps {
@@ -172,10 +172,11 @@ export function QuickFilterChips({
 
   return (
     <div style={{ position: 'relative' }} ref={dropdownRef}>
-      <button
-        type="button"
+      <FilterChip
+        active={isActive}
         onClick={handleButtonClick}
-        className={styles.filterChip}
+        count={hasMultipleRegions ? regionGroups.length : undefined}
+        countDisplay={hasMultipleRegions ? 'always' : 'never'}
         style={{
           background: isActive ? 'var(--brand-indigo)' : 'var(--bg-surface)',
           color: isActive ? 'white' : 'var(--text-secondary)',
@@ -183,7 +184,6 @@ export function QuickFilterChips({
           fontWeight: isActive ? 510 : 400,
         }}
       >
-        <Icon.MapPin size={11} />
         Phạm vi quản lý
         {!isActive && <span style={{ opacity: 0.7, marginLeft: 4 }}>({label})</span>}
         {hasMultipleRegions && (
@@ -191,7 +191,7 @@ export function QuickFilterChips({
             <Icon.ChevronDown />
           </span>
         )}
-      </button>
+      </FilterChip>
 
       {/* Dropdown Menu */}
       {showDropdown && hasMultipleRegions && (

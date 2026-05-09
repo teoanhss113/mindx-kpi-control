@@ -197,7 +197,7 @@ export const TopicBadge = ({ topic, ...props }: { topic: string } & Omit<BadgePr
 };
 
 export const RoleBadge = ({ role, ...props }: { role: string } & Omit<BadgeProps, 'variant' | 'customColors' | 'children'>) => {
-  const variant = role === 'LEC' ? 'passed' : role === 'SUPPLY' ? 'warning' : 'default';
+  const variant = role === 'LEC' ? 'info' : role === 'SUPPLY' ? 'warning' : 'default';
   
   return (
     <Badge variant={variant} size="sm" {...props}>

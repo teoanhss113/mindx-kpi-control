@@ -22,12 +22,13 @@ import { ProtectedPage } from '@/components/ProtectedPage';
 import {
   Icon, SortIcon, Spinner, useToast, ToastContainer,
   MultiSelect, SelectOption, RangeSlider, Toolbar, StatCard,
-  ChartSectionHeader, TableToolbar, TableGroupHeader,
+  ChartSectionHeader, TableToolbar, TableGroupHeader, AdminTableSection,
   Modal, ModalHeader, EmptyState,
   initials,
   StandardXAxis, StandardYAxisCategory, CustomTooltip, VerticalBarChartConfig,
   SortableHeader, CentreSelect, QuickFilterChips, ExportButton,
-  CSVExportSettings, type CSVColumnConfig,
+  KPIThresholdSuggestions,
+  CSVExportSettings, FilterChip, type CSVColumnConfig,
   COMPLETION_STATUS_LABELS, CompletionStatusBadge, type CompletionStatusKind,
 } from '@/components/ui';
 import { useTableSort } from '@/hooks/useTableSort';
@@ -53,6 +54,7 @@ const REASON_LABELS: Record<string, string> = {
   'DEMO_NOT_ARRANGED': 'Chưa sắp xếp thuyết trình cuối khoá',
   'DROP_OUT': 'Nghỉ học',
   'On hold': 'Tạm dừng',
+  'ON_HOLD': 'Tạm dừng',
   'STUDENT_REFUSE_DEMO': 'Từ chối thuyết trình cuối khoá',
   'Class finished': 'Kết thúc khoá',
 };
@@ -62,6 +64,22 @@ const rateColor = completionColor;
 
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
+function normalizeCompletionReason(reason?: string | null): string {
+  const trimmed = reason?.trim();
+  if (!trimmed) return '';
+  if (trimmed.toUpperCase().replace(/\s+/g, '_') === 'ON_HOLD') return 'ON_HOLD';
+  return trimmed;
+}
+
+function normalizeCompletionReasonMap(map: Record<string, boolean>): Record<string, boolean> {
+  return Object.entries(map).reduce((acc, [reason, checked]) => {
+    const normalizedReason = normalizeCompletionReason(reason);
+    if (!normalizedReason) return acc;
+    acc[normalizedReason] = acc[normalizedReason] === true || checked;
+    return acc;
+  }, {} as Record<string, boolean>);
+}
+
 /**
  * Check if a student should be exempt from completion rate calculation.
  * A student is exempt if:
@@ -208,7 +226,7 @@ export default function DashboardPage() {
         const parsed = await getCache(CACHE_KEYS.COMPLETION);
         if (parsed) {
           if (parsed.classes) setClasses(parsed.classes);
-          if (parsed.exemptedReasons) setExemptedReasons(parsed.exemptedReasons);
+          if (parsed.exemptedReasons) setExemptedReasons(normalizeCompletionReasonMap(parsed.exemptedReasons));
           if (parsed.exemptedCourses) setExemptedCourses(parsed.exemptedCourses);
         }
       } catch (e) { console.error(e); }
@@ -222,7 +240,7 @@ export default function DashboardPage() {
     setLoading(true);
     setProgress({ loaded: 0, total: 0 });
     setClasses([]);
-    let curReasons = { ...exemptedReasons };
+    let curReasons = normalizeCompletionReasonMap(exemptedReasons);
     let curClasses: Class[] = [];
     let curExcluded = { ...exemptedCourses };
     const tid = addToast(MESSAGES.LOADING.CONNECTING, 'loading');
@@ -236,7 +254,7 @@ export default function DashboardPage() {
         chunk.forEach(cls => {
           cls.students.forEach(st => {
             if (st.completionInfo?.status === 'UNCOMPLETED' && st.completionInfo.reason) {
-              const r = st.completionInfo.reason;
+              const r = normalizeCompletionReason(st.completionInfo.reason);
               if (curReasons[r] === undefined) curReasons[r] = DEFAULT_EXEMPTED_REASONS.includes(r);
             }
           });
@@ -307,11 +325,12 @@ export default function DashboardPage() {
         if (isExemptStudent(st, cls.slots)) { clsExempt++; return; }
         if (info?.status === 'PASSED' || info?.status === 'COMPLETED' || info?.status === 'FINISHED') { clsPass++; }
         else if (info?.status === 'UNCOMPLETED' && info.reason) {
-          uncompReasons.push(info.reason);
-          if (!isCancelled) rCounts[info.reason] = (rCounts[info.reason] || 0) + 1;
+          const reason = normalizeCompletionReason(info.reason);
+          uncompReasons.push(reason);
+          if (!isCancelled) rCounts[reason] = (rCounts[reason] || 0) + 1;
           // Checked = exempted = student NOT counted in formula
-          if (exemptedReasons[info.reason] === true) clsExcluded++;
-          if (info.reason === DEMO_REASON_KEY) hasDemo = true;
+          if (exemptedReasons[reason] === true) clsExcluded++;
+          if (reason === DEMO_REASON_KEY) hasDemo = true;
         }
       });
       if (hasDemo) demoCount++;
@@ -461,6 +480,15 @@ export default function DashboardPage() {
 
   const handleToggleReason = (r: string) => setExemptedReasons(prev => ({ ...prev, [r]: !prev[r] }));
   const handleToggleCourse = (k: string) => setExemptedCourses(prev => ({ ...prev, [k]: !prev[k] }));
+  const handleResetExemptions = () => {
+    const nextReasons: Record<string, boolean> = {};
+    Object.keys(exemptedReasons).forEach(reason => {
+      nextReasons[reason] = DEFAULT_EXEMPTED_REASONS.includes(reason);
+    });
+    setExemptedReasons(nextReasons);
+    setExemptedCourses({});
+    addToast('Đã khôi phục quy tắc miễn trừ mặc định', 'success');
+  };
   const handleSort = (k: typeof sortKey) => {
     if (sortKey === k) setSortOrder(p => p === 'asc' ? 'desc' : 'asc');
     else { setSortKey(k); setSortOrder('asc'); }
@@ -487,7 +515,8 @@ export default function DashboardPage() {
       const statusLabel = COMPLETION_STATUS_LABELS[statusKind];
 
       // Final/effective status after applying exemption rules
-      const exemptedByReason = !exempt && !isPassed && !!info?.reason && exemptedReasons[info.reason] === true;
+      const normalizedReason = normalizeCompletionReason(info?.reason);
+      const exemptedByReason = !exempt && !isPassed && !!normalizedReason && exemptedReasons[normalizedReason] === true;
       const finalStatusKind: CompletionStatusKind = (exempt || exemptedByReason) ? 'exempt' : isPassed ? 'completed' : 'incomplete';
       
       return {
@@ -498,7 +527,7 @@ export default function DashboardPage() {
         finalStatusKind,
         exemptedByReason,
         statusOrder: exempt ? 0 : isPassed ? 1 : 2,
-        reason: info?.reason || '',
+        reason: normalizedReason,
         absentCount,
         exempt
       };
@@ -598,15 +627,17 @@ export default function DashboardPage() {
 
                   {/* SUGGESTIONS */}
                   {filteredNormalClasses.length > 0 && (
-                    <div className={styles.suggestionsBar}>
-                      <span className={styles.suggestLabel}>Để đạt mục tiêu:</span>
-                      {completionSuggestions.map(({ target, needed }) => (
-                        <div key={target} className={`${styles.suggestPill} ${needed === 0 ? styles.suggestDone : ''}`}>
-                          <span className={styles.suggestTarget}>{target}%</span>
-                          {needed === 0 ? <span><Icon.Check size={11} /> Đã đạt</span> : <span>cần thêm <strong>{needed}</strong> học viên</span>}
-                        </div>
-                      ))}
-                    </div>
+                    <KPIThresholdSuggestions
+                      label="Để đạt mục tiêu:"
+                      items={completionSuggestions.map(({ target, needed }) => ({
+                        key: String(target),
+                        target: `${target}%`,
+                        done: needed === 0,
+                        content: needed === 0
+                          ? <><Icon.Check size={11} /> Đã đạt</>
+                          : <>cần thêm <strong>{needed}</strong> học viên</>,
+                      }))}
+                    />
                   )}
 
                   {/* CHARTS */}
@@ -702,81 +733,74 @@ export default function DashboardPage() {
                     </div>
                   )}
 
-                  {/* FILTER BAR */}
-                  <TableToolbar
-                    search={search} onSearchChange={setSearch} searchPlaceholder="Tìm tên lớp..."
-                    quickFilterSlots={
-                      <>
-                        {/* User preference chips */}
-                        {hasPreferences && (
-                          <QuickFilterChips
-                            centres={centres}
-                            selectedCentres={filterCentres}
-                            onCentresChange={setFilterCentres}
-                            selectedCourses={selectedCourseLines}
-                            onCoursesChange={setSelectedCourseLines}
-                            showCentres={true}
-                            showCourses={true}
-                          />
-                        )}
-                        
-                        {/* Demo filter chip */}
-                        <button className={`${styles.filterChip} ${showDemoOnly ? styles.chipActive : ''}`}
-                          onClick={() => setShowDemoOnly(p => !p)}>
-                          <Icon.AlertTriangle size={12} /> Chưa thuyết trình
-                          {demoCount > 0 && <span className={styles.chipBadge}>{demoCount}</span>}
-                        </button>
-                      </>
-                    }
-                    filterSlots={
-                      <>
-                        {/* 1. Centre */}
-                        {tableCentreIds.length > 1 && (
-                          <CentreSelect
-                            centres={centres}
-                            selected={filterCentres}
-                            onChange={setFilterCentres}
-                            filterToIds={tableCentreIds}
-                            placeholder="Tất cả cơ sở"
-                            maxDisplay={1}
-                            searchable
-                          />
-                        )}
-                        {/* 2. Course Line */}
-                        {courseLineOptions.length > 1 && (
-                          <MultiSelect options={courseLineOptions} selected={selectedCourseLines}
-                            onChange={setSelectedCourseLines} placeholder="Tất cả khối" maxDisplay={2} />
-                        )}
-                        {/* 3. Specific: Reason */}
-                        {tableReasonOptions.length > 1 && (
-                          <MultiSelect options={tableReasonOptions} selected={filterReasons}
-                            onChange={setFilterReasons} placeholder="Mọi lý do" maxDisplay={1} />
-                        )}
-                      </>
-                    }
-                    rangeValue={rateRange} onRangeChange={setRateRange}
-                    hasFilter={hasTableFilter} onClearFilter={clearTableFilters}
-                  />
-
                   {/* TABLE */}
-                  <div className={styles.tableSection}>
-                    <TableGroupHeader
-                      title="Danh sách Lớp học"
-                      count={filteredNormalClasses.length}
-                      isExpanded={showActiveTable}
-                      onToggle={() => setShowActiveTable(p => !p)}
-                      actionSlot={
-                        <ExportButton
-                          onClick={handleExportCSV}
-                          onSettingsClick={() => setShowCSVSettings(true)}
-                          disabled={filteredNormalClasses.length === 0}
-                          count={filteredNormalClasses.length}
-                        />
-                      }
-                    />
-                    <AnimatePresence initial={false}>
-                      {showActiveTable && (
-                        <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} style={{ overflow: 'hidden' }}>
+                  <AdminTableSection
+                    title="Danh sách Lớp học"
+                    count={filteredNormalClasses.length}
+                    isExpanded={showActiveTable}
+                    onToggle={() => setShowActiveTable(p => !p)}
+                    actionSlot={
+                      <ExportButton
+                        onClick={handleExportCSV}
+                        onSettingsClick={() => setShowCSVSettings(true)}
+                        disabled={filteredNormalClasses.length === 0}
+                        count={filteredNormalClasses.length}
+                      />
+                    }
+                    toolbarSlot={
+                      <TableToolbar
+                        search={search} onSearchChange={setSearch} searchPlaceholder="Tìm tên lớp..."
+                        quickFilterSlots={
+                          <>
+                            {hasPreferences && (
+                              <QuickFilterChips
+                                centres={centres}
+                                selectedCentres={filterCentres}
+                                onCentresChange={setFilterCentres}
+                                selectedCourses={selectedCourseLines}
+                                onCoursesChange={setSelectedCourseLines}
+                                showCentres={true}
+                                showCourses={true}
+                              />
+                            )}
+                            <FilterChip
+                              active={showDemoOnly}
+                              count={demoCount}
+                              countDisplay="always"
+                              onClick={() => setShowDemoOnly(p => !p)}
+                            >
+                              Chưa thuyết trình
+                            </FilterChip>
+                          </>
+                        }
+                        filterSlots={
+                          <>
+                            {tableCentreIds.length > 1 && (
+                              <CentreSelect menuPosition="fixed"
+                                centres={centres}
+                                selected={filterCentres}
+                                onChange={setFilterCentres}
+                                filterToIds={tableCentreIds}
+                                placeholder="Tất cả cơ sở"
+                                maxDisplay={1}
+                                searchable
+                              />
+                            )}
+                            {courseLineOptions.length > 1 && (
+                              <MultiSelect menuPosition="fixed" options={courseLineOptions} selected={selectedCourseLines}
+                                onChange={setSelectedCourseLines} placeholder="Tất cả khối" maxDisplay={2} />
+                            )}
+                            {tableReasonOptions.length > 1 && (
+                              <MultiSelect menuPosition="fixed" options={tableReasonOptions} selected={filterReasons}
+                                onChange={setFilterReasons} placeholder="Mọi lý do" maxDisplay={1} />
+                            )}
+                          </>
+                        }
+                        rangeValue={rateRange} onRangeChange={setRateRange}
+                        hasFilter={hasTableFilter} onClearFilter={clearTableFilters}
+                      />
+                    }
+                  >
                           <div className={styles.tableScrollWrapper}>
                             <div className={styles.classItemHeader}>
                         <div className={`${styles.sortableCol} ${sortKey === 'name' ? styles.activeSort : ''}`} onClick={() => handleSort('name')}>Lớp học <SortIcon col="name" sortKey={sortKey} sortDir={sortOrder} /></div>
@@ -855,10 +879,7 @@ export default function DashboardPage() {
                         </div>
                       )}
                             </div>{/* end tableScrollWrapper */}
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                  </div>
+                  </AdminTableSection>
 
                   {cancelledClasses.length > 0 && (
                     <div className={styles.tableSection} style={{ opacity: 0.5, marginTop: 'var(--space-4)' }}>
@@ -894,50 +915,78 @@ export default function DashboardPage() {
                       <div className={styles.chartsSectionTitle}>
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                           <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        Quy tắc Miễn trừ
-                      </div>
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" 
-                        style={{ 
-                          color: 'var(--text-tertiary)',
-                          transform: showExemptPanel ? 'rotate(180deg)' : 'rotate(0deg)', 
-                          transition: 'transform 0.2s ease' 
-                        }}>
-                        <polyline points="6 9 12 15 18 9" />
-                      </svg>
-                    </div>
+	                        </svg>
+	                        Quy tắc Miễn trừ
+	                      </div>
+	                      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+	                        <button
+	                          type="button"
+	                          className={styles.chartToggle}
+	                          aria-label="Khôi phục quy tắc mặc định"
+	                          title="Khôi phục quy tắc mặc định"
+	                          onClick={(e) => {
+	                            e.stopPropagation();
+	                            handleResetExemptions();
+	                          }}
+	                        >
+	                          <Icon.Refresh />
+	                        </button>
+	                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+	                          style={{
+	                            color: 'var(--text-tertiary)',
+	                            transform: showExemptPanel ? 'rotate(180deg)' : 'rotate(0deg)',
+	                            transition: 'transform 0.2s ease'
+	                          }}>
+	                          <polyline points="6 9 12 15 18 9" />
+	                        </svg>
+	                      </div>
+	                    </div>
                     <AnimatePresence initial={false}>
                       {showExemptPanel && (
                         <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} style={{ overflow: 'hidden' }}>
                           <div style={{ padding: 'var(--space-4)' }}>
-                            {/* Miễn trừ theo Lý do */}
-                            <div style={{ marginBottom: 'var(--space-4)' }}>
-                              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 'var(--space-2)' }}>
-                                Miễn trừ theo Lý do
-                              </div>
-                              <div className={styles.reasonList}>
-                                {Object.keys(exemptedReasons).sort().map(reason => {
-                                  const count = reasonCounts[reason] || 0;
-                                  if (count === 0 && !DEFAULT_EXEMPTED_REASONS.includes(reason)) return null;
-                                  return (
-                                    <label key={reason} className={styles.reasonItem}>
-                                      <input type="checkbox" className={styles.reasonCheckbox}
-                                        checked={exemptedReasons[reason] === true} onChange={() => handleToggleReason(reason)} />
-                                      <div className={styles.reasonLabel}>
-                                        <span>{REASON_LABELS[reason] || reason}</span>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-1)', flexShrink: 0 }}>
-                                          <span className={styles.reasonCount}>{count}</span>
-                                          <div className={styles.tooltipWrap}>
-                                            <i className={styles.tooltipIcon}>i</i>
-                                            <div className={styles.tooltipBox}>{reason}</div>
+                            {(() => {
+                              const visibleReasons = Object.keys(exemptedReasons)
+                                .sort()
+                                .filter(reason => (reasonCounts[reason] || 0) > 0 || DEFAULT_EXEMPTED_REASONS.includes(reason));
+
+                              if (visibleReasons.length === 0) {
+                                return (
+                                  <div style={{ color: 'var(--text-quaternary)', fontSize: 12, lineHeight: 1.5, marginBottom: 'var(--space-4)' }}>
+                                    Học viên vắng ở các buổi được chọn sẽ không bắt buộc có nhận xét.
+                                  </div>
+                                );
+                              }
+
+                              return (
+                                <div style={{ marginBottom: 'var(--space-4)' }}>
+                                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 'var(--space-2)' }}>
+                                    Miễn trừ theo Lý do
+                                  </div>
+                                  <div className={styles.reasonList}>
+                                    {visibleReasons.map(reason => {
+                                      const count = reasonCounts[reason] || 0;
+                                      return (
+                                        <label key={reason} className={styles.reasonItem}>
+                                          <input type="checkbox" className={styles.reasonCheckbox}
+                                            checked={exemptedReasons[reason] === true} onChange={() => handleToggleReason(reason)} />
+                                          <div className={styles.reasonLabel}>
+                                            <span>{REASON_LABELS[reason] || reason}</span>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-1)', flexShrink: 0 }}>
+                                              <span className={styles.reasonCount}>{count}</span>
+                                              <div className={styles.tooltipWrap}>
+                                                <i className={styles.tooltipIcon}>i</i>
+                                                <div className={styles.tooltipBox}>{reason}</div>
+                                              </div>
+                                            </div>
                                           </div>
-                                        </div>
-                                      </div>
-                                    </label>
-                                  );
-                                })}
-                              </div>
-                            </div>
+                                        </label>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              );
+                            })()}
 
                             {/* Miễn trừ theo Khoá học */}
                             {courseOptions.size > 0 && (
@@ -1042,9 +1091,9 @@ export default function DashboardPage() {
                               <div style={{ fontSize: 11, color: 'var(--text-quaternary)', marginTop: 2 }}>Miễn trừ theo lý do</div>
                             )}
                           </td>
-                          <td style={{ fontSize: 12, color: info?.reason === DEMO_REASON_KEY ? 'var(--status-dark-orange)' : 'var(--text-tertiary)' }}>
+                          <td style={{ fontSize: 12, color: st.reason === DEMO_REASON_KEY ? 'var(--status-dark-orange)' : 'var(--text-tertiary)' }}>
                             {st.exempt ? <em style={{ color: 'var(--text-quaternary)' }}>Chưa phát sinh buổi học</em>
-                              : info?.reason ? (REASON_LABELS[info.reason] || info.reason) : '—'}
+                              : st.reason ? (REASON_LABELS[st.reason] || st.reason) : '—'}
                           </td>
                           <td>
                             {absentSlots.length > 0

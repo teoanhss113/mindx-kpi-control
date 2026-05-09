@@ -238,12 +238,13 @@ export async function fetchTeacherSchedules(
   centreIds?: string[],
   teacherIds?: string[],
   onProgress?: (loaded: number, total: number) => void,
-  signal?: AbortSignal
-): Promise<TeacherSchedule[]> {
+  signal?: AbortSignal,
+  preFetchedClasses?: Class[]
+): Promise<{ schedules: TeacherSchedule[], rawClasses: Class[] }> {
   // Fetch classes with slots in the date range
   const haveSlotIn = haveSlotInToUtcRange(dateFrom, dateTo);
   
-  const classes = await fetchAllClasses(
+  const classes = preFetchedClasses || await fetchAllClasses(
     {
       haveSlotIn: { from: haveSlotIn.from, to: haveSlotIn.to },
       ...(centreIds && centreIds.length > 0 ? { centres: centreIds } : {}),
@@ -335,7 +336,7 @@ export async function fetchTeacherSchedules(
     );
   });
   
-  return schedules;
+  return { schedules, rawClasses: classes };
 }
 
 export async function fetchClassTeacherSchedules(classId: string): Promise<TeacherSchedule[]> {
@@ -447,6 +448,90 @@ export async function fetchClassTeacherSchedules(classId: string): Promise<Teach
 }
 
 /**
+ * Fetch full class data (including commentByAreas) for quality analysis
+ */
+export async function fetchClassByIdFull(classId: string): Promise<Class | null> {
+  const query = `
+    query GetClassByIdFull($id: ID!) {
+      classesById(id: $id) {
+        id
+        name
+        level
+        status
+        startDate
+        endDate
+        numberOfSessions
+        numberOfSessionsStatus
+        sessionHour
+        totalHour
+        course {
+          id
+          name
+          shortName
+          courseLine { id name }
+        }
+        centre { id name shortName }
+        classSites { _id name }
+        students {
+          _id
+          activeInClass
+          createdAt
+          note
+          student {
+            id
+            fullName
+            customer { fullName phoneNumber email facebook zalo }
+          }
+          completionInfo {
+            status
+            note
+            reason
+          }
+        }
+        slots {
+          _id
+          date
+          startTime
+          endTime
+          sessionHour
+          summary
+          homework
+          teachers {
+            _id
+            isActive
+            teacher { id username code fullName email phoneNumber imageUrl }
+            role { id name shortName }
+          }
+          teacherAttendance {
+            _id status note createdAt lastModifiedAt
+            teacher { id fullName email }
+          }
+          studentAttendance {
+            _id status comment sendCommentStatus
+            commentByAreas { content }
+            student { id fullName phoneNumber email gender imageUrl }
+          }
+        }
+        teachers {
+          _id
+          isActive
+          teacher { id username code fullName email phoneNumber imageUrl }
+          role { id name shortName }
+        }
+      }
+    }
+  `;
+
+  const response = await lmsQuery<{ data: { classesById: Class | null } }>({
+    operationName: 'GetClassByIdFull',
+    query,
+    variables: { id: classId },
+  });
+
+  return response.data.classesById;
+}
+
+/**
  * Find available teachers for a coordination request
  */
 export async function findAvailableTeachers(
@@ -493,7 +578,7 @@ export async function findAvailableTeachers(
   const dateTo = new Date(request.date);
   dateTo.setHours(23, 59, 59, 999);
   
-  const schedules = await fetchTeacherSchedules(
+  const { schedules } = await fetchTeacherSchedules(
     dateFrom,
     dateTo,
     undefined,

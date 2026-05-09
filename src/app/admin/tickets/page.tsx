@@ -18,25 +18,31 @@ import { surveyColor, KPI_COLORS, SURVEY_LEGEND } from '@/lib/kpiScoring';
 import { fetchTickets, updateTicket, searchUsers } from '@/services/ticketService';
 import { Ticket, LmsUser } from '@/types/ticket';
 import {
-  Icon, SortIcon, MultiSelect, SelectOption,
+  Icon, SortIcon, MultiSelect, SelectOption, CompactSelect,
   Toolbar, StatCard, ChartSectionHeader,
-  TableToolbar, TableGroupHeader, Modal, ModalHeader, EmptyState,
+  TableToolbar, TableGroupHeader, AdminTableSection, Modal, ModalHeader, EmptyState,
+  ViewModeToggle,
   initials,
   ToastContainer,
   useToast,
   StandardXAxis, StandardYAxisCategory, ChartLegend, VerticalBarChartConfig, CustomTooltip,
   SortableHeader, TopicBadge, UserSearchInput, type UserSearchResult, ModalFooter,
-  CentreSelect, CourseCategoryBadge, QuickFilterChips, TicketStatusBadge, getPriorityMeta, getTicketStatusMeta,
+  CentreSelect, CourseCategoryBadge, QuickFilterChips, TicketStatusBadge, FilterChip, KPIThresholdSuggestions, getPriorityMeta, getTicketStatusMeta,
 } from '@/components/ui';
 import { useTableSort } from '@/hooks/useTableSort';
 import { useFilterOptions } from '@/hooks/useFilterOptions';
 import { useQuickFilterChips } from '@/hooks/useUserPreferences';
 import { PageLayout } from '@/components/PageLayout';
-import { CACHE_KEYS, LABELS, MESSAGES, ENTITIES, FORMAT, CHART_COLORS } from '@/constants';
+import { CACHE_KEYS, LABELS, MESSAGES, ENTITIES, FORMAT, CHART_COLORS, TICKET_LABELS } from '@/constants';
 import { useSharedDateRange, useSharedCentres } from '@/hooks/useSharedFilterState';
 import styles from '@/app/dashboard.module.css';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
+const SURVEY_TARGETS = [
+  { value: 4.0, label: '4.0' },
+  { value: 4.5, label: '4.5' },
+  { value: 4.8, label: '> 4.7' },
+];
 
 function getPriorityColor(priority: string) {
   return getPriorityMeta(priority).color;
@@ -563,8 +569,35 @@ export default function TicketsDashboard() {
       resolveRate: baseFilteredTickets.length > 0 ? (closedTickets / baseFilteredTickets.length) * 100 : 0,
       avgScore: avgDisplayScore,
       scoredTickets: scoredTicketsCount,
+      totalScore,
     };
   }, [baseFilteredTickets]);
+
+  const surveySuggestions = useMemo(() => {
+    if (stats.scoredTickets === 0) {
+      return [{
+        key: 'survey-data',
+        target: '4.5',
+        content: 'cần thêm phiếu đánh giá giáo viên để tính mốc',
+      }];
+    }
+
+    return SURVEY_TARGETS.map(({ value, label }) => {
+      const reached = stats.avgScore >= value;
+      const needed = reached
+        ? 0
+        : Math.max(1, Math.ceil(((value * stats.scoredTickets) - stats.totalScore) / (5 - value)));
+
+      return {
+        key: label,
+        target: label,
+        done: reached,
+        content: reached
+          ? <><Icon.Check size={11} /> Đã đạt</>
+          : <>cần thêm <strong>{needed}</strong> phiếu 5★</>,
+      };
+    });
+  }, [stats]);
 
   // Chart data: By Centre
   const centreChartData = useMemo(() => {
@@ -663,6 +696,12 @@ export default function TicketsDashboard() {
     });
   }, [baseFilteredTickets, search, sortKey, sortDir, quickFilter]);
 
+  const lowScoreCount = useMemo(() => {
+    return baseFilteredTickets.filter(t => (t as any)._groupScores?.some((g: any) => {
+      const gName = g.group.toUpperCase();
+      return (gName.includes('TEACHER') || gName.includes('GIÁO VIÊN') || gName === 'GV') && parseFloat(g.avg) <= 3;
+    })).length;
+  }, [baseFilteredTickets]);
   const handleSort = (key: typeof sortKey) => {
     if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
     else { setSortKey(key); setSortDir('desc'); }
@@ -760,7 +799,7 @@ export default function TicketsDashboard() {
     <>
       <ToastContainer toasts={toasts} onRemove={removeToast} />
       <PageLayout
-        title="Phiếu Đánh giá"
+        title={TICKET_LABELS.PAGE_TITLE}
         activePage="tickets"
         sidebarOpen={sidebarOpen}
         onSidebarToggle={setSidebarOpen}
@@ -796,11 +835,18 @@ export default function TicketsDashboard() {
           {/* ── KPI Stats ── */}
           {(stats.total > 0 || loading) && (
             <motion.div className={styles.statsGrid} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
-              <StatCard label="ĐIỂM TRUNG BÌNH (GV)" value={stats.avgScore > 0 ? `★ ${stats.avgScore}` : '—'} desc={`Trên ${stats.scoredTickets} phiếu đánh giá giáo viên`} valueColor={stats.avgScore > 0 ? surveyColor(stats.avgScore) : undefined} delay={0.0} />
-              <StatCard label="TỔNG PHIẾU" value={String(stats.total)} desc="Phiếu phản hồi trong kỳ" delay={0.07} />
-              <StatCard label="PHIẾU MỚI" value={String(stats.newTickets)} desc="Chưa xử lý" valueColor={stats.newTickets > 0 ? 'var(--status-emerald)' : undefined} delay={0.14} />
-              <StatCard label="TỶ LỆ DONE" value={`${stats.resolveRate.toFixed(1)}%`} desc={`${stats.closedTickets} đã xử lý`} valueColor={stats.resolveRate >= 90 ? 'var(--status-success)' : 'var(--status-warning)'} delay={0.21} />
+              <StatCard label={TICKET_LABELS.AVG_SCORE_GV} value={stats.avgScore > 0 ? `★ ${stats.avgScore}` : '—'} desc={`Trên ${stats.scoredTickets} phiếu đánh giá giáo viên`} valueColor={stats.avgScore > 0 ? surveyColor(stats.avgScore) : undefined} delay={0.0} />
+              <StatCard label={TICKET_LABELS.TOTAL_TICKETS_STAT} value={String(stats.total)} desc="Phiếu phản hồi trong kỳ" delay={0.07} />
+              <StatCard label={TICKET_LABELS.NEW_TICKETS_STAT} value={String(stats.newTickets)} desc="Chưa xử lý" valueColor={stats.newTickets > 0 ? 'var(--status-emerald)' : undefined} delay={0.14} />
+              <StatCard label={TICKET_LABELS.RESOLVE_RATE_STAT} value={`${stats.resolveRate.toFixed(1)}%`} desc={`${stats.closedTickets} đã xử lý`} valueColor={stats.resolveRate >= 90 ? 'var(--status-success)' : 'var(--status-warning)'} delay={0.21} />
             </motion.div>
+          )}
+
+          {stats.total > 0 && (
+            <KPIThresholdSuggestions
+              label="Điểm GV:"
+              items={surveySuggestions}
+            />
           )}
 
           {/* CHARTS */}
@@ -814,7 +860,7 @@ export default function TicketsDashboard() {
                 {/* Chart 1: Số phiếu theo Cơ sở */}
                 {centreChartData.length > 0 && (
                   <div className={styles.chartCard}>
-                    <div className={styles.chartTitle}>Số Phiếu Theo Cơ Sở</div>
+                    <div className={styles.chartTitle}>{TICKET_LABELS.TICKETS_BY_CENTRE}</div>
                     <div style={{ flex: 1, minHeight: 0 }}>
                       <ResponsiveContainer width="100%" height={Math.max(200, centreChartData.length * 32)}>
                         <BarChart data={centreChartData} {...VerticalBarChartConfig}>
@@ -859,7 +905,7 @@ export default function TicketsDashboard() {
                 {/* Chart 3: Số phiếu theo Khối */}
                 {courseLineChartData.length > 0 && (
                   <div className={styles.chartCard}>
-                    <div className={styles.chartTitle}>Số Phiếu Theo Khối</div>
+                    <div className={styles.chartTitle}>{TICKET_LABELS.TICKETS_BY_COURSE_LINE}</div>
                     <div style={{ flex: 1, minHeight: 0 }}>
                       <ResponsiveContainer width="100%" height={Math.max(200, courseLineChartData.length * 40)}>
                         <BarChart data={courseLineChartData} {...VerticalBarChartConfig}>
@@ -904,73 +950,69 @@ export default function TicketsDashboard() {
             </div>
           )}
 
-          {/* ── Table toolbar ─────────────────────────────────────────────── */}
-          {(mappedTickets.length > 0 || loading) && (
-            <>
-              <TableToolbar
-                search={search} onSearchChange={setSearch} searchPlaceholder="Mã phiếu, Lớp, Học viên, Nội dung..."
-                quickFilterSlots={
-                  <>
-                    {/* User preference chips */}
-                    {hasPreferences && (
-                      <QuickFilterChips
-                        centres={centres}
-                        selectedCentres={tableSelectedCentres}
-                        onCentresChange={setTableSelectedCentres}
-                        selectedCourses={selectedCourseLines}
-                        onCoursesChange={setSelectedCourseLines}
-                        showCentres={true}
-                        showCourses={true}
-                      />
-                    )}
-                    <button className={`${styles.filterChip} ${quickFilter === 'low_score' ? styles.chipActive : ''}`} onClick={() => setQuickFilter(q => q === 'low_score' ? null : 'low_score')}>
-                      <Icon.TrendingDown size={12} /> Điểm thấp (≤ 3.0)
-                      {quickFilter === 'low_score' && filteredTickets.filter(t => (t as any)._groupScores?.some((g: any) => {
-                        const gName = g.group.toUpperCase();
-                        return (gName === 'GIÁO VIÊN' || gName === 'CHƯƠNG TRÌNH' || gName === 'CƠ SỞ VẬT CHẤT') && parseFloat(g.avg) <= 3.0;
-                      })).length > 0 && (
-                        <span className={styles.chipBadge}>{filteredTickets.filter(t => (t as any)._groupScores?.some((g: any) => {
-                          const gName = g.group.toUpperCase();
-                          return (gName === 'GIÁO VIÊN' || gName === 'CHƯƠNG TRÌNH' || gName === 'CƠ SỞ VẬT CHẤT') && parseFloat(g.avg) <= 3.0;
-                        })).length}</span>
-                      )}
-                    </button>
-                  </>
-                }
-                filterSlots={
-                  <>
-                    {/* 1. Centre */}
-                    {tableCentreIds.length > 1 && <CentreSelect centres={centres} selected={tableSelectedCentres} onChange={setTableSelectedCentres} filterToIds={tableCentreIds} placeholder="Tất cả cơ sở" maxDisplay={1} searchable />}
-                    {/* 2. Course Line */}
-                    {courseLineOptions.length > 1 && <MultiSelect options={courseLineOptions} selected={selectedCourseLines} onChange={setSelectedCourseLines} placeholder="Tất cả khối" maxDisplay={2} />}
-                    {/* 3. Status */}
-                    {statusOptions.length > 1 && <MultiSelect options={statusOptions} selected={selectedStatuses} onChange={setSelectedStatuses} placeholder="Tất cả trạng thái" />}
-                    {/* 4. Specific: Feedback Topic */}
-                    {feedbackTopicEnumOptions.length > 1 && <MultiSelect options={feedbackTopicEnumOptions} selected={selectedFeedbackTopics} onChange={setSelectedFeedbackTopics} placeholder="Tất cả chủ đề" />}
-                  </>
-                }
-                hasFilter={hasTableFilter} onClearFilter={clearTableFilters}
-              />
-              
-              {/* View Mode Toggle */}
-              <div style={{ display: 'flex', gap: 'var(--space-2)', marginBottom: 'var(--space-4)', padding: '0 var(--space-1)' }}>
-                <button
-                  className={viewMode === 'list' ? styles.primaryBtn : styles.clearCacheBtn}
-                  onClick={() => setViewMode('list')}
-                  style={{ flex: 1, justifyContent: 'center', fontSize: 13, padding: '7px 12px' }}>
-                  <Icon.Table /> Danh sách
-                </button>
-                <button
-                  className={viewMode === 'by-class' ? styles.primaryBtn : styles.clearCacheBtn}
-                  onClick={() => setViewMode('by-class')}
-                  style={{ flex: 1, justifyContent: 'center', fontSize: 13, padding: '7px 12px' }}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-                  Theo Lớp
-                </button>
-              </div>
+        {/* View Mode Toggle — Outside and above the panel for consistency */}
+        {(mappedTickets.length > 0 || loading) && (
+          <div style={{ marginTop: 'var(--space-6)' }}>
+            <ViewModeToggle
+              value={viewMode}
+              onChange={setViewMode}
+              options={[
+                { value: 'list', label: TICKET_LABELS.LIST_VIEW, icon: <Icon.Table /> },
+                { value: 'by-class', label: TICKET_LABELS.CLASS_ANALYSIS_VIEW, icon: <Icon.PieChart /> },
+              ]}
+            />          </div>
+        )}
 
-              {/* Bulk Action Bar */}
-              <AnimatePresence>
+        <div id="section-entries">
+            {/* ── Table Section ── */}
+            {(stats.total > 0 || loading || tickets.length > 0) && (
+              <AdminTableSection
+                title={viewMode === 'list' ? TICKET_LABELS.TICKET_LIST : TICKET_LABELS.CLASS_ANALYSIS}
+                count={viewMode === 'list' ? filteredTickets.length : groupedByClass.length}
+                loading={loading}
+                progress={progress}
+                isExpanded={showActiveTable}
+                onToggle={() => setShowActiveTable(p => !p)}
+                toolbarSlot={(mappedTickets.length > 0 || loading) ? (
+                  <>
+                    <TableToolbar
+                      search={search} onSearchChange={setSearch} searchPlaceholder="Mã phiếu, Lớp, Học viên, Nội dung..."
+                      quickFilterSlots={
+                        <>
+                          {hasPreferences && (
+                            <QuickFilterChips
+                              centres={centres}
+                              selectedCentres={tableSelectedCentres}
+                              onCentresChange={setTableSelectedCentres}
+                              selectedCourses={selectedCourseLines}
+                              onCoursesChange={setSelectedCourseLines}
+                              showCentres={true}
+                              showCourses={true}
+                            />
+                          )}
+                          <FilterChip
+                            active={quickFilter === 'low_score'}
+                            count={lowScoreCount}
+                            countDisplay="always"
+                            onClick={() => setQuickFilter(q => q === 'low_score' ? null : 'low_score')}
+                          >
+                            Điểm thấp (≤ 3.0)
+                          </FilterChip>
+                        </>
+                      }
+                      filterSlots={
+                        <>
+                          {tableCentreIds.length > 1 && <CentreSelect menuPosition="fixed" centres={centres} selected={tableSelectedCentres} onChange={setTableSelectedCentres} filterToIds={tableCentreIds} placeholder="Tất cả cơ sở" maxDisplay={1} searchable />}
+                          {courseLineOptions.length > 1 && <MultiSelect menuPosition="fixed" options={courseLineOptions} selected={selectedCourseLines} onChange={setSelectedCourseLines} placeholder="Tất cả khối" maxDisplay={2} />}
+                          {statusOptions.length > 1 && <MultiSelect menuPosition="fixed" options={statusOptions} selected={selectedStatuses} onChange={setSelectedStatuses} placeholder="Tất cả trạng thái" />}
+                          {feedbackTopicEnumOptions.length > 1 && <MultiSelect menuPosition="fixed" options={feedbackTopicEnumOptions} selected={selectedFeedbackTopics} onChange={setSelectedFeedbackTopics} placeholder="Tất cả chủ đề" />}
+                        </>
+                      }
+                      hasFilter={hasTableFilter} onClearFilter={clearTableFilters}
+                    />
+                  </>
+                ) : undefined}
+              >              <AnimatePresence>
                 {selectedTicketIds.size > 0 && viewMode === 'list' && (
                   <motion.div
                     initial={{ opacity: 0, y: -10 }}
@@ -991,66 +1033,15 @@ export default function TicketsDashboard() {
                       Đã chọn {selectedTicketIds.size} phiếu
                     </div>
                     <div style={{ flex: 1 }} />
-                    <button
-                      onClick={handleOpenBulkModal}
-                      style={{
-                        background: 'rgba(255,255,255,0.95)',
-                        border: '1px solid rgba(255,255,255,0.3)',
-                        color: 'var(--brand-indigo)',
-                        padding: '8px 20px',
-                        borderRadius: "var(--radius-comfortable)",
-                        fontSize: 14,
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        transition: 'all 0.15s ease',
-                        boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-                      }}
-                      onMouseEnter={e => {
-                        (e.currentTarget.style.background = 'white');
-                        (e.currentTarget.style.transform = 'translateY(-1px)');
-                        (e.currentTarget.style.boxShadow = '0 4px 8px rgba(0,0,0,0.15)');
-                      }}
-                      onMouseLeave={e => {
-                        (e.currentTarget.style.background = 'rgba(255,255,255,0.95)');
-                        (e.currentTarget.style.transform = 'translateY(0)');
-                        (e.currentTarget.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)');
-                      }}>
+                    <button onClick={handleOpenBulkModal} className={styles.primaryBtn}>
                       Cập nhật hàng loạt
                     </button>
-                    <button
-                      onClick={() => setSelectedTicketIds(new Set())}
-                      style={{
-                        background: 'rgba(255,255,255,0.1)',
-                        border: '1px solid rgba(255,255,255,0.2)',
-                        color: 'white',
-                        padding: '6px 10px',
-                        borderRadius: "var(--radius-comfortable)",
-                        fontSize: 13,
-                        cursor: 'pointer',
-                        transition: 'background 0.15s ease'
-                      }}
-                      onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.2)')}
-                      onMouseLeave={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.1)')}>
+                    <button onClick={() => setSelectedTicketIds(new Set())} className={styles.clearCacheBtn}>
                       <Icon.X size={10} />
                     </button>
                   </motion.div>
                 )}
               </AnimatePresence>
-            </>
-          )}
-
-          {/* ── Table Section ── */}
-          {(stats.total > 0 || loading || tickets.length > 0) && (
-            <div className={styles.tableSection}>
-              <TableGroupHeader
-                title={viewMode === 'list' ? 'Danh sách Phiếu đánh giá' : 'Phân tích theo Lớp học'}
-                count={viewMode === 'list' ? filteredTickets.length : groupedByClass.length}
-                loading={loading} progress={progress}
-                isExpanded={showActiveTable} onToggle={() => setShowActiveTable(p => !p)}
-              />
-              <AnimatePresence initial={false}>
-                {showActiveTable && (
-                  <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} style={{ overflow: 'hidden' }}>
                     
                     {/* LIST VIEW */}
                     {viewMode === 'list' && (
@@ -1398,14 +1389,9 @@ export default function TicketsDashboard() {
                         )}
                       </div>
                     )}
-
-
-                  </motion.div>
-                )}
-              </AnimatePresence>
+            </AdminTableSection>
+            )}
             </div>
-          )}
-
           {!loading && tickets.length === 0 && (
             <EmptyState
               icon={<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -1568,26 +1554,29 @@ export default function TicketsDashboard() {
                   {/* Status */}
                   <div>
                     <div style={{ fontSize: 11, fontWeight: 590, color: 'var(--text-quaternary)', textTransform: 'uppercase', marginBottom: 6 }}>Trạng thái</div>
-                    <select style={{ ...selectStyle, color: getStatusColor(editDraft.status) }}
-                      value={editDraft.status} onChange={e => setEditDraft(d => d ? { ...d, status: e.target.value } : d)}>
-                      {statusOptions.map(o => <option key={o.value} value={o.value}>{o.value}</option>)}
-                    </select>
+                    <CompactSelect
+                      value={editDraft.status}
+                      options={statusOptions.map(o => ({ value: o.value, label: o.value }))}
+                      onChange={v => setEditDraft(d => d ? { ...d, status: v } : d)}
+                    />
                   </div>
                   {/* Priority */}
                   <div>
                     <div style={{ fontSize: 11, fontWeight: 590, color: 'var(--text-quaternary)', textTransform: 'uppercase', marginBottom: 6 }}>Mức độ</div>
-                    <select style={{ ...selectStyle, color: getPriorityColor(editDraft.priority) }}
-                      value={editDraft.priority} onChange={e => setEditDraft(d => d ? { ...d, priority: e.target.value } : d)}>
-                      {priorityEnumOptions.map(o => <option key={o.value} value={o.value}>{o.value}</option>)}
-                    </select>
+                    <CompactSelect
+                      value={editDraft.priority}
+                      options={priorityEnumOptions.map(o => ({ value: o.value, label: o.value }))}
+                      onChange={v => setEditDraft(d => d ? { ...d, priority: v } : d)}
+                    />
                   </div>
                   {/* Feedback Topic */}
                   <div>
                     <div style={{ fontSize: 11, fontWeight: 590, color: 'var(--text-quaternary)', textTransform: 'uppercase', marginBottom: 6 }}>Chủ đề</div>
-                    <select style={selectStyle}
-                      value={editDraft.feedbackTopic} onChange={e => setEditDraft(d => d ? { ...d, feedbackTopic: e.target.value } : d)}>
-                      {feedbackTopicEnumOptions.map(o => <option key={o.value} value={o.value}>{o.value}</option>)}
-                    </select>
+                    <CompactSelect
+                      value={editDraft.feedbackTopic}
+                      options={feedbackTopicEnumOptions.map(o => ({ value: o.value, label: o.value }))}
+                      onChange={v => setEditDraft(d => d ? { ...d, feedbackTopic: v } : d)}
+                    />
                   </div>
                   {/* Student Info (read-only) */}
                   <div>
@@ -1699,27 +1688,18 @@ export default function TicketsDashboard() {
               <label style={{ display: 'block', fontSize: 13, fontWeight: 590, color: 'var(--text-primary)', marginBottom: 8 }}>
                 Trạng thái
               </label>
-              <select
+              <CompactSelect
                 value={bulkUpdates.status}
-                onChange={(e) => setBulkUpdates(prev => ({ ...prev, status: e.target.value }))}
-                style={{
-                  width: '100%',
-                  padding: '8px 12px',
-                  fontSize: 13,
-                  border: '1px solid var(--border-primary)',
-                  borderRadius: "var(--radius-comfortable)",
-                  background: 'var(--bg-surface)',
-                  color: bulkUpdates.status ? getStatusColor(bulkUpdates.status) : 'var(--text-primary)',
-                  fontWeight: bulkUpdates.status ? 600 : 400,
-                  cursor: 'pointer'
-                }}>
-                <option value="">-- Không thay đổi --</option>
-                <option value="NEW">NEW</option>
-                <option value="ASSIGNED">ASSIGNED</option>
-                <option value="IN_PROGRESS">IN_PROGRESS</option>
-                <option value="RESOLVED">RESOLVED</option>
-                <option value="CLOSED">CLOSED</option>
-              </select>
+                options={[
+                  { value: '', label: '-- Không thay đổi --' },
+                  { value: 'NEW', label: 'NEW' },
+                  { value: 'ASSIGNED', label: 'ASSIGNED' },
+                  { value: 'IN_PROGRESS', label: 'IN_PROGRESS' },
+                  { value: 'RESOLVED', label: 'RESOLVED' },
+                  { value: 'CLOSED', label: 'CLOSED' }
+                ]}
+                onChange={v => setBulkUpdates(prev => ({ ...prev, status: v }))}
+              />
             </div>
 
             {/* Priority */}
@@ -1727,26 +1707,17 @@ export default function TicketsDashboard() {
               <label style={{ display: 'block', fontSize: 13, fontWeight: 590, color: 'var(--text-primary)', marginBottom: 8 }}>
                 Mức độ ưu tiên
               </label>
-              <select
+              <CompactSelect
                 value={bulkUpdates.priority}
-                onChange={(e) => setBulkUpdates(prev => ({ ...prev, priority: e.target.value }))}
-                style={{
-                  width: '100%',
-                  padding: '8px 12px',
-                  fontSize: 13,
-                  border: '1px solid var(--border-primary)',
-                  borderRadius: "var(--radius-comfortable)",
-                  background: 'var(--bg-surface)',
-                  color: bulkUpdates.priority ? getPriorityColor(bulkUpdates.priority) : 'var(--text-primary)',
-                  fontWeight: bulkUpdates.priority ? 600 : 400,
-                  cursor: 'pointer'
-                }}>
-                <option value="">-- Không thay đổi --</option>
-                <option value="LOW">LOW</option>
-                <option value="MEDIUM">MEDIUM</option>
-                <option value="HIGH">HIGH</option>
-                <option value="URGENT">URGENT</option>
-              </select>
+                options={[
+                  { value: '', label: '-- Không thay đổi --' },
+                  { value: 'LOW', label: 'LOW' },
+                  { value: 'MEDIUM', label: 'MEDIUM' },
+                  { value: 'HIGH', label: 'HIGH' },
+                  { value: 'URGENT', label: 'URGENT' }
+                ]}
+                onChange={v => setBulkUpdates(prev => ({ ...prev, priority: v }))}
+              />
             </div>
 
             {/* Feedback Topic */}
@@ -1754,26 +1725,18 @@ export default function TicketsDashboard() {
               <label style={{ display: 'block', fontSize: 13, fontWeight: 590, color: 'var(--text-primary)', marginBottom: 8 }}>
                 Chủ đề phản hồi
               </label>
-              <select
+              <CompactSelect
                 value={bulkUpdates.feedbackTopic}
-                onChange={(e) => setBulkUpdates(prev => ({ ...prev, feedbackTopic: e.target.value }))}
-                style={{
-                  width: '100%',
-                  padding: '8px 12px',
-                  fontSize: 13,
-                  border: '1px solid var(--border-primary)',
-                  borderRadius: "var(--radius-comfortable)",
-                  background: 'var(--bg-surface)',
-                  color: 'var(--text-primary)',
-                  cursor: 'pointer'
-                }}>
-                <option value="">-- Không thay đổi --</option>
-                <option value="TEACHER">TEACHER</option>
-                <option value="DOCUMENT">DOCUMENT</option>
-                <option value="EQUIPMENT">EQUIPMENT</option>
-                <option value="OPERATION">OPERATION</option>
-                <option value="OTHER">OTHER</option>
-              </select>
+                options={[
+                  { value: '', label: '-- Không thay đổi --' },
+                  { value: 'TEACHER', label: 'TEACHER' },
+                  { value: 'DOCUMENT', label: 'DOCUMENT' },
+                  { value: 'EQUIPMENT', label: 'EQUIPMENT' },
+                  { value: 'OPERATION', label: 'OPERATION' },
+                  { value: 'OTHER', label: 'OTHER' }
+                ]}
+                onChange={v => setBulkUpdates(prev => ({ ...prev, feedbackTopic: v }))}
+              />
             </div>
 
             {/* Assignee */}

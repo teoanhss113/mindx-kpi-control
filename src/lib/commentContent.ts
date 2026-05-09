@@ -16,6 +16,9 @@ export function getStudentAttendanceCommentContent(attendance: Pick<StudentAtten
     .map(stripCommentHtml)
     .filter(Boolean);
 
-  if (areaContents.length > 0) return areaContents.join('\n');
-  return stripCommentHtml(attendance?.comment || '');
+  const mainComment = stripCommentHtml(attendance?.comment || '');
+  
+  // Combine all contents to ensure we don't miss anything. 
+  // Order: Areas first, then the main comment.
+  return [...areaContents, mainComment].join('\n').trim();
 }

@@ -19,7 +19,7 @@ import {
   ToastContainer,
   StatCard,
   TableToolbar,
-  TableGroupHeader,
+  AdminTableSection,
   QuickFilterChips,
   ACTIVE_STATUS_OPTIONS,
   ActiveStatusBadge,
@@ -418,7 +418,7 @@ export default function TeachersPage() {
             )}
             
             {/* Status filter */}
-            <MultiSelect
+            <MultiSelect menuPosition="fixed"
               options={statusOptions}
               selected={selectedStatuses}
               onChange={setSelectedStatuses}
@@ -452,84 +452,73 @@ export default function TeachersPage() {
         </section>
       )}
 
-      {/* Table Filters */}
-      {!loading && teachers.length > 0 && (
-        <TableToolbar
-          search={searchTerm}
-          onSearchChange={setSearchTerm}
-          searchPlaceholder="Tìm theo tên, email, username..."
-          quickFilterSlots={
-            <>
-              {/* User preference chips */}
-              {hasPreferences && (
-                <QuickFilterChips
-                  centres={centres}
-                  selectedCentres={tableSelectedCentres}
-                  onCentresChange={setTableSelectedCentres}
-                  showCentres={true}
-                  showCourses={false}
-                />
-              )}
-            </>
-          }
-          filterSlots={
-            <>
-              {/* 1. Centre filter - Only show if 2+ centres */}
-              {tableCentreIds.length > 1 && (
-                <CentreSelect
-                  centres={centres}
-                  selected={tableSelectedCentres}
-                  onChange={setTableSelectedCentres}
-                  filterToIds={tableCentreIds}
-                  placeholder="Tất cả cơ sở"
-                  searchable
-                  maxDisplay={1}
-                />
-              )}
-              
-              {/* 2. Course Category filter - Only show if 2+ categories */}
-              {courseLineOptions.length > 1 && (
-                <MultiSelect
-                  options={courseLineOptions}
-                  selected={selectedCourseLines}
-                  onChange={setSelectedCourseLines}
-                  placeholder="Tất cả khối"
-                  maxDisplay={2}
-                />
-              )}
-              
-              {/* 3. Status filter - Only show if 2+ statuses */}
-              {tableStatusOptions.length > 1 && (
-                <MultiSelect
-                  options={tableStatusOptions}
-                  selected={tableSelectedStatuses}
-                  onChange={setTableSelectedStatuses}
-                  placeholder="Tất cả trạng thái"
-                />
-              )}
-            </>
-          }
-          hasFilter={searchTerm.length > 0 || tableSelectedCentres.length > 0 || selectedCourseLines.length > 0 || tableSelectedStatuses.length > 0}
-          onClearFilter={() => {
-            setSearchTerm('');
-            setTableSelectedCentres([]);
-            setSelectedCourseLines([]);
-            setTableSelectedStatuses([]);
-          }}
-        />
-      )}
-
       {/* Teachers Table */}
       {!loading && filteredTeachers.length > 0 && (
-        <section className={styles.tableSection}>
-          <TableGroupHeader
-            title="Danh sách giáo viên"
-            count={filteredTeachers.length}
-            isExpanded={showTable}
-            onToggle={() => setShowTable(!showTable)}
-          />
-          
-          {showTable && (
+        <AdminTableSection
+          title="Danh sách giáo viên"
+          count={filteredTeachers.length}
+          isExpanded={showTable}
+          onToggle={() => setShowTable(!showTable)}
+          toolbarSlot={
+            <TableToolbar
+              search={searchTerm}
+              onSearchChange={setSearchTerm}
+              searchPlaceholder="Tìm theo tên, email, username..."
+              quickFilterSlots={
+                <>
+                  {hasPreferences && (
+                    <QuickFilterChips
+                      centres={centres}
+                      selectedCentres={tableSelectedCentres}
+                      onCentresChange={setTableSelectedCentres}
+                      showCentres={true}
+                      showCourses={false}
+                    />
+                  )}
+                </>
+              }
+              filterSlots={
+                <>
+                  {tableCentreIds.length > 1 && (
+                    <CentreSelect menuPosition="fixed"
+                      centres={centres}
+                      selected={tableSelectedCentres}
+                      onChange={setTableSelectedCentres}
+                      filterToIds={tableCentreIds}
+                      placeholder="Tất cả cơ sở"
+                      searchable
+                      maxDisplay={1}
+                    />
+                  )}
+                  {courseLineOptions.length > 1 && (
+                    <MultiSelect menuPosition="fixed"
+                      options={courseLineOptions}
+                      selected={selectedCourseLines}
+                      onChange={setSelectedCourseLines}
+                      placeholder="Tất cả khối"
+                      maxDisplay={2}
+                    />
+                  )}
+                  {tableStatusOptions.length > 1 && (
+                    <MultiSelect menuPosition="fixed"
+                      options={tableStatusOptions}
+                      selected={tableSelectedStatuses}
+                      onChange={setTableSelectedStatuses}
+                      placeholder="Tất cả trạng thái"
+                    />
+                  )}
+                </>
+              }
+              hasFilter={searchTerm.length > 0 || tableSelectedCentres.length > 0 || selectedCourseLines.length > 0 || tableSelectedStatuses.length > 0}
+              onClearFilter={() => {
+                setSearchTerm('');
+                setTableSelectedCentres([]);
+                setSelectedCourseLines([]);
+                setTableSelectedStatuses([]);
+              }}
+            />
+          }
+        >
             <div className={styles.tableScrollWrapper}>
               <table className={styles.studentTable}>
                 <thead>
@@ -592,8 +581,7 @@ export default function TeachersPage() {
                 </tbody>
               </table>
             </div>
-          )}
-        </section>
+        </AdminTableSection>
       )}
 
       {/* Empty State */}

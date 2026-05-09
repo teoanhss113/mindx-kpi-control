@@ -30,6 +30,8 @@ interface CentreSelectProps {
   filterToIds?: string[];
   /** Enable region quick select buttons */
   showRegionQuickSelect?: boolean;
+  /** Position of the menu */
+  menuPosition?: 'bottom' | 'top' | 'fixed';
 }
 
 /**
@@ -75,6 +77,7 @@ export function CentreSelect({
   searchable = true,
   filterToIds,
   showRegionQuickSelect = false,
+  menuPosition = 'bottom',
 }: CentreSelectProps) {
   const [regions, setRegions] = useState<Region[]>([]);
   const [loadingRegions, setLoadingRegions] = useState(false);
@@ -237,6 +240,7 @@ export function CentreSelect({
       placeholder={placeholder}
       maxDisplay={maxDisplay}
       searchable={searchable}
+      menuPosition={menuPosition}
     />
   );
 }

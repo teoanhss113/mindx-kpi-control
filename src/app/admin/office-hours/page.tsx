@@ -16,7 +16,7 @@ import { getCache, setCache, clearCache } from '@/lib/idb';
 import { getOfficeHourCategory } from '@/lib/courseCategories';
 import { sendNotification, NotificationTemplates } from '@/lib/sendNotification';
 import { OfficeHour, OFFICE_HOUR_STATUS, OFFICE_HOUR_TYPE } from '@/types/officeHours';
-import { useToast, ToastContainer, initials, EmptyState, Toolbar, SelectOption, TableGroupHeader, Modal, ModalHeader, MultiSelect, TableToolbar, ChartSectionHeader, StandardXAxis, StandardYAxisCategory, StandardYAxisNumber, ChartLegend, ComposedChartConfig, CustomTooltip, UserSearchInput, type UserSearchResult, ModalFooter, CentreSelect, QuickFilterChips, ShiftRequestSuggestions, type ShiftRequest, OFFICE_HOUR_STATUS_LABELS, OfficeHourStatusBadge, OfficeHourTypeBadge, getOfficeHourTypeLabel } from '@/components/ui';
+import { useToast, ToastContainer, initials, EmptyState, Toolbar, SelectOption, TableGroupHeader, AdminTableSection, Modal, ModalHeader, MultiSelect, TableToolbar, ChartSectionHeader, StandardXAxis, StandardYAxisCategory, StandardYAxisNumber, ChartLegend, ComposedChartConfig, CustomTooltip, UserSearchInput, type UserSearchResult, ModalFooter, CentreSelect, QuickFilterChips, ShiftRequestSuggestions, type ShiftRequest, OFFICE_HOUR_STATUS_LABELS, OfficeHourStatusBadge, OfficeHourTypeBadge, getOfficeHourTypeLabel, KPIThresholdSuggestions, Icon } from '@/components/ui';
 import { useQuickFilterChips } from '@/hooks/useUserPreferences';
 import { PageLayout } from '@/components/PageLayout';
 import { getNavItemsWithRouter } from '@/lib/navigation';
@@ -39,6 +39,16 @@ function parseTeacherNote(customField: string | null | undefined): string {
 }
 
 import { Suspense } from 'react';
+
+const CONVERSION_TARGETS = [
+  { value: 15, label: '15%' },
+  { value: 26, label: '26%' },
+  { value: 31, label: '31%' },
+  { value: 40.1, label: '> 40%' },
+];
+const DEFAULT_EXEMPT_TYPES = ['Event', 'Makeup', 'Tutor'];
+const DEFAULT_EXEMPT_STATUSES = ['ABANDONED', 'DENIED', 'REJECTED'];
+const DEFAULT_EXEMPT_APPOINTMENT_STATUSES = ['CANCELED'];
 
 function OfficeHoursPageInner() {
   const { session, isLoading: authLoading, logout } = useAuth();
@@ -74,9 +84,9 @@ function OfficeHoursPageInner() {
 
   // Exemption states
   const [showExemptPanel, setShowExemptPanel] = useState(true);
-  const [exemptTypes, setExemptTypes] = useState<string[]>(['Event', 'Makeup', 'Tutor']); // Mặc định miễn trừ Event, Makeup, Tutor
-  const [exemptStatuses, setExemptStatuses] = useState<string[]>(['ABANDONED', 'DENIED', 'REJECTED']); // Mặc định miễn trừ ABANDONED, DENIED, REJECTED
-  const [exemptAppointmentStatuses, setExemptAppointmentStatuses] = useState<string[]>(['CANCELED']); // Mặc định miễn trừ CANCELED
+  const [exemptTypes, setExemptTypes] = useState<string[]>(DEFAULT_EXEMPT_TYPES);
+  const [exemptStatuses, setExemptStatuses] = useState<string[]>(DEFAULT_EXEMPT_STATUSES);
+  const [exemptAppointmentStatuses, setExemptAppointmentStatuses] = useState<string[]>(DEFAULT_EXEMPT_APPOINTMENT_STATUSES);
 
   // UI state
   const [sortBy, setSortBy] = useState<'time' | 'status' | 'students' | 'type' | 'course' | 'teacher' | 'centre' | 'paid' | 'comments' | 'confirmed'>('time');
@@ -338,6 +348,13 @@ function OfficeHoursPageInner() {
     setSelectedTypes([]);
     setSearchQuery('');
     addToast(MESSAGES.CACHE.CLEARED, 'success');
+  };
+
+  const handleResetExemptions = () => {
+    setExemptTypes(DEFAULT_EXEMPT_TYPES);
+    setExemptStatuses(DEFAULT_EXEMPT_STATUSES);
+    setExemptAppointmentStatuses(DEFAULT_EXEMPT_APPOINTMENT_STATUSES);
+    addToast('Đã khôi phục quy tắc miễn trừ mặc định', 'success');
   };
 
   // Load teachers for edit modal
@@ -771,6 +788,32 @@ function OfficeHoursPageInner() {
     };
   }, [filteredOfficeHours, exemptTypes, exemptStatuses, exemptAppointmentStatuses]);
 
+  const conversionSuggestions = useMemo(() => {
+    if (!kpis || kpis.totalAppointments === 0) {
+      return [{
+        key: 'conversion-data',
+        target: '31%',
+        content: 'cần dữ liệu học viên trải nghiệm để tính mốc',
+      }];
+    }
+
+    return CONVERSION_TARGETS.map(({ value, label }) => {
+      const reached = kpis.conversionRate >= value;
+      const needed = reached
+        ? 0
+        : Math.max(1, Math.ceil((value / 100) * kpis.totalAppointments) - kpis.convertedAppointments);
+
+      return {
+        key: label,
+        target: label,
+        done: reached,
+        content: reached
+          ? <><Icon.Check size={11} /> Đã đạt</>
+          : <>cần thêm <strong>{needed}</strong> học viên có đơn</>,
+      };
+    });
+  }, [kpis]);
+
   // Chart data: By Centre
   const centreChartData = useMemo(() => {
     const map = new Map<string, { sessions: number; students: number; converted: number; conversionRate: number }>();
@@ -1035,6 +1078,13 @@ function OfficeHoursPageInner() {
                 </div>
               )}
 
+              {kpis && (
+                <KPIThresholdSuggestions
+                  label="Chuyển đổi:"
+                  items={conversionSuggestions}
+                />
+              )}
+
               {/* CHARTS */}
               {filteredOfficeHours.length > 1 && (centreChartData.length > 0 || courseLineChartData.length > 0) && (
                 <div className={styles.chartsSection}>
@@ -1142,117 +1192,105 @@ function OfficeHoursPageInner() {
                 </div>
               )}
 
-              {/* Table Filters */}
-              {officeHours.length > 0 && (
-                <TableToolbar
-                  search={searchQuery}
-                  onSearchChange={setSearchQuery}
-                  searchPlaceholder="Tìm kiếm..."
-                  quickFilterSlots={
-                    hasPreferences && (
-                      <QuickFilterChips
-                        centres={centres}
-                        selectedCentres={tableSelectedCentres}
-                        onCentresChange={setTableSelectedCentres}
-                        selectedCourses={selectedGrades}
-                        onCoursesChange={setSelectedGrades}
-                        showCentres={true}
-                        showCourses={true}
-                      />
-                    )
-                  }
-                  filterSlots={
-                    <>
-                      {/* 1. Centre */}
-                      {tableCentreIds.length > 1 && (
-                        <CentreSelect
-                          centres={centres}
-                          selected={tableSelectedCentres}
-                          onChange={setTableSelectedCentres}
-                          filterToIds={tableCentreIds}
-                          placeholder="Tất cả cơ sở"
-                          searchable
-                        />
-                      )}
-                      {/* 2. Course Line */}
-                      {courseLineOptions.length > 1 && (
-                        <MultiSelect
-                          options={courseLineOptions}
-                          selected={selectedGrades}
-                          onChange={setSelectedGrades}
-                          placeholder="Tất cả khối"
-                          maxDisplay={2}
-                        />
-                      )}
-                      {/* 3. Status */}
-                      {statusOptions.length > 1 && (
-                        <MultiSelect
-                          options={statusOptions}
-                          selected={selectedStatuses}
-                          onChange={setSelectedStatuses}
-                          placeholder="Tất cả trạng thái"
-                        />
-                      )}
-                      {/* 4. Specific: Type */}
-                      {typeOptions.length > 1 && (
-                        <MultiSelect
-                          options={typeOptions}
-                          selected={selectedTypes}
-                          onChange={setSelectedTypes}
-                          placeholder="Tất cả loại"
-                        />
-                      )}
-                    </>
-                  }
-                  hasFilter={hasTableFilter}
-                  onClearFilter={clearTableFilters}
-                />
-              )}
-
-              {/* View Mode Tabs */}
-              {(officeHours.length > 0 || loading) && (
-                <div style={{ display: 'flex', gap: 'var(--space-2)', marginBottom: 'var(--space-4)', padding: '0 var(--space-1)' }}>
-                  <button
-                    className={viewMode === 'all' ? styles.primaryBtn : styles.clearCacheBtn}
-                    onClick={() => setViewMode('all')}
-                    style={{ flex: 1, justifyContent: 'center', fontSize: 13, padding: '7px 12px' }}
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <rect x="3" y="3" width="7" height="9"/>
-                      <rect x="14" y="3" width="7" height="5"/>
-                      <rect x="14" y="12" width="7" height="9"/>
-                      <rect x="3" y="16" width="7" height="5"/>
-                    </svg>
-                    Danh sách
-                  </button>
-                  <button
-                    className={viewMode === 'by-teacher' ? styles.primaryBtn : styles.clearCacheBtn}
-                    onClick={() => setViewMode('by-teacher')}
-                    style={{ flex: 1, justifyContent: 'center', fontSize: 13, padding: '7px 12px' }}
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-                      <circle cx="12" cy="7" r="4"/>
-                    </svg>
-                    Theo giáo viên
-                  </button>
-                </div>
-              )}
-
               {/* Table */}
               {(officeHours.length > 0 || loading) && (
-                <div className={styles.tableSection}>
-                  <TableGroupHeader
-                    title={viewMode === 'all' ? 'Danh sách ca trải nghiệm' : 'Phân tích theo Giáo viên'}
-                    count={viewMode === 'all' ? filteredOfficeHours.length : Object.keys(groupedByTeacher).length}
-                    loading={loading}
-                    progress={progress}
-                    isExpanded={showActiveTable}
-                    onToggle={() => setShowActiveTable(p => !p)}
-                  />
-                  <AnimatePresence initial={false}>
-                    {showActiveTable && (
-                      <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} style={{ overflow: 'hidden' }}>
+                <AdminTableSection
+                  title={viewMode === 'all' ? 'Danh sách ca trải nghiệm' : 'Phân tích theo Giáo viên'}
+                  count={viewMode === 'all' ? filteredOfficeHours.length : Object.keys(groupedByTeacher).length}
+                  loading={loading}
+                  progress={progress}
+                  isExpanded={showActiveTable}
+                  onToggle={() => setShowActiveTable(p => !p)}
+                  toolbarSlot={
+                    <>
+                      {officeHours.length > 0 && (
+                        <TableToolbar
+                          search={searchQuery}
+                          onSearchChange={setSearchQuery}
+                          searchPlaceholder="Tìm kiếm..."
+                          quickFilterSlots={
+                            hasPreferences && (
+                              <QuickFilterChips
+                                centres={centres}
+                                selectedCentres={tableSelectedCentres}
+                                onCentresChange={setTableSelectedCentres}
+                                selectedCourses={selectedGrades}
+                                onCoursesChange={setSelectedGrades}
+                                showCentres={true}
+                                showCourses={true}
+                              />
+                            )
+                          }
+                          filterSlots={
+                            <>
+                              {tableCentreIds.length > 1 && (
+                                <CentreSelect menuPosition="fixed"
+                                  centres={centres}
+                                  selected={tableSelectedCentres}
+                                  onChange={setTableSelectedCentres}
+                                  filterToIds={tableCentreIds}
+                                  placeholder="Tất cả cơ sở"
+                                  searchable
+                                />
+                              )}
+                              {courseLineOptions.length > 1 && (
+                                <MultiSelect menuPosition="fixed"
+                                  options={courseLineOptions}
+                                  selected={selectedGrades}
+                                  onChange={setSelectedGrades}
+                                  placeholder="Tất cả khối"
+                                  maxDisplay={2}
+                                />
+                              )}
+                              {statusOptions.length > 1 && (
+                                <MultiSelect menuPosition="fixed"
+                                  options={statusOptions}
+                                  selected={selectedStatuses}
+                                  onChange={setSelectedStatuses}
+                                  placeholder="Tất cả trạng thái"
+                                />
+                              )}
+                              {typeOptions.length > 1 && (
+                                <MultiSelect menuPosition="fixed"
+                                  options={typeOptions}
+                                  selected={selectedTypes}
+                                  onChange={setSelectedTypes}
+                                  placeholder="Tất cả loại"
+                                />
+                              )}
+                            </>
+                          }
+                          hasFilter={hasTableFilter}
+                          onClearFilter={clearTableFilters}
+                        />
+                      )}
+                      <div className={styles.viewModeToggle}>
+                        <button
+                          className={`${viewMode === 'all' ? styles.primaryBtn : styles.clearCacheBtn} ${styles.viewModeButton}`}
+                          onClick={() => setViewMode('all')}
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <rect x="3" y="3" width="7" height="9"/>
+                            <rect x="14" y="3" width="7" height="5"/>
+                            <rect x="14" y="12" width="7" height="9"/>
+                            <rect x="3" y="16" width="7" height="5"/>
+                          </svg>
+                          Danh sách
+                        </button>
+                        <button
+                          className={`${viewMode === 'by-teacher' ? styles.primaryBtn : styles.clearCacheBtn} ${styles.viewModeButton}`}
+                          onClick={() => setViewMode('by-teacher')}
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                            <circle cx="12" cy="7" r="4"/>
+                          </svg>
+                          Theo giáo viên
+                        </button>
+                      </div>
+                    </>
+                  }
+                >
                         <div className={styles.tableScrollWrapper}>
                 {/* Conditional rendering based on viewMode */}
                 {viewMode === 'all' ? (
@@ -1922,10 +1960,7 @@ function OfficeHoursPageInner() {
                 )}
               </div>
               {/* End of tableScrollWrapper */}
-              </motion.div>
-                    )}
-                  </AnimatePresence>
-            </div>
+                </AdminTableSection>
           )}
             </div>
 
@@ -1937,18 +1972,32 @@ function OfficeHoursPageInner() {
                     <div className={styles.chartsSectionTitle}>
                       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                         <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      Quy tắc Miễn trừ
-                    </div>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" 
-                      style={{ 
-                        color: 'var(--text-tertiary)',
-                        transform: showExemptPanel ? 'rotate(180deg)' : 'rotate(0deg)', 
-                        transition: 'transform 0.2s ease' 
-                      }}>
-                      <polyline points="6 9 12 15 18 9" />
-                    </svg>
-                  </div>
+	                      </svg>
+	                      Quy tắc Miễn trừ
+	                    </div>
+	                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+	                      <button
+	                        type="button"
+	                        className={styles.chartToggle}
+	                        aria-label="Khôi phục quy tắc mặc định"
+	                        title="Khôi phục quy tắc mặc định"
+	                        onClick={(e) => {
+	                          e.stopPropagation();
+	                          handleResetExemptions();
+	                        }}
+	                      >
+	                        <Icon.Refresh />
+	                      </button>
+	                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+	                        style={{
+	                          color: 'var(--text-tertiary)',
+	                          transform: showExemptPanel ? 'rotate(180deg)' : 'rotate(0deg)',
+	                          transition: 'transform 0.2s ease'
+	                        }}>
+	                        <polyline points="6 9 12 15 18 9" />
+	                      </svg>
+	                    </div>
+	                  </div>
                   <AnimatePresence initial={false}>
                     {showExemptPanel && (
                       <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} style={{ overflow: 'hidden' }}>

@@ -13,7 +13,7 @@ export function useAllowedPages() {
     'completion',
     'teacher-change',
     'tickets',
-    'class-quality',
+
     'office-hours',
     'teacher-schedule',
     'resale',

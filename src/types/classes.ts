@@ -134,4 +134,5 @@ export interface GetClassesVariables {
   unpassedSessionIndex?: number | null;
   haveSlotIn?: Record<string, unknown>;
   comments?: { criteria: unknown[] };
+  statusIn?: string[];
 }

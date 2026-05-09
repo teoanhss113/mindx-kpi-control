@@ -17,7 +17,7 @@ export async function getAllowedPages(): Promise<PageKey[]> {
     'completion',
     'teacher-change',
     'tickets',
-    'class-quality',
+
     'office-hours',
     'teacher-schedule',
     'resale',

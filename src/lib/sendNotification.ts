@@ -185,7 +185,7 @@ export const NotificationTemplates = {
     title: 'Cảnh báo chất lượng lớp học',
     body: `Lớp ${className}: ${issue}`,
     tag: 'class-quality-alert',
-    url: '/admin/class-quality',
+    url: '/admin/operations?view=quality-table',
     requireInteraction: true
   }),
 

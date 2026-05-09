@@ -19,7 +19,17 @@ import {
 // Checkpoint sessions where comments are required even if student is absent
 const CHECKPOINT_SESSIONS = [5, 9, 14]; // 1-indexed: session 5, 9, 14
 
-export function analyzeComments(cls: Class, exemptedSessions: number[] = []): ClassCommentAnalysis {
+/**
+ * Default exempted sessions — all sessions 1-30 EXCEPT checkpoints (5, 9, 14).
+ * A student absent on an exempted session is NOT required to have a teacher comment.
+ * A student absent on a non-exempted (checkpoint) session IS still required to have a comment.
+ */
+export const DEFAULT_EXEMPTED_SESSIONS: number[] = Array.from(
+  { length: 30 },
+  (_, i) => i + 1
+).filter(s => !CHECKPOINT_SESSIONS.includes(s));
+
+export function analyzeComments(cls: Class, exemptedSessions: number[] = DEFAULT_EXEMPTED_SESSIONS): ClassCommentAnalysis {
   let emptyCount = 0;
   let briefCount = 0;
   let duplicateCount = 0;
@@ -515,17 +525,14 @@ function parseScoreByLabel(comment: string, label: string): number | null {
  * Special case: If no theory/practice tests, use 100% ability score
  */
 function computeCpScore(theory: number | null, practice: number | null, ability: number | null): number | null {
-  // Special case: No theory/practice tests, only ability score
-  if ((theory === null || practice === null) && ability !== null) {
-    return ability; // 100% ability score
-  }
-  
-  // Standard case: All scores present
+  // Align with fetch_classes.js logic: return null if any score component is missing.
   if (theory === null || practice === null || ability === null) {
     return null;
   }
   
-  return 0.4 * ((theory + practice) / 2) + 0.6 * ability;
+  // Formula: 0.2 * (theory + practice) + 0.6 * ability
+  // Which is equivalent to: 0.4 * ((theory + practice) / 2) + 0.6 * ability
+  return 0.2 * (theory + practice) + 0.6 * ability;
 }
 
 /**
@@ -549,12 +556,72 @@ function getDemoQualityBand(score: number | null): 'good' | 'medium' | 'poor' | 
   return 'poor';
 }
 
+function getPreferredCheckpointSessions(cls: Class): { cp1: number; cp2: number; demo: number } {
+  const category = getCourseCategory(cls);
+  const total = cls.numberOfSessions || cls.slots?.length || 14;
+  const lastSessionIndex = Math.max(0, total - 1);
+
+  if (category === 'Robotics') {
+    return { cp1: 3, cp2: 7, demo: lastSessionIndex };
+  }
+
+  if (category === 'Art') {
+    return { cp1: 4, cp2: 8, demo: lastSessionIndex };
+  }
+
+  return { cp1: 4, cp2: 8, demo: Math.min(13, lastSessionIndex) };
+}
+
+function getCheckpointScoreCount(slot: Session | undefined): number {
+  if (!slot) return 0;
+  return (slot.studentAttendance ?? []).reduce((count, attendance) => {
+    const commentContent = getStudentAttendanceCommentContent(attendance);
+    if (parseScoreByLabel(commentContent, 'Điểm Demo') !== null || parseScoreByLabel(commentContent, 'Điểm sản phẩm cuối khoá') !== null) {
+      return count;
+    }
+    const theory = parseScoreByLabel(commentContent, 'Điểm lý thuyết');
+    const practice = parseScoreByLabel(commentContent, 'Điểm thực hành');
+    const ability = parseScoreByLabel(commentContent, 'Điểm năng lực');
+    return count + (computeCpScore(theory, practice, ability) !== null ? 1 : 0);
+  }, 0);
+}
+
+function getDemoScoreCount(slot: Session | undefined): number {
+  if (!slot) return 0;
+  return (slot.studentAttendance ?? []).reduce((count, attendance) => {
+    const commentContent = getStudentAttendanceCommentContent(attendance);
+    // Align with fetch_classes.js: primarily look for "Điểm Demo"
+    const demoScore = parseScoreByLabel(commentContent, 'Điểm Demo');
+    const productScore = demoScore !== null ? null : parseScoreByLabel(commentContent, 'Điểm sản phẩm cuối khoá');
+    
+    return count + (demoScore !== null || productScore !== null ? 1 : 0);
+  }, 0);
+}
+
+function pickBestSessionIndex(slots: Session[], preferredIndex: number, scoreCounter: (slot: Session | undefined) => number, excludedIndexes: number[] = []): number {
+  const excluded = new Set(excludedIndexes);
+  if (!excluded.has(preferredIndex) && scoreCounter(slots[preferredIndex]) > 0) return preferredIndex;
+
+  let bestIndex = preferredIndex;
+  let bestScore = 0;
+  slots.forEach((slot, index) => {
+    if (excluded.has(index)) return;
+    const score = scoreCounter(slot);
+    if (score > bestScore) {
+      bestScore = score;
+      bestIndex = index;
+    }
+  });
+
+  return bestIndex;
+}
+
 /**
  * Analyze checkpoint scores (CP1 or CP2)
  * @param cls - Class data
- * @param sessionIndex - 0-indexed session number (CP1=4, CP2=8)
+ * @param sessionIndex - 0-indexed preferred session number
  */
-function analyzeCheckpoint(cls: Class, sessionIndex: number): CheckpointAnalysis {
+function analyzeCheckpoint(cls: Class, sessionIndex: number, excludedIndexes: number[] = []): CheckpointAnalysis {
   const slots = (cls.slots ?? [])
     .filter(s => s.date || s.startTime)
     .sort((a, b) => {
@@ -562,13 +629,14 @@ function analyzeCheckpoint(cls: Class, sessionIndex: number): CheckpointAnalysis
       const bTime = b.startTime || b.date;
       return new Date(aTime).getTime() - new Date(bTime).getTime();
     });
+  const actualSessionIndex = pickBestSessionIndex(slots, sessionIndex, getCheckpointScoreCount, excludedIndexes);
 
-  const cpSlot = slots[sessionIndex];
+  const cpSlot = slots[actualSessionIndex];
   
   if (!cpSlot) {
     return {
       classId: cls.id,
-      sessionIndex,
+      sessionIndex: actualSessionIndex,
       sessionDate: null,
       hasSession: false,
       studentsWithScores: 0,
@@ -593,7 +661,7 @@ function analyzeCheckpoint(cls: Class, sessionIndex: number): CheckpointAnalysis
   if (students.length === 0) {
     return {
       classId: cls.id,
-      sessionIndex,
+      sessionIndex: actualSessionIndex,
       sessionDate: cpSlot.startTime || cpSlot.date,
       hasSession: true,
       studentsWithScores: 0,
@@ -623,6 +691,10 @@ function analyzeCheckpoint(cls: Class, sessionIndex: number): CheckpointAnalysis
     const practice = parseScoreByLabel(commentContent, 'Điểm thực hành');
     const ability = parseScoreByLabel(commentContent, 'Điểm năng lực');
     const cpScore = computeCpScore(theory, practice, ability);
+    
+    if (cpScore !== null) {
+      console.log(`[Analysis] Student ${attendance.student?.fullName} has CP score: ${cpScore} (T:${theory}, P:${practice}, A:${ability})`);
+    }
     
     const studentScore: StudentCheckpointScore = {
       studentId: attendance.student?.id || '',
@@ -659,7 +731,7 @@ function analyzeCheckpoint(cls: Class, sessionIndex: number): CheckpointAnalysis
 
   return {
     classId: cls.id,
-    sessionIndex,
+    sessionIndex: actualSessionIndex,
     sessionDate: cpSlot.startTime || cpSlot.date,
     hasSession: true,
     studentsWithScores: validScores.length,
@@ -701,13 +773,14 @@ function analyzeDemo(cls: Class, sessionIndex: number = 13): CheckpointAnalysis 
       const bTime = b.startTime || b.date;
       return new Date(aTime).getTime() - new Date(bTime).getTime();
     });
+  const actualSessionIndex = pickBestSessionIndex(slots, sessionIndex, getDemoScoreCount);
 
-  const demoSlot = slots[sessionIndex];
+  const demoSlot = slots[actualSessionIndex];
   
   if (!demoSlot) {
     return {
       classId: cls.id,
-      sessionIndex,
+      sessionIndex: actualSessionIndex,
       sessionDate: null,
       hasSession: false,
       studentsWithScores: 0,
@@ -732,7 +805,7 @@ function analyzeDemo(cls: Class, sessionIndex: number = 13): CheckpointAnalysis 
   if (students.length === 0) {
     return {
       classId: cls.id,
-      sessionIndex,
+      sessionIndex: actualSessionIndex,
       sessionDate: demoSlot.startTime || demoSlot.date,
       hasSession: true,
       studentsWithScores: 0,
@@ -757,23 +830,21 @@ function analyzeDemo(cls: Class, sessionIndex: number = 13): CheckpointAnalysis 
   let missingScoreCount = 0;
 
   for (const attendance of students) {
-    // Parse Demo score directly (matches reference script)
     const commentContent = getStudentAttendanceCommentContent(attendance);
+    // Align with fetch_classes.js: primarily look for "Điểm Demo"
     const demoScore = parseScoreByLabel(commentContent, 'Điểm Demo');
-    
-    // For backward compatibility, also try old label if not found
     const productScore = demoScore !== null ? null : parseScoreByLabel(commentContent, 'Điểm sản phẩm cuối khoá');
-    const ability = parseScoreByLabel(commentContent, 'Điểm năng lực');
     
-    // Use direct demo score if available, otherwise compute from product + ability
-    const finalDemoScore = demoScore !== null ? demoScore : computeDemoScore(productScore, ability);
+    // In fetch_classes.js, Demo score is just the direct score. 
+    // If we have "Điểm Demo", use it. Otherwise fallback to "Điểm sản phẩm cuối khoá".
+    const finalDemoScore = demoScore !== null ? demoScore : productScore;
     
     const studentScore: StudentDemoScore = {
       studentId: attendance.student?.id || '',
       studentName: attendance.student?.fullName || '',
       attendanceStatus: attendance.status || '',
       productScore,
-      abilityScore: ability,
+      abilityScore: parseScoreByLabel(commentContent, 'Điểm năng lực'),
       demoScore: finalDemoScore,
       qualityBand: getDemoQualityBand(finalDemoScore),
       comment: commentContent
@@ -799,7 +870,7 @@ function analyzeDemo(cls: Class, sessionIndex: number = 13): CheckpointAnalysis 
 
   return {
     classId: cls.id,
-    sessionIndex,
+    sessionIndex: actualSessionIndex,
     sessionDate: demoSlot.startTime || demoSlot.date,
     hasSession: true,
     studentsWithScores: validScores.length,
@@ -820,9 +891,10 @@ function analyzeDemo(cls: Class, sessionIndex: number = 13): CheckpointAnalysis 
 }
 
 export function analyzeClassQuality(cls: Class, exemptedSessions?: number[]): AnalyzedClassForQuality {
-  const cp1Analysis = analyzeCheckpoint(cls, 4); // Session 5 (0-indexed = 4)
-  const cp2Analysis = analyzeCheckpoint(cls, 8); // Session 9 (0-indexed = 8)
-  const demoAnalysis = analyzeDemo(cls, 13); // Session 14 (0-indexed = 13)
+  const preferredSessions = getPreferredCheckpointSessions(cls);
+  const cp1Analysis = analyzeCheckpoint(cls, preferredSessions.cp1);
+  const cp2Analysis = analyzeCheckpoint(cls, preferredSessions.cp2, [cp1Analysis.sessionIndex]);
+  const demoAnalysis = analyzeDemo(cls, preferredSessions.demo);
   
   // Calculate TBCK and rank for each demo student
   // by combining their CP1, CP2, and Demo scores

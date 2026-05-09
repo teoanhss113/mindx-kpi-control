@@ -8,7 +8,8 @@
 
 'use client'
 
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import {
   Menu as _Menu, RefreshCw, Trash2, BarChart2, X as _X,
   ChevronDown as _ChevronDown, ChevronLeft as _ChevronLeft, ChevronRight as _ChevronRight,
@@ -30,6 +31,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion'
 import styles from '@/app/dashboard.module.css'
 import { CentreSelect as CentreSelectComponent } from './CentreSelect'
+import { FilterChip } from './FilterChip'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CHART COMPONENTS — Standardized chart configurations
@@ -122,7 +124,7 @@ export type {
 // ICONS  — single canonical set backed by lucide-react
 // import from here, never inline per-page and never import lucide directly
 // ─────────────────────────────────────────────────────────────────────────────
-type P = { size?: number; color?: string }
+type P = { size?: number; color?: string; style?: React.CSSProperties }
 
 export const Icon = {
   Menu:           (p?: P) => <_Menu            size={p?.size ?? 18} color={p?.color} />,
@@ -130,11 +132,11 @@ export const Icon = {
   Trash:          (p?: P) => <Trash2            size={p?.size ?? 13} color={p?.color} />,
   BarChart:       (p?: P) => <BarChart2         size={p?.size ?? 14} color={p?.color} />,
   Close:          (p?: P) => <_X               size={p?.size ?? 12} color={p?.color} />,
-  ChevronDown:    (p?: P) => <_ChevronDown     size={p?.size ?? 11} color={p?.color} />,
-  ChevronLeft:    (p?: P) => <_ChevronLeft     size={p?.size ?? 16} color={p?.color} />,
-  ChevronRight:   (p?: P) => <_ChevronRight    size={p?.size ?? 16} color={p?.color} />,
-  Search:         (p?: P) => <_Search          size={p?.size ?? 14} color={p?.color ?? 'var(--text-quaternary)'} />,
-  Filter:         (p?: P) => <_Filter          size={p?.size ?? 12} color={p?.color} />,
+  ChevronDown:    (p?: P) => <_ChevronDown     size={p?.size ?? 11} color={p?.color} style={p?.style} />,
+  ChevronLeft:    (p?: P) => <_ChevronLeft     size={p?.size ?? 16} color={p?.color} style={p?.style} />,
+  ChevronRight:   (p?: P) => <_ChevronRight    size={p?.size ?? 16} color={p?.color} style={p?.style} />,
+  Search:         (p?: P) => <_Search          size={p?.size ?? 14} color={p?.color ?? 'var(--text-quaternary)'} style={p?.style} />,
+  Filter:         (p?: P) => <_Filter          size={p?.size ?? 12} color={p?.color} style={p?.style} />,
   Table:          (p?: P) => <Table2           size={p?.size ?? 15} color={p?.color} />,
   People:         (p?: P) => <_Users           size={p?.size ?? 15} color={p?.color} />,
   PieChart:       (p?: P) => <_PieChart        size={p?.size ?? 15} color={p?.color} />,
@@ -145,9 +147,9 @@ export const Icon = {
   MapPin:         (p?: P) => <_MapPin          size={p?.size ?? 12} color={p?.color} />,
   CheckCircle:    (p?: P) => <_CheckCircle     size={p?.size ?? 14} color={p?.color} />,
   XCircle:        (p?: P) => <_XCircle         size={p?.size ?? 14} color={p?.color} />,
-  SortBoth:       (p?: P) => <ArrowUpDown      size={p?.size ?? 10} color={p?.color} style={{ opacity: 0.3 }} />,
-  SortAsc:        (p?: P) => <ArrowUp          size={p?.size ?? 10} color={p?.color} />,
-  SortDesc:       (p?: P) => <ArrowDown        size={p?.size ?? 10} color={p?.color} />,
+  SortBoth:       (p?: P) => <ArrowUpDown      size={p?.size ?? 10} color={p?.color} style={{ opacity: 0.3, ...p?.style }} />,
+  SortAsc:        (p?: P) => <ArrowUp          size={p?.size ?? 10} color={p?.color} style={p?.style} />,
+  SortDesc:       (p?: P) => <ArrowDown        size={p?.size ?? 10} color={p?.color} style={p?.style} />,
   AlertTriangle:  (p?: P) => <_AlertTriangle   size={p?.size ?? 14} color={p?.color} />,
   AlertCircle:    (p?: P) => <_AlertCircle     size={p?.size ?? 14} color={p?.color} />,
   Edit:           (p?: P) => <Pencil           size={p?.size ?? 14} color={p?.color} />,
@@ -300,6 +302,7 @@ export function MultiSelect({
   maxDisplay = 2,
   searchable = false,
   displayFormat = 'text',
+  menuPosition = 'bottom',
 }: {
   options: SelectOption[]
   selected?: string[]
@@ -308,14 +311,23 @@ export function MultiSelect({
   maxDisplay?: number
   searchable?: boolean
   displayFormat?: 'text' | 'chip'
+  menuPosition?: 'bottom' | 'top' | 'fixed'
 }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const ref = useRef<HTMLDivElement>(null)
   const searchRef = useRef<HTMLInputElement>(null)
+  const buttonRef = useRef<HTMLButtonElement>(null)
+  const [coords, setCoords] = useState({ top: 0, left: 0, width: 0 })
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   useEffect(() => {
     const fn = (e: MouseEvent) => {
+      if ((e.target as HTMLElement)?.closest(`.${styles.multiDropdownMenu}`)) return;
       if (ref.current && !ref.current.contains(e.target as Node)) {
         setOpen(false)
         setQuery('')
@@ -328,6 +340,28 @@ export function MultiSelect({
   useEffect(() => {
     if (open && searchable) setTimeout(() => searchRef.current?.focus(), 30)
   }, [open, searchable])
+
+  useLayoutEffect(() => {
+    if (open && menuPosition === 'fixed' && buttonRef.current) {
+      const update = () => {
+        const rect = buttonRef.current?.getBoundingClientRect()
+        if (rect) {
+          setCoords({
+            top: rect.bottom + 4,
+            left: rect.left,
+            width: rect.width,
+          })
+        }
+      }
+      update()
+      window.addEventListener('resize', update)
+      window.addEventListener('scroll', update, true)
+      return () => {
+        window.removeEventListener('resize', update)
+        window.removeEventListener('scroll', update, true)
+      }
+    }
+  }, [open, menuPosition])
 
   const filtered =
     searchable && query.trim()
@@ -345,9 +379,6 @@ export function MultiSelect({
       selected.includes(v) ? selected.filter((x) => x !== v) : [...selected, v],
     )
 
-  // Region options (value starts with "region:") are meta-options used for
-  // batch selection — they are never stored in `selected` (only centre IDs are).
-  // Exclude them from isAll / selectAll so the "Tất cả" checkbox works correctly.
   const leafOptions = options.filter((o) => !o.isRegion)
   const isAll = leafOptions.length > 0 && leafOptions.every((o) => selected.includes(o.value))
   const selectAll = () => {
@@ -369,15 +400,147 @@ export function MultiSelect({
             .join(', ')
         : `${selected.length} đã chọn`
 
-  // Separate selected and unselected items for better UX
   const selectedItems = filtered.filter((opt) => selected.includes(opt.value))
-  const unselectedItems = filtered.filter(
-    (opt) => !selected.includes(opt.value),
+  const unselectedItems = filtered.filter((opt) => !selected.includes(opt.value))
+
+  const menuContent = (
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          key="multi-select-menu"
+          className={styles.multiDropdownMenu}
+          style={
+            menuPosition === 'fixed'
+              ? {
+                  position: 'fixed',
+                  top: coords.top,
+                  left: coords.left,
+                  width: coords.width,
+                  zIndex: 9999999,
+                }
+              : {
+                  top: menuPosition === 'top' ? 'auto' : 'calc(100% + 4px)',
+                  bottom: menuPosition === 'top' ? 'calc(100% + 4px)' : 'auto',
+                }
+          }
+          initial={{ opacity: 0, y: menuPosition === 'top' ? 6 : -6, scale: 0.97 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: menuPosition === 'top' ? 4 : -4, scale: 0.97 }}
+          transition={{ duration: 0.12 }}
+        >
+          {searchable && (
+            <div className={styles.dropdownSearch}>
+              <Icon.Search size={12} color="var(--text-quaternary)" />
+              <input
+                ref={searchRef}
+                type="text"
+                className={styles.dropdownSearchInput}
+                placeholder="Tìm kiếm..."
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onClick={(e) => e.stopPropagation()}
+              />
+              {query && (
+                <button
+                  className={styles.dropdownSearchClear}
+                  onClick={() => setQuery('')}
+                >
+                  <Icon.X size={9} />
+                </button>
+              )}
+            </div>
+          )}
+
+          {!query.trim() && (
+            <>
+              <label className={styles.dropdownItem}>
+                <input
+                  type="checkbox"
+                  className={styles.reasonCheckbox}
+                  checked={isAll}
+                  onChange={selectAll}
+                  readOnly
+                />
+                <span className={styles.dropdownItemLabel}>Tất cả</span>
+              </label>
+              <div className={styles.dropdownDivider} />
+            </>
+          )}
+
+          {filtered.length === 0 ? (
+            <div className={styles.dropdownEmpty}>Không tìm thấy kết quả</div>
+          ) : (
+            <>
+              {!query.trim() && filtered.some((opt) => opt.isRegion) && (
+                <>
+                  <div className={styles.dropdownSectionLabel}>Chọn theo khu vực</div>
+                  {filtered
+                    .filter((opt) => opt.isRegion)
+                    .map((opt) => {
+                      const isRegionFullySelected = opt.regionCentreIds
+                        ? opt.regionCentreIds.every((id) => selected.includes(id))
+                        : false
+
+                      return (
+                        <label
+                          key={opt.value}
+                          className={styles.dropdownItem}
+                          style={{ background: 'var(--bg-elevated)', fontWeight: 510 }}
+                        >
+                          <input
+                            type="checkbox"
+                            className={styles.reasonCheckbox}
+                            checked={isRegionFullySelected}
+                            onChange={() => toggle(opt.value)}
+                          />
+                          <span className={styles.dropdownItemLabel}>{opt.label}</span>
+                        </label>
+                      )
+                    })}
+                  <div className={styles.dropdownDivider} />
+                </>
+              )}
+
+              <div className={styles.dropdownOptionsList}>
+                {selectedItems.map((opt) => (
+                  <label
+                    key={opt.value}
+                    className={`${styles.dropdownItem} ${styles.dropdownItemSelected}`}
+                  >
+                    <input
+                      type="checkbox"
+                      className={styles.reasonCheckbox}
+                      checked={true}
+                      onChange={() => toggle(opt.value)}
+                    />
+                    <span className={styles.dropdownItemLabel}>{opt.label}</span>
+                  </label>
+                ))}
+                {unselectedItems
+                  .filter((opt) => !opt.isRegion)
+                  .map((opt) => (
+                    <label key={opt.value} className={styles.dropdownItem}>
+                      <input
+                        type="checkbox"
+                        className={styles.reasonCheckbox}
+                        checked={false}
+                        onChange={() => toggle(opt.value)}
+                      />
+                      <span className={styles.dropdownItemLabel}>{opt.label}</span>
+                    </label>
+                  ))}
+              </div>
+            </>
+          )}
+        </motion.div>
+      )}
+    </AnimatePresence>
   )
 
   return (
     <div ref={ref} className={styles.multiDropdown}>
       <button
+        ref={buttonRef}
         type="button"
         className={`${styles.multiDropdownTrigger} ${!isAll ? styles.triggerActive : ''}`}
         onClick={() => setOpen((p) => !p)}
@@ -400,191 +563,19 @@ export function MultiSelect({
                 </span>
               ))}
               {selected.length > maxDisplay && (
-                <span className={styles.selectChipBadge}>
-                  +{selected.length - maxDisplay}
-                </span>
+                <span className={styles.selectChipBadge}>+{selected.length - maxDisplay}</span>
               )}
             </div>
           ) : (
             <span className={styles.triggerLabel}>{triggerLabel}</span>
           )}
         </div>
-        <span
-          style={{
-            transform: open ? 'rotate(180deg)' : 'none',
-            transition: 'transform 0.15s ease',
-            display: 'flex',
-            flexShrink: 0,
-          }}
-        >
+        <span style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s ease', display: 'flex', flexShrink: 0 }}>
           <Icon.ChevronDown />
         </span>
       </button>
 
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            className={styles.multiDropdownMenu}
-            initial={{ opacity: 0, y: -6, scale: 0.97 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -4, scale: 0.97 }}
-            transition={{ duration: 0.12 }}
-          >
-            {searchable && (
-              <div className={styles.dropdownSearch}>
-                <Icon.Search size={12} color="var(--text-quaternary)" />
-                <input
-                  ref={searchRef}
-                  type="text"
-                  className={styles.dropdownSearchInput}
-                  placeholder="Tìm kiếm..."
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  onClick={(e) => e.stopPropagation()}
-                />
-                {query && (
-                  <button
-                    className={styles.dropdownSearchClear}
-                    onClick={() => setQuery('')}
-                  >
-                    <Icon.X size={9} />
-                  </button>
-                )}
-              </div>
-            )}
-
-            {!query.trim() && (
-              <>
-                <label className={styles.dropdownItem}>
-                  <input
-                    type="checkbox"
-                    className={styles.reasonCheckbox}
-                    checked={isAll}
-                    onChange={selectAll}
-                    readOnly
-                  />
-                  <span className={styles.dropdownItemLabel}>Tất cả</span>
-                </label>
-                <div className={styles.dropdownDivider} />
-              </>
-            )}
-
-            {filtered.length === 0 ? (
-              <div className={styles.dropdownEmpty}>Không tìm thấy kết quả</div>
-            ) : (
-              <>
-                {/* Show region options first if any */}
-                {!query.trim() && filtered.some((opt) => opt.isRegion) && (
-                  <>
-                    <div className={styles.dropdownSectionLabel}>
-                      Chọn theo khu vực
-                    </div>
-                    {filtered
-                      .filter((opt) => opt.isRegion)
-                      .map((opt) => {
-                        // Check if all centres in this region are selected
-                        const isRegionFullySelected = opt.regionCentreIds
-                          ? opt.regionCentreIds.every((centreId) =>
-                              selected.includes(centreId),
-                            )
-                          : false
-
-                        return (
-                          <label
-                            key={opt.value}
-                            className={styles.dropdownItem}
-                            style={{
-                              background: 'var(--bg-elevated)',
-                              fontWeight: 510,
-                            }}
-                          >
-                            <input
-                              type="checkbox"
-                              className={styles.reasonCheckbox}
-                              checked={isRegionFullySelected}
-                              onChange={() => toggle(opt.value)}
-                            />
-                            <span className={styles.dropdownItemLabel}>
-                              {opt.label}
-                            </span>
-                          </label>
-                        )
-                      })}
-                    <div className={styles.dropdownDivider} />
-                  </>
-                )}
-
-                {/* Show selected items first in a separate section */}
-                {!query.trim() && selectedItems.length > 0 && (
-                  <>
-                    <div className={styles.dropdownSectionLabel}>
-                      Đã chọn ({selectedItems.length})
-                    </div>
-                    {selectedItems
-                      .filter((opt) => !opt.isRegion)
-                      .map((opt) => (
-                        <label
-                          key={opt.value}
-                          className={`${styles.dropdownItem} ${styles.dropdownItemSelected}`}
-                        >
-                          <input
-                            type="checkbox"
-                            className={styles.reasonCheckbox}
-                            checked={true}
-                            onChange={() => toggle(opt.value)}
-                          />
-                          <span className={styles.dropdownItemLabel}>
-                            {opt.label}
-                          </span>
-                        </label>
-                      ))}
-                    {unselectedItems.filter((opt) => !opt.isRegion).length >
-                      0 && <div className={styles.dropdownDivider} />}
-                  </>
-                )}
-
-                {/* Show unselected items or all items when searching */}
-                {query.trim()
-                  ? // When searching, show all filtered items (selected + unselected mixed)
-                    filtered
-                      .filter((opt) => !opt.isRegion)
-                      .map((opt) => (
-                        <label
-                          key={opt.value}
-                          className={`${styles.dropdownItem} ${selected.includes(opt.value) ? styles.dropdownItemSelected : ''}`}
-                        >
-                          <input
-                            type="checkbox"
-                            className={styles.reasonCheckbox}
-                            checked={selected.includes(opt.value)}
-                            onChange={() => toggle(opt.value)}
-                          />
-                          <span className={styles.dropdownItemLabel}>
-                            {opt.label}
-                          </span>
-                        </label>
-                      ))
-                  : // When not searching, show unselected items after selected section
-                    unselectedItems
-                      .filter((opt) => !opt.isRegion)
-                      .map((opt) => (
-                        <label key={opt.value} className={styles.dropdownItem}>
-                          <input
-                            type="checkbox"
-                            className={styles.reasonCheckbox}
-                            checked={false}
-                            onChange={() => toggle(opt.value)}
-                          />
-                          <span className={styles.dropdownItemLabel}>
-                            {opt.label}
-                          </span>
-                        </label>
-                      ))}
-              </>
-            )}
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {menuPosition === 'fixed' && mounted ? createPortal(menuContent, document.body) : menuContent}
     </div>
   )
 }
@@ -759,17 +750,48 @@ export function DateRangeInput({
   onDateFromChange,
   onDateToChange,
   label = "Thời gian",
+  layout = "horizontal",
+  menuPosition = "absolute"
 }: {
   dateFrom: string
   dateTo: string
   onDateFromChange: (value: string) => void
   onDateToChange: (value: string) => void
   label?: string
+  layout?: "horizontal" | "vertical"
+  menuPosition?: "absolute" | "fixed" | "top"
 }) {
   const [open, setOpen] = useState(false)
+  const [mounted, setMounted] = useState(false)
   const [tempStart, setTempStart] = useState<string | null>(null)
   const [hoverDate, setHoverDate] = useState<string | null>(null)
+  const [coords, setCoords] = useState({ top: 0, left: 0, width: 0 })
   const ref = useRef<HTMLDivElement>(null)
+  const buttonRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => { setMounted(true) }, [])
+
+  useLayoutEffect(() => {
+    if (open && menuPosition === 'fixed' && buttonRef.current) {
+      const update = () => {
+        const rect = buttonRef.current?.getBoundingClientRect()
+        if (rect) {
+          setCoords({
+            top: rect.bottom + 4,
+            left: rect.left,
+            width: 340, // Standard calendar width
+          })
+        }
+      }
+      update()
+      window.addEventListener('resize', update)
+      window.addEventListener('scroll', update, true)
+      return () => {
+        window.removeEventListener('resize', update)
+        window.removeEventListener('scroll', update, true)
+      }
+    }
+  }, [open, menuPosition])
 
   // Format date for display (DD/MM/YYYY)
   const formatDateDisplay = useCallback((dateStr: string) => {
@@ -909,14 +931,123 @@ export function DateRangeInput({
     setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1))
   }
 
+  const menuContent = (
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          className={styles.dateRangePickerDropdown}
+          style={
+            menuPosition === 'fixed'
+              ? {
+                  position: 'fixed',
+                  top: coords.top,
+                  left: coords.left,
+                  width: coords.width,
+                  zIndex: 9999999,
+                }
+              : {
+                  top: menuPosition === 'top' ? 'auto' : 'calc(100% + 4px)',
+                  bottom: menuPosition === 'top' ? 'calc(100% + 4px)' : 'auto',
+                }
+          }
+          initial={{ opacity: 0, y: menuPosition === 'top' ? 6 : -6, scale: 0.97 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: menuPosition === 'top' ? 4 : -4, scale: 0.97 }}
+          transition={{ duration: 0.12 }}
+        >
+          {/* Quick presets */}
+          <div className={styles.dateRangePresets}>
+            {DATE_PRESETS.map((preset) => {
+              const { from, to } = preset.range()
+              const active = dateFrom === from && dateTo === to
+              return (
+                <button
+                  key={preset.label}
+                  type="button"
+                  className={`${styles.dateRangePresetBtn} ${active ? styles.dateRangePresetActive : ''}`}
+                  onClick={() => {
+                    onDateFromChange(from)
+                    onDateToChange(to)
+                    setTempStart(null)
+                    setHoverDate(null)
+                    setOpen(false)
+                  }}
+                >
+                  {preset.label}
+                </button>
+              )
+            })}
+          </div>
+
+          {/* Calendar */}
+          <div className={styles.calendarContainer}>
+            {/* Month navigation */}
+            <div className={styles.calendarHeader}>
+              <button
+                type="button"
+                className={styles.calendarNavBtn}
+                onClick={goToPrevMonth}
+              >
+                <Icon.ChevronLeft size={14} />
+              </button>
+              <span className={styles.calendarMonthLabel}>{monthName}</span>
+              <button
+                type="button"
+                className={styles.calendarNavBtn}
+                onClick={goToNextMonth}
+              >
+                <Icon.ChevronRight size={14} />
+              </button>
+            </div>
+
+            {/* Weekday headers */}
+            <div className={styles.calendarWeekdays}>
+              {['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'].map((day) => (
+                <div key={day} className={styles.calendarWeekday}>
+                  {day}
+                </div>
+              ))}
+            </div>
+
+            {/* Calendar grid */}
+            <div className={styles.calendarGrid}>
+              {calendarDays.map(({ date, dateStr, isCurrentMonth }) => {
+                const isStart = dateStr === (tempStart || dateFrom)
+                const isEnd = tempStart === null && dateStr === dateTo
+                const inRange = tempStart === null ? isInRange(dateStr) : false
+                const hoverRange = isHoverInRange(dateStr)
+                const isToday = dateStr === toDateStr(new Date())
+
+                return (
+                  <button
+                    key={dateStr}
+                    type="button"
+                    className={`${styles.calendarDay} ${!isCurrentMonth ? styles.calendarDayOtherMonth : ''} ${isStart || isEnd ? styles.calendarDaySelected : ''} ${inRange || hoverRange ? styles.calendarDayInRange : ''} ${isToday ? styles.calendarDayToday : ''}`}
+                    onClick={() => handleDateClick(dateStr)}
+                    onMouseEnter={() => tempStart !== null && setHoverDate(dateStr)}
+                    onMouseLeave={() => setHoverDate(null)}
+                  >
+                    {date.getDate()}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  )
+
   return (
-    <div className={styles.dateControls}>
+    <div className={layout === 'vertical' ? styles.stackXs : styles.dateControls} style={layout === 'vertical' ? { gap: 'var(--space-1)', alignItems: 'flex-start' } : undefined}>
       <span className={styles.dateLabel}>{label}</span>
-      <div ref={ref} className={styles.dateRangePickerContainer}>
+      <div ref={ref} className={styles.dateRangePickerContainer} style={{ width: layout === 'vertical' ? '100%' : undefined }}>
         <button
+          ref={buttonRef}
           type="button"
           className={styles.dateRangePickerTrigger}
           onClick={() => setOpen(!open)}
+          style={layout === 'vertical' ? { width: '100%' } : undefined}
         >
           <svg
             width="14"
@@ -953,96 +1084,7 @@ export function DateRangeInput({
           </svg>
         </button>
 
-        <AnimatePresence>
-          {open && (
-            <motion.div
-              className={styles.dateRangePickerDropdown}
-              initial={{ opacity: 0, y: -6, scale: 0.97 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -4, scale: 0.97 }}
-              transition={{ duration: 0.12 }}
-            >
-              {/* Quick presets */}
-              <div className={styles.dateRangePresets}>
-                {DATE_PRESETS.map((preset) => {
-                  const { from, to } = preset.range()
-                  const active = dateFrom === from && dateTo === to
-                  return (
-                    <button
-                      key={preset.label}
-                      type="button"
-                      className={`${styles.dateRangePresetBtn} ${active ? styles.dateRangePresetActive : ''}`}
-                      onClick={() => {
-                        onDateFromChange(from)
-                        onDateToChange(to)
-                        setTempStart(null)
-                        setHoverDate(null)
-                        setOpen(false)
-                      }}
-                    >
-                      {preset.label}
-                    </button>
-                  )
-                })}
-              </div>
-
-              {/* Calendar */}
-              <div className={styles.calendarContainer}>
-                {/* Month navigation */}
-                <div className={styles.calendarHeader}>
-                  <button
-                    type="button"
-                    className={styles.calendarNavBtn}
-                    onClick={goToPrevMonth}
-                  >
-                    <Icon.ChevronLeft size={14} />
-                  </button>
-                  <span className={styles.calendarMonthLabel}>{monthName}</span>
-                  <button
-                    type="button"
-                    className={styles.calendarNavBtn}
-                    onClick={goToNextMonth}
-                  >
-                    <Icon.ChevronRight size={14} />
-                  </button>
-                </div>
-
-                {/* Weekday headers */}
-                <div className={styles.calendarWeekdays}>
-                  {['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'].map((day) => (
-                    <div key={day} className={styles.calendarWeekday}>
-                      {day}
-                    </div>
-                  ))}
-                </div>
-
-                {/* Calendar grid */}
-                <div className={styles.calendarGrid}>
-                  {calendarDays.map(({ date, dateStr, isCurrentMonth }) => {
-                    const isStart = dateStr === (tempStart || dateFrom)
-                    const isEnd = tempStart === null && dateStr === dateTo
-                    const inRange = tempStart === null ? isInRange(dateStr) : false
-                    const hoverRange = isHoverInRange(dateStr)
-                    const isToday = dateStr === toDateStr(new Date())
-
-                    return (
-                      <button
-                        key={dateStr}
-                        type="button"
-                        className={`${styles.calendarDay} ${!isCurrentMonth ? styles.calendarDayOtherMonth : ''} ${isStart || isEnd ? styles.calendarDaySelected : ''} ${inRange || hoverRange ? styles.calendarDayInRange : ''} ${isToday ? styles.calendarDayToday : ''}`}
-                        onClick={() => handleDateClick(dateStr)}
-                        onMouseEnter={() => tempStart !== null && setHoverDate(dateStr)}
-                        onMouseLeave={() => setHoverDate(null)}
-                      >
-                        {date.getDate()}
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        {menuPosition === 'fixed' && mounted ? createPortal(menuContent, document.body) : menuContent}
       </div>
     </div>
   )
@@ -1400,6 +1442,62 @@ export function StatCard({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// KPI THRESHOLD SUGGESTIONS
+// ─────────────────────────────────────────────────────────────────────────────
+export type KPIThresholdSuggestionItem = {
+  key: string
+  target?: ReactNode
+  content: ReactNode
+  done?: boolean
+}
+
+export function KPIThresholdSuggestions({
+  label,
+  items,
+  variant = 'goal',
+  targetPosition = 'start',
+  className,
+}: {
+  label: string
+  items: KPIThresholdSuggestionItem[]
+  variant?: 'goal' | 'warning'
+  targetPosition?: 'start' | 'end'
+  className?: string
+}) {
+  if (items.length === 0) return null
+
+  const barClassName = [
+    styles.suggestionsBar,
+    variant === 'warning' ? styles.warningSuggestionsBar : '',
+    className || '',
+  ].filter(Boolean).join(' ')
+
+  return (
+    <div className={barClassName}>
+      <span className={styles.suggestLabel}>{label}</span>
+      {items.map(item => (
+        <div
+          key={item.key}
+          className={[
+            styles.suggestPill,
+            item.done ? styles.suggestDone : '',
+            variant === 'warning' ? styles.warningSuggestion : '',
+          ].filter(Boolean).join(' ')}
+        >
+          {targetPosition === 'start' && item.target !== undefined && (
+            <span className={styles.suggestTarget}>{item.target}</span>
+          )}
+          <span>{item.content}</span>
+          {targetPosition === 'end' && item.target !== undefined && (
+            <span className={styles.suggestTarget}>{item.target}</span>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // CHART SECTION HEADER — canonical title + optional toggle
 // ─────────────────────────────────────────────────────────────────────────────
 export function ChartSectionHeader({
@@ -1522,14 +1620,11 @@ export function TableToolbar({
 
       {/* Clear all filters */}
       {hasFilter && (
-        <button
-          className={styles.filterChip}
-          onClick={onClearFilter}
-          style={{ marginLeft: 'auto' }}
-        >
-          <Icon.Close />
-          Xoá bộ lọc
-        </button>
+        <div style={{ marginLeft: 'auto' }}>
+          <FilterChip onClick={onClearFilter}>
+            Xoá bộ lọc
+          </FilterChip>
+        </div>
       )}
     </div>
   )
@@ -1542,15 +1637,21 @@ export function AdminTableSection({
   title,
   count,
   loading,
+  progress,
   isExpanded,
   onToggle,
+  actionSlot,
+  toolbarSlot,
   children,
 }: {
   title: string
   count?: number
   loading?: boolean
+  progress?: { loaded: number; total: number }
   isExpanded: boolean
-  onToggle: () => void
+  onToggle?: () => void
+  actionSlot?: React.ReactNode
+  toolbarSlot?: React.ReactNode
   children: React.ReactNode
 }) {
   return (
@@ -1558,8 +1659,11 @@ export function AdminTableSection({
       <TableGroupHeader
         title={title}
         count={count}
+        loading={loading}
+        progress={progress}
         isExpanded={isExpanded}
         onToggle={onToggle}
+        actionSlot={actionSlot}
       />
       <AnimatePresence initial={false}>
         {isExpanded && (
@@ -1574,7 +1678,16 @@ export function AdminTableSection({
                 <div className={styles.spinner} style={{ margin: '0 auto' }} />
               </div>
             ) : (
-              children
+              <div className={styles.adminTableContent}>
+                {toolbarSlot && (
+                  <div className={styles.tablePanelBody} style={{ paddingBottom: 0 }}>
+                    {toolbarSlot}
+                  </div>
+                )}
+                <div className={styles.tableChildrenWrapper}>
+                  {children}
+                </div>
+              </div>
             )}
           </motion.div>
         )}
@@ -1590,15 +1703,21 @@ export function AdminGridSection({
   title,
   count,
   loading,
+  progress,
   isExpanded,
   onToggle,
+  actionSlot,
+  toolbarSlot,
   children,
 }: {
   title: string
   count?: number
   loading?: boolean
+  progress?: { loaded: number; total: number }
   isExpanded: boolean
-  onToggle: () => void
+  onToggle?: () => void
+  actionSlot?: React.ReactNode
+  toolbarSlot?: React.ReactNode
   children: React.ReactNode
 }) {
   return (
@@ -1606,8 +1725,11 @@ export function AdminGridSection({
       <TableGroupHeader
         title={title}
         count={count}
+        loading={loading}
+        progress={progress}
         isExpanded={isExpanded}
         onToggle={onToggle}
+        actionSlot={actionSlot}
       />
       <AnimatePresence initial={false}>
         {isExpanded && (
@@ -1622,7 +1744,10 @@ export function AdminGridSection({
                 <div className={styles.spinner} style={{ margin: '0 auto' }} />
               </div>
             ) : (
-              children
+              <div className={styles.tablePanelBody}>
+                {toolbarSlot && <div style={{ marginBottom: 'var(--space-4)' }}>{toolbarSlot}</div>}
+                {children}
+              </div>
             )}
           </motion.div>
         )}
@@ -1721,42 +1846,34 @@ export function TableGroupHeader({
           position: 'relative',
           display: 'flex',
           alignItems: 'center',
-          gap: 'var(--space-2)',
+          justifyContent: 'space-between',
+          width: '100%',
+          cursor: onToggle ? 'pointer' : 'default',
         }}
+        onClick={onToggle}
       >
-        {title}
-        {!loading && count !== undefined && (
-          <span className={styles.groupBadge}>{count}</span>
-        )}
-        {loading && progress && progress.total > 0 && (
-          <span className={`${styles.groupBadge} ${styles.loadingBadge}`}>
-            Đang tải {progress.loaded}/{progress.total}...
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flex: 1, minWidth: 0 }}>
+          <span className={styles.groupTitle} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {title}
           </span>
-        )}
-        {note && (
-          <span
-            style={{
-              fontSize: 11,
-              color: 'var(--text-quaternary)',
-              fontWeight: 400,
-            }}
-          >
-            {note}
-          </span>
-        )}
-
-        <div
-          style={{
-            marginLeft: 'auto',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 'var(--space-3)',
-          }}
-        >
-          {actionSlot}
+          {!loading && count !== undefined && (
+            <span className={styles.groupBadge}>{count}</span>
+          )}
+          {loading && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+              {progress ? (
+                 <span className={`${styles.groupBadge} ${styles.loadingBadge}`}>
+                   {progress.loaded}/{progress.total}
+                 </span>
+              ) : (
+                 <Spinner size={12} />
+              )}
+            </div>
+          )}
           {hasFilter && onClearFilter && (
             <button
-              onClick={onClearFilter}
+              onClick={(e) => { e.stopPropagation(); onClearFilter(); }}
+              className={styles.clearFilterBtn}
               style={{
                 fontSize: 12,
                 color: 'var(--brand-indigo)',
@@ -1771,29 +1888,29 @@ export function TableGroupHeader({
               Xoá bộ lọc
             </button>
           )}
-          {onToggle !== undefined && (
-            <button
-              onClick={onToggle}
+        </div>
+
+        <div 
+          style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}
+          onClick={e => e.stopPropagation()} // Prevent toggling when clicking actions
+        >
+          {actionSlot}
+          {note && (
+            <span style={{ fontSize: 11, color: 'var(--text-quaternary)', fontWeight: 400 }}>
+              {note}
+            </span>
+          )}
+          {onToggle && (
+            <span
               style={{
-                background: 'none',
-                border: 'none',
-                cursor: 'pointer',
-                padding: 0,
-                display: 'inline-flex',
-                alignItems: 'center',
+                transform: isExpanded ? 'rotate(180deg)' : 'none',
+                transition: 'transform 0.2s',
                 color: 'var(--text-tertiary)',
+                display: 'flex',
               }}
             >
-              <span
-                style={{
-                  transform: isExpanded ? 'rotate(180deg)' : 'none',
-                  transition: 'transform 0.2s ease',
-                  display: 'flex',
-                }}
-              >
-                <Icon.ChevronDown />
-              </span>
-            </button>
+              <Icon.ChevronDown size={14} />
+            </span>
           )}
         </div>
       </div>
@@ -2163,6 +2280,7 @@ export { ConfirmDialog, type ConfirmDialogProps } from './ConfirmDialog'
 // QUICK FILTER CHIPS — Auto-generated filter chips from user preferences
 // ─────────────────────────────────────────────────────────────────────────────
 export { QuickFilterChips } from './QuickFilterChips'
+export { FilterChip } from './FilterChip'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // EXPORT BUTTON — CSV export button with settings
@@ -2170,6 +2288,190 @@ export { QuickFilterChips } from './QuickFilterChips'
 export { ExportButton } from './ExportButton'
 export { CSVExportSettings } from './CSVExportSettings'
 export type { CSVColumnConfig } from './CSVExportSettings'
+
+// ─────────────────────────────────────────────────────────────────────────────
+// COMPACT SELECT
+// ─────────────────────────────────────────────────────────────────────────────
+export function CompactSelect<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+  menuPosition = "absolute"
+}: {
+  label?: string
+  value: T
+  options: readonly { value: T; label: string }[]
+  onChange: (value: T) => void
+  menuPosition?: "absolute" | "fixed" | "top"
+}) {
+  const [open, setOpen] = useState(false)
+  const [mounted, setMounted] = useState(false)
+  const [coords, setCoords] = useState({ top: 0, left: 0, width: 0 })
+  const ref = useRef<HTMLDivElement>(null)
+  const buttonRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => { setMounted(true) }, [])
+
+  useLayoutEffect(() => {
+    if (open && menuPosition === 'fixed' && buttonRef.current) {
+      const update = () => {
+        const rect = buttonRef.current?.getBoundingClientRect()
+        if (rect) {
+          setCoords({
+            top: rect.bottom + 4,
+            left: rect.left,
+            width: rect.width,
+          })
+        }
+      }
+      update()
+      window.addEventListener('resize', update)
+      window.addEventListener('scroll', update, true)
+      return () => {
+        window.removeEventListener('resize', update)
+        window.removeEventListener('scroll', update, true)
+      }
+    }
+  }, [open, menuPosition])
+
+  useEffect(() => {
+    if (!open) return
+    const handleClickOutside = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [open])
+
+  const selectedLabel = options.find(o => o.value === value)?.label || value
+
+  const menuContent = (
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          initial={{ opacity: 0, y: 4, scale: 0.98 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 4, scale: 0.98 }}
+          transition={{ duration: 0.12 }}
+          className={styles.multiDropdownMenu}
+          style={
+            menuPosition === 'fixed'
+              ? {
+                  position: 'fixed',
+                  top: coords.top,
+                  left: coords.left,
+                  minWidth: Math.max(160, coords.width),
+                  maxHeight: '250px',
+                  padding: '4px',
+                  zIndex: 9999999
+                }
+              : { 
+                  minWidth: '160px', 
+                  maxHeight: '250px',
+                  padding: '4px'
+                }
+          }
+        >
+          {options.map((opt) => (
+            <div
+              key={opt.value}
+              className={`${styles.dropdownItem} ${value === opt.value ? styles.dropdownItemSelected : ''}`}
+              onClick={() => {
+                onChange(opt.value)
+                setOpen(false)
+              }}
+              style={{
+                padding: '6px 10px',
+                fontSize: '12px',
+                fontWeight: value === opt.value ? 600 : 500,
+                color: value === opt.value ? 'var(--brand-indigo)' : 'var(--text-secondary)',
+                background: value === opt.value ? 'rgba(94, 106, 210, 0.06)' : 'transparent',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between'
+              }}
+            >
+              <span>{opt.label}</span>
+              {value === opt.value && <Icon.Check size={12} />}
+            </div>
+          ))}
+        </motion.div>
+      )}
+    </AnimatePresence>
+  )
+
+  return (
+    <div ref={ref} className={styles.compactSelectWrapper} style={{ position: 'relative' }}>
+      {label && <span className={styles.compactSelectLabel}>{label}:</span>}
+      <div style={{ position: 'relative', display: 'inline-block' }}>
+        <button
+          ref={buttonRef}
+          type="button"
+          onClick={() => setOpen(!open)}
+          className={`${styles.multiDropdownTrigger} ${open ? styles.triggerActive : ''}`}
+          style={{ 
+            padding: '4px 10px', 
+            minWidth: '100px', 
+            height: '28px', 
+            fontSize: '12px',
+            background: 'var(--bg-panel)',
+            border: '1px solid var(--border-primary)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '8px'
+          }}
+        >
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {selectedLabel}
+          </span>
+          <Icon.ChevronDown 
+            size={12} 
+            style={{ 
+              opacity: 0.5, 
+              transform: open ? 'rotate(180deg)' : 'none', 
+              transition: 'transform 0.15s ease' 
+            }} 
+          />
+        </button>
+
+        {menuPosition === 'fixed' && mounted ? createPortal(menuContent, document.body) : menuContent}
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// VIEW MODE TOGGLE
+// ─────────────────────────────────────────────────────────────────────────────
+export function ViewModeToggle<T extends string>({
+  value,
+  options,
+  onChange
+}: {
+  value: T
+  options: readonly { value: T; label: string; icon?: React.ReactNode }[]
+  onChange: (value: T) => void
+}) {
+  return (
+    <div className={styles.viewModeToggle}>
+      {options.map((opt) => {
+        const isActive = value === opt.value
+        return (
+          <button
+            key={opt.value}
+            onClick={() => onChange(opt.value)}
+            className={`${styles.viewModeBtn} ${isActive ? styles.viewModeBtnActive : ''}`}
+          >
+            {opt.icon}
+            <span>{opt.label}</span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
 
 // Updated component styles
 

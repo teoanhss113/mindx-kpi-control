@@ -21,11 +21,11 @@ export const COMMENT_STATUS_LABELS: Record<CommentQualityStatus, string> = {
 };
 
 export const COMMENT_STATUS_COUNT_LABELS = {
-  ok: 'đủ',
-  brief: 'ngắn',
-  empty: 'thiếu',
-  overdue: 'quá hạn',
-  duplicate: 'trùng',
+  ok: COMMENT_STATUS_LABELS.ok,
+  brief: COMMENT_STATUS_LABELS.brief,
+  empty: COMMENT_STATUS_LABELS.empty,
+  overdue: COMMENT_STATUS_LABELS.overdue,
+  duplicate: COMMENT_STATUS_LABELS.duplicate_self,
 } as const;
 
 export const COMMENT_STATUS_GROUP_LABELS = {

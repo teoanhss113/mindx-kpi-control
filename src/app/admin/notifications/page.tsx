@@ -58,7 +58,7 @@ const CATEGORIES: Record<CategoryId, CategoryMeta> = {
   },
   'class-quality': {
     id: 'class-quality',
-    label: 'Chất lượng lớp',
+    label: 'Lịch & Chất lượng',
     icon: <Icon.CheckCircle size={13} />,
     color: '#10b981',
     bg: 'rgba(16,185,129,0.1)',
@@ -90,7 +90,7 @@ function getCategory(n: Notification): CategoryId {
     return 'teacher-change';
   if (t.includes('ticket') || u.includes('ticket'))
     return 'tickets';
-  if (t.includes('class-quality') || u.includes('class-quality'))
+  if (t.includes('class-quality') || u.includes('class-quality') || t.includes('schedule') || u.includes('schedule'))
     return 'class-quality';
   if (t.includes('judge') || u.includes('judge') || u.includes('final-session'))
     return 'judge';

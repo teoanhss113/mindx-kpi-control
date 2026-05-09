@@ -8,7 +8,7 @@ import { findUser, createDebouncedUserLookup, type LMSUser } from '@/services/us
 import { searchUsers } from '@/services/ticketService';
 import { AdminPageWrapper } from '@/components/AdminPageWrapper';
 import { useTableSort } from '@/hooks/useTableSort';
-import { SortableHeader, AdminToolbar, AdminTableSection, Icon, Spinner, MultiSelect, EmptyState, UserSearchInput, type UserSearchResult, ModalFooter, Modal, ModalHeader, ConfirmDialog, useToast, ToastContainer, ActiveStatusBadge } from '@/components/ui';
+import { SortableHeader, AdminToolbar, AdminTableSection, Icon, Spinner, MultiSelect, EmptyState, UserSearchInput, type UserSearchResult, ModalFooter, Modal, ModalHeader, ConfirmDialog, useToast, ToastContainer, ActiveStatusBadge, CompactSelect } from '@/components/ui';
 import { COURSES, LABELS, MESSAGES, ENTITIES } from '@/constants';
 import styles from '@/app/dashboard.module.css';
 import type { Role } from '@/lib/supabase/types';
@@ -670,20 +670,17 @@ export default function UsersPage() {
                 <label style={{ display: 'block', fontSize: 13, fontWeight: 510, color: 'var(--text-primary)', marginBottom: 'var(--space-2)' }}>
                   Vai trò *
                 </label>
-                <select
-                  required
+                <CompactSelect
                   value={formData.role_id}
-                  onChange={(e) => setFormData({ ...formData, role_id: e.target.value })}
-                  className={styles.dateInput}
-                  style={{ width: '100%' }}
-                >
-                  <option value="">Chọn vai trò</option>
-                  {roles.map(role => (
-                    <option key={role.id} value={role.id}>
-                      {role.name} - {role.description || 'Không có mô tả'}
-                    </option>
-                  ))}
-                </select>
+                  options={[
+                    { value: '', label: 'Chọn vai trò' },
+                    ...roles.map(role => ({
+                      value: role.id,
+                      label: `${role.name} - ${role.description || 'Không có mô tả'}`
+                    }))
+                  ]}
+                  onChange={v => setFormData({ ...formData, role_id: v })}
+                />
               </div>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
@@ -719,7 +716,7 @@ export default function UsersPage() {
                   <label style={{ display: 'block', fontSize: 13, fontWeight: 510, color: 'var(--text-primary)', marginBottom: 'var(--space-2)' }}>
                     Khu vực được phép truy cập
                   </label>
-                  <MultiSelect
+                  <MultiSelect menuPosition="fixed"
                     options={regions.map(r => ({ value: r.id, label: r.name }))}
                     selected={formData.selectedRegions}
                     onChange={(values) => setFormData({ ...formData, selectedRegions: values })}
@@ -736,7 +733,7 @@ export default function UsersPage() {
                   <label style={{ display: 'block', fontSize: 13, fontWeight: 510, color: 'var(--text-primary)', marginBottom: 'var(--space-2)' }}>
                     Khoá học
                   </label>
-                  <MultiSelect
+                  <MultiSelect menuPosition="fixed"
                     options={COURSES.map(course => ({ value: course, label: course }))}
                     selected={formData.courses}
                     onChange={(values) => setFormData({ ...formData, courses: values })}

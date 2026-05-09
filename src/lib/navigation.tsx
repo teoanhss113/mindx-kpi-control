@@ -5,7 +5,7 @@
 
 import { Icon } from '@/components/ui';
 
-export type PageKey = 'dashboard' | 'completion' | 'teacher-change' | 'tickets' | 'class-quality' | 'office-hours' | 'teacher-schedule' | 'resale';
+export type PageKey = 'dashboard' | 'completion' | 'teacher-change' | 'tickets' | 'office-hours' | 'teacher-schedule' | 'resale';
 
 export interface NavConfig {
   label: string;
@@ -45,14 +45,6 @@ export const NAV_ITEMS: Record<PageKey, NavConfig> = {
     </svg>,
     route: '/tickets',
   },
-  'class-quality': {
-    label: 'Chất lượng Lớp học',
-    icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-      <polyline points="22 4 12 14.01 9 11.01" />
-    </svg>,
-    route: '/class-quality',
-  },
   'office-hours': {
     label: 'Ca Trải nghiệm',
     icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -64,7 +56,7 @@ export const NAV_ITEMS: Record<PageKey, NavConfig> = {
     route: '/office-hours',
   },
   'teacher-schedule': {
-    label: 'Điều phối Giáo viên',
+    label: 'Quản lý lớp học',
     icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
       <line x1="16" y1="2" x2="16" y2="6" />

@@ -174,7 +174,7 @@ export default function DashboardPage() {
       dateFrom.setHours(0, 0, 0, 0);
       dateTo.setHours(23, 59, 59, 999);
       
-      const teacherSchedulesResult = await fetchTeacherSchedules(
+      const { schedules: teacherSchedulesResult } = await fetchTeacherSchedules(
         dateFrom,
         dateTo,
         centreIds,
@@ -713,7 +713,7 @@ export default function DashboardPage() {
         description: severity === 'critical' ? 'Cần xử lý ngay' : 'Cần theo dõi',
         severity,
         icon: <Icon.XCircle size={16} />,
-        href: '/admin/class-quality?tab=violations',
+        href: '/admin/operations?view=quality-table&tab=violations',
         priority: severity === 'critical' ? 85 : severity === 'warning' ? 65 : 45,
       });
     }
@@ -730,7 +730,7 @@ export default function DashboardPage() {
         description: severity === 'critical' ? 'Cần xử lý ngay' : 'Cần theo dõi',
         severity,
         icon: <Icon.AlertCircle size={16} />,
-        href: '/admin/class-quality?tab=attendance',
+        href: '/admin/operations?view=quality-table&tab=attendance',
         priority: severity === 'critical' ? 80 : severity === 'warning' ? 60 : 40,
       });
     }

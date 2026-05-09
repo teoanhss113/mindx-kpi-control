@@ -26,13 +26,13 @@ import {
   Icon, SortIcon, useToast, ToastContainer,
   MultiSelect, SelectOption,
   Toolbar, StatCard, ChartSectionHeader,
-  TableToolbar, TableGroupHeader,
+  TableToolbar, TableGroupHeader, AdminTableSection,
   Modal, ModalHeader, EmptyState,
   initials,
   StandardXAxis, StandardYAxisCategory, CustomTooltip, VerticalBarChartConfig,
   SortableColumn, SortableHeader,
-  CentreSelect, QuickFilterChips, ExportButton,
-  CSVExportSettings, RoleBadge as SharedRoleBadge, TeacherAssignmentStatusBadge, type CSVColumnConfig,
+  CentreSelect, QuickFilterChips, ExportButton, KPIThresholdSuggestions,
+  CSVExportSettings, RoleBadge as SharedRoleBadge, TeacherAssignmentStatusBadge, FilterChip, type CSVColumnConfig,
 } from '@/components/ui';
 import { PageLayout } from '@/components/PageLayout';
 import { useTableSort } from '@/hooks/useTableSort';
@@ -203,7 +203,7 @@ function TeacherChip({ name, role }: { name: string; role: string }) {
       display: 'inline-flex', alignItems: 'center', gap: 'var(--space-1)',
     }}>
       {name}
-      <SharedRoleBadge role={role} shape="rounded" style={{ marginLeft: 'var(--space-1)', verticalAlign: 'middle' }} />
+      <SharedRoleBadge role={role} shape="rounded" style={{ verticalAlign: 'middle' }} />
     </span>
   );
 }
@@ -515,6 +515,16 @@ export default function TeacherChangePage() {
     });
   }, [activeClasses, search, selectedCourseLines, selectedStatuses, selectedCentreIds, selectedLevels, selectedOperations, rateRange, sortKey, sortDir]);
 
+  const changedLECCount = useMemo(
+    () => filteredClasses.filter(c => c.changedSlots > 0).length,
+    [filteredClasses]
+  );
+
+  const multiTeacherCount = useMemo(
+    () => filteredClasses.filter(c => c.uniqueTeacherCount >= 3).length,
+    [filteredClasses]
+  );
+
   // CSV Export handler
   const handleExportCSV = useCallback(() => {
     if (filteredClasses.length === 0) {
@@ -631,7 +641,7 @@ export default function TeacherChangePage() {
     <>
       <ToastContainer toasts={toasts} onRemove={removeToast} />
       <PageLayout
-        title="Tỷ lệ thay đổi Giáo viên"
+        title="Thay đổi Giáo viên"
         activePage="teacher-change"
         sidebarOpen={sidebarOpen}
         onSidebarToggle={setSidebarOpen}
@@ -705,15 +715,17 @@ export default function TeacherChangePage() {
 
           {/* SUGGESTIONS / WARNINGS */}
           {classes.length > 0 && stats.totalClasses > 0 && warningSuggestions.length > 0 && (
-            <div className={styles.suggestionsBar} style={{ background: 'rgba(220,38,38,0.04)', borderColor: 'rgba(220,38,38,0.1)', marginTop: 'var(--space-4)' }}>
-              <span className={styles.suggestLabel} style={{ color: 'var(--status-error)' }}>Cảnh báo:</span>
-              {warningSuggestions.map(({ target, limit }) => (
-                <div key={target} className={`${styles.suggestPill} ${styles.warningSuggestion}`}>
-                  <span>chỉ được thay tối đa <strong>{limit - 1}</strong> lớp nữa</span>
-                  <span className={styles.suggestTarget} style={{ color: 'var(--status-error)' }}>để giữ mốc ≤ {target}%</span>
-                </div>
-              ))}
-            </div>
+            <KPIThresholdSuggestions
+              label="Cảnh báo:"
+              variant="warning"
+              targetPosition="end"
+              className={styles.kpiSuggestionSpacing}
+              items={warningSuggestions.map(({ target, limit }) => ({
+                key: String(target),
+                target: `để giữ mốc ≤ ${target}%`,
+                content: <>chỉ được thay tối đa <strong>{limit - 1}</strong> lớp nữa</>,
+              }))}
+            />
           )}
 
           {/* ── Charts ────────────────────────────────────────────────────── */}
@@ -793,82 +805,76 @@ export default function TeacherChangePage() {
             </div>
           )}
 
-          {/* ── Table toolbar ─────────────────────────────────────────────── */}
-          {(classes.length > 0 || loading) && (
-            <TableToolbar
-              search={search} onSearchChange={setSearch}
-              searchPlaceholder="Tìm lớp học, cơ sở, khoá học..."
-              quickFilterSlots={
-                <>
-                  {/* User preference chips */}
-                  {hasPreferences && (
-                    <QuickFilterChips
-                      centres={centres}
-                      selectedCentres={selectedCentreIds}
-                      onCentresChange={setSelectedCentreIds}
-                      selectedCourses={selectedCourseLines}
-                      onCoursesChange={setSelectedCourseLines}
-                      showCentres={true}
-                      showCourses={true}
-                    />
-                  )}
-                  <button className={`${styles.filterChip} ${quickFilter === 'changedLEC' ? styles.chipActive : ''}`} onClick={() => setQuickFilter(q => q === 'changedLEC' ? null : 'changedLEC')}>
-                    <Icon.Repeat size={12} /> Có thay Giáo viên
-                    {quickFilter === 'changedLEC' && filteredClasses.filter(c => c.changedSlots > 0).length > 0 && (
-                      <span className={styles.chipBadge}>{filteredClasses.filter(c => c.changedSlots > 0).length}</span>
-                    )}
-                  </button>
-                  <button className={`${styles.filterChip} ${quickFilter === 'multiTeachers' ? styles.chipActive : ''}`} onClick={() => setQuickFilter(q => q === 'multiTeachers' ? null : 'multiTeachers')}>
-                    <Icon.UsersGroup size={12} /> Nhiều Giáo viên (3+)
-                    {quickFilter === 'multiTeachers' && filteredClasses.filter(c => c.uniqueTeacherCount >= 3).length > 0 && (
-                      <span className={styles.chipBadge}>{filteredClasses.filter(c => c.uniqueTeacherCount >= 3).length}</span>
-                    )}
-                  </button>
-                </>
-              }
-              filterSlots={
-                <>
-                  {/* 1. Centre */}
-                  {tableCentreIds.length > 1 && <CentreSelect centres={centres} selected={selectedCentreIds} onChange={setSelectedCentreIds} filterToIds={tableCentreIds} placeholder="Tất cả cơ sở" maxDisplay={1} searchable />}
-                  {/* 2. Course Line */}
-                  <MultiSelect options={courseLineOptions} selected={selectedCourseLines}
-                    onChange={setSelectedCourseLines} placeholder="Tất cả khối" maxDisplay={2} />
-                  {/* 3. Status */}
-                  {statusOptions.length > 1 && <MultiSelect options={statusOptions} selected={selectedStatuses}
-                    onChange={setSelectedStatuses} placeholder="Tất cả trạng thái" />}
-                  {/* 4. Specific: Level */}
-                  {levelOptions.length > 1 && <MultiSelect options={levelOptions} selected={selectedLevels}
-                    onChange={setSelectedLevels} placeholder="Tất cả cấp độ" />}
-                  {/* 5. Specific: Operation Method */}
-                  {operationOptions.length > 1 && <MultiSelect options={operationOptions} selected={selectedOperations}
-                    onChange={setSelectedOperations} placeholder="Tất cả hình thức" />}
-                </>
-              }
-              rangeValue={rateRange} onRangeChange={setRateRange} rangeLabel="Số GV"
-              hasFilter={hasTableFilter} onClearFilter={clearTableFilters}
-            />
-          )}
-
           {/* ── Table — active classes ─────────────────────────────────────── */}
           {(loading || classes.length > 0) && (
-            <div className={styles.tableSection}>
-              <TableGroupHeader
-                title="Danh sách lớp học"
-                count={filteredClasses.length}
-                loading={loading} progress={progress}
-                isExpanded={showActiveTable} onToggle={() => setShowActiveTable(p => !p)}
-                actionSlot={
-                  <ExportButton
-                    onClick={handleExportCSV}
-                    onSettingsClick={() => setShowCSVSettings(true)}
-                    disabled={filteredClasses.length === 0}
-                    count={filteredClasses.length}
-                  />
-                }
-              />
-              <AnimatePresence initial={false}>
-                {showActiveTable && (
-                  <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} style={{ overflow: 'hidden' }}>
+            <AdminTableSection
+              title="Danh sách lớp học"
+              count={filteredClasses.length}
+              loading={loading}
+              progress={progress}
+              isExpanded={showActiveTable}
+              onToggle={() => setShowActiveTable(p => !p)}
+              actionSlot={
+                <ExportButton
+                  onClick={handleExportCSV}
+                  onSettingsClick={() => setShowCSVSettings(true)}
+                  disabled={filteredClasses.length === 0}
+                  count={filteredClasses.length}
+                />
+              }
+              toolbarSlot={
+                <TableToolbar
+                  search={search} onSearchChange={setSearch}
+                  searchPlaceholder="Tìm lớp học, cơ sở, khoá học..."
+                  quickFilterSlots={
+                    <>
+                      {hasPreferences && (
+                        <QuickFilterChips
+                          centres={centres}
+                          selectedCentres={selectedCentreIds}
+                          onCentresChange={setSelectedCentreIds}
+                          selectedCourses={selectedCourseLines}
+                          onCoursesChange={setSelectedCourseLines}
+                          showCentres={true}
+                          showCourses={true}
+                        />
+                      )}
+                      <FilterChip
+                        active={quickFilter === 'changedLEC'}
+                        count={changedLECCount}
+                        countDisplay="always"
+                        onClick={() => setQuickFilter(q => q === 'changedLEC' ? null : 'changedLEC')}
+                      >
+                        Có thay Giáo viên
+                      </FilterChip>
+                      <FilterChip
+                        active={quickFilter === 'multiTeachers'}
+                        count={multiTeacherCount}
+                        countDisplay="always"
+                        onClick={() => setQuickFilter(q => q === 'multiTeachers' ? null : 'multiTeachers')}
+                      >
+                        Nhiều Giáo viên (3+)
+                      </FilterChip>
+                    </>
+                  }
+                  filterSlots={
+                    <>
+                      {tableCentreIds.length > 1 && <CentreSelect menuPosition="fixed" centres={centres} selected={selectedCentreIds} onChange={setSelectedCentreIds} filterToIds={tableCentreIds} placeholder="Tất cả cơ sở" maxDisplay={1} searchable />}
+                      <MultiSelect menuPosition="fixed" options={courseLineOptions} selected={selectedCourseLines}
+                        onChange={setSelectedCourseLines} placeholder="Tất cả khối" maxDisplay={2} />
+                      {statusOptions.length > 1 && <MultiSelect menuPosition="fixed" options={statusOptions} selected={selectedStatuses}
+                        onChange={setSelectedStatuses} placeholder="Tất cả trạng thái" />}
+                      {levelOptions.length > 1 && <MultiSelect menuPosition="fixed" options={levelOptions} selected={selectedLevels}
+                        onChange={setSelectedLevels} placeholder="Tất cả cấp độ" />}
+                      {operationOptions.length > 1 && <MultiSelect menuPosition="fixed" options={operationOptions} selected={selectedOperations}
+                        onChange={setSelectedOperations} placeholder="Tất cả hình thức" />}
+                    </>
+                  }
+                  rangeValue={rateRange} onRangeChange={setRateRange} rangeLabel="Số GV"
+                  hasFilter={hasTableFilter} onClearFilter={clearTableFilters}
+                />
+              }
+            >
                     <div className={styles.tableScrollWrapper}>
                       {/* Column headers: Name | Status | Tiến độ | Số GV | Danh sách GV (LEC+SUPPLY) */}
                       <div style={{
@@ -978,16 +984,9 @@ export default function TeacherChangePage() {
                         <div className={styles.reasonsPreview} style={{ paddingTop: 2 }}>
                           {sortedTeachers.length === 0
                             ? <span style={{ color: 'var(--text-quaternary)' }}>—</span>
-                            : sortedTeachers.map(t => {
-                                const isSupply = t.role === ROLE_SUPPLY;
-                                const chipClass = isSupply ? styles.teacherChipSUPPLY : styles.teacherChipLEC;
-                                return (
-                                  <span key={t.id} className={`${styles.reasonTag} ${chipClass}`}>
-                                    {t.name}
-                                    <SharedRoleBadge role={t.role} shape="rounded" />
-                                  </span>
-                                );
-                              })
+                            : sortedTeachers.map(t => (
+                                <TeacherChip key={t.id} name={t.name} role={t.role} />
+                              ))
                           }
                         </div>
                       </motion.div>
@@ -1001,10 +1000,7 @@ export default function TeacherChangePage() {
                         </div>
                       )}
                     </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
+            </AdminTableSection>
           )}
 
           {/* ── Inactive table ──────────────────────────────────────────────── */}

@@ -424,7 +424,7 @@ export default function RegionsPage() {
                     </div>
                   ) : (
                     <>
-                      <CentreSelect
+                      <CentreSelect menuPosition="fixed"
                         centres={centres}
                         selected={formData.selectedCentres}
                         onChange={handleCentresChange}

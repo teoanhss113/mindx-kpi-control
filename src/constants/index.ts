@@ -150,6 +150,78 @@ export const LABELS = {
 } as const;
 
 /**
+ * TEACHER SCHEDULE — Page-specific labels and options.
+ * Keep route UI text here so `/admin/operations` stays aligned with
+ * the global wording system instead of scattering Vietnamese copies in JSX.
+ */
+export const TEACHER_SCHEDULE_LABELS = {
+  PAGE_TITLE: 'Quản lý Vận hành',
+  CALENDAR_VIEW: 'Lịch tuần',
+  QUALITY_VIEW: 'Chất lượng lớp học',
+  SCHEDULE_TYPE: 'Loại lịch',
+  ALL_SCHEDULES: 'Tất cả lịch',
+  CLASS_ONLY: 'Lớp học',
+  TRIAL_ONLY: 'Ca trải nghiệm/Dạy bù',
+  FIND_AVAILABLE_TEACHER: 'Tìm giáo viên rảnh để điều phối',
+  WEEKLY_SCHEDULE: 'Lịch giảng dạy theo tuần',
+  WEEK_PREFIX: 'Tuần',
+  PREVIOUS_WEEK: 'Tuần trước',
+  NEXT_WEEK: 'Tuần sau',
+  TODAY: 'Hôm nay',
+  CURRENT_SLOT_INFO: 'Thông tin ca hiện tại',
+  EMPTY_SCHEDULE_TITLE: 'Chưa có dữ liệu lịch giảng dạy',
+  EMPTY_QUALITY_TITLE: 'Chưa có dữ liệu chất lượng lớp',
+  EMPTY_SUBTITLE: 'Chọn khoảng thời gian và nhấn "Tải dữ liệu"',
+  FILTERED_TEACHERS: 'giáo viên đang hiển thị',
+  TEACHERS_WITH_SCHEDULE: 'Giáo viên có lịch',
+  TEACHING_SLOTS_IN_RANGE: 'Ca dạy trong kỳ',
+  AVG_SLOTS_PER_TEACHER: 'Ca/giáo viên',
+  RELOAD_DATA: 'Làm mới',
+} as const;
+
+export const TEACHER_SCHEDULE_TYPE_OPTIONS = [
+  { value: 'ALL', label: TEACHER_SCHEDULE_LABELS.ALL_SCHEDULES },
+  { value: 'CLASS', label: TEACHER_SCHEDULE_LABELS.CLASS_ONLY },
+  { value: 'TRIAL', label: TEACHER_SCHEDULE_LABELS.TRIAL_ONLY },
+] as const;
+
+export const TEACHER_SCHEDULE_VIEW_OPTIONS = [
+  { value: 'calendar', label: TEACHER_SCHEDULE_LABELS.CALENDAR_VIEW },
+  { value: 'quality-table', label: TEACHER_SCHEDULE_LABELS.QUALITY_VIEW },
+] as const;
+
+export const CLASS_QUALITY_LABELS = {
+  PANEL_TITLE: 'Tình hình lớp học',
+  HAS_ISSUES: 'Có vấn đề',
+  COMMENT_ISSUES: 'Nhận xét lỗi',
+  ATTENDANCE_ALERTS: 'Chuyên cần cảnh báo',
+  RESCHEDULED: 'Thay đổi lịch',
+  TEACHER_COMMENTS: 'Nhận xét giáo viên',
+  ATTENDANCE: 'Chuyên cần',
+  SCHEDULE_CHANGES: 'Thay đổi lịch',
+  CHECKPOINT_DEMO_SCORES: 'Điểm Checkpoint / Demo',
+  RESCHEDULED_SESSIONS: 'Buổi dời',
+  STUDENT_COUNT: 'Số lượng học viên',
+} as const;
+
+export const TICKET_LABELS = {
+  PAGE_TITLE: 'Phiếu Đánh giá',
+  LIST_VIEW: 'Danh sách Phiếu',
+  CLASS_ANALYSIS_VIEW: 'Phân tích theo Lớp',
+  TOTAL_TICKETS_STAT: 'TỔNG PHIẾU',
+  NEW_TICKETS_STAT: 'PHIẾU MỚI',
+  RESOLVE_RATE_STAT: 'TỶ LỆ DONE',
+  LOW_SCORE: 'Điểm thấp (≤ 3.0)',
+  TICKET_LIST: 'Danh sách Phiếu đánh giá',
+  CLASS_ANALYSIS: 'Phân tích theo Lớp học',
+  EMPTY_TITLE: 'Chưa có dữ liệu khảo sát',
+  SEARCH_PLACEHOLDER: 'Mã phiếu, Lớp, Học viên, Nội dung...',
+  TICKETS_BY_CENTRE: 'Số Phiếu Theo Cơ Sở',
+  TICKETS_BY_COURSE_LINE: 'Số Phiếu Theo Khối',
+  AVG_SCORE_GV: 'ĐIỂM TRUNG BÌNH (GV)',
+} as const;
+
+/**
  * LOADING MESSAGES — Standardized Vietnamese messages
  */
 export const MESSAGES = {

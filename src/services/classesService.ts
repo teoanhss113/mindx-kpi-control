@@ -198,6 +198,7 @@ export async function fetchAllClasses(
     unpassedSessionIndex: null,
     haveSlotIn: {},
     comments: { criteria: [] },
+    statusIn: [],
     ...overrides,
   };
 

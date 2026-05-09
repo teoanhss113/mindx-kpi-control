@@ -378,7 +378,7 @@
    TOOLBAR — fetch controls
 ══════════════════════════════════════════════════════════════════════════════ */
 .toolbar {
-  background: rgba(0, 0, 0, 0.02);
+  background: var(--bg-panel);
   border: 1px solid var(--border-primary);
   border-radius: var(--radius-card);
   padding: var(--space-3) var(--space-4);
@@ -506,7 +506,7 @@
 @media (max-width: 480px)  { .statsGrid { grid-template-columns: 1fr; } }
 
 .statCard {
-  background: rgba(0, 0, 0, 0.02);
+  background: var(--bg-surface);
   border: 1px solid var(--border-primary);
   border-radius: var(--radius-card);
   padding: var(--space-4) var(--space-5);
@@ -548,6 +548,15 @@
   background: rgba(94, 106, 210, 0.08); border: 1px solid rgba(94, 106, 210, 0.25);
   border-radius: var(--radius-card); flex-wrap: wrap;
 }
+.warningSuggestionsBar {
+  background: rgba(220,38,38,0.04);
+  border-color: rgba(220,38,38,0.1);
+}
+.warningSuggestionsBar .suggestLabel,
+.warningSuggestionsBar .suggestTarget {
+  color: var(--status-error);
+}
+.kpiSuggestionSpacing { margin-top: var(--space-4); }
 .suggestLabel { font-size: 12px; font-weight: 590; color: rgba(55, 48, 163, 1); white-space: nowrap; }
 .suggestPill {
   display: flex; align-items: center; gap: var(--space-1);
@@ -570,7 +579,7 @@
    - Optional legend: .chartLegend (at bottom of card)
 ══════════════════════════════════════════════════════════════════════════════ */
 .chartsSection {
-  background: rgba(0, 0, 0, 0.02);
+  background: var(--bg-surface);
   border: 1px solid var(--border-primary);
   border-radius: var(--radius-card);
   overflow: hidden; /* CRITICAL: Clips content to rounded corners */
@@ -594,7 +603,7 @@
 
 /* Small Toolbar Button */
 .chartToggle {
-  background: rgba(0, 0, 0, 0.02);
+  background: var(--bg-panel);
   border: 1px solid var(--border-secondary);
   color: var(--text-tertiary);
   padding: var(--space-1) var(--space-3);
@@ -605,14 +614,14 @@
   letter-spacing: -0.13px;
   box-shadow: 0 1px 1px rgba(0,0,0,0.04);
 }
-.chartToggle:hover { background: rgba(0, 0, 0, 0.04); color: var(--text-primary); }
+.chartToggle:hover { background: var(--border-primary); color: var(--text-primary); }
 
 /* 2-col grid for charts — DESIGN.md §5: 2 columns ≥860px, 1 column mobile */
 .chartsGrid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
   gap: var(--space-4);
-  padding: var(--space-4);
+  padding: var(--space-3) var(--space-4);
   overflow: hidden; /* Clips content within grid */
 }
 @media (max-width: 860px) { 
@@ -640,7 +649,7 @@
 */
 .chartCard {
   padding: var(--space-3);
-  background: rgba(0, 0, 0, 0.02);
+  background: var(--bg-surface);
   border: 1px solid var(--border-primary);
   border-radius: var(--radius-comfortable);
   display: flex;
@@ -648,6 +657,7 @@
   gap: var(--space-2);
   min-height: 240px; /* Ensure minimum chart height */
   overflow: hidden; /* Clips content to rounded corners */
+  box-shadow: var(--shadow-card);
 }
 
 /* Chart title inside each card — Caption 13px weight 510 */
@@ -749,6 +759,181 @@
   row-gap: var(--space-2);
 }
 
+.toolbarGrow {
+  flex: 1 1 220px;
+  min-width: 200px;
+}
+
+.inlineCluster {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+}
+
+.toolbarCluster {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.sectionActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+.pushRight {
+  margin-left: auto;
+}
+
+.stackXs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.metricText {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: 11px;
+  color: var(--text-tertiary);
+  font-weight: 510;
+}
+
+.successText {
+  font-size: 11px;
+  color: var(--status-success);
+  font-weight: 590;
+}
+
+.warningText {
+  font-size: 11px;
+  color: var(--status-warning);
+  font-weight: 590;
+}
+
+.errorText {
+  font-size: 11px;
+  color: var(--status-error);
+  font-weight: 590;
+}
+
+.mutedText {
+  color: var(--text-tertiary);
+}
+
+.classTitle {
+  font-weight: 590;
+  color: var(--text-primary);
+  line-height: 1.3;
+}
+
+.captionText {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  margin-top: 1px;
+}
+
+.centerCell {
+  text-align: center;
+}
+
+.sortableHeader {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.tableSm th,
+.tableSm td {
+  font-size: 12px;
+}
+
+.tablePanelBody {
+  padding: var(--space-3) var(--space-4);
+}
+
+/* Container for table and its toolbar within AdminTableSection */
+.adminTableContent {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Ensure children (usually tableScrollWrapper) are edge-to-edge horizontally */
+.tableChildrenWrapper {
+  width: 100%;
+}
+
+.sessionTimeline {
+  display: flex;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-3);
+}
+
+.sessionButton {
+  min-width: 52px;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-standard);
+  border: 1px solid var(--border-primary);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-family: inherit;
+  text-align: center;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, opacity 0.15s ease;
+}
+
+.sessionButton:hover {
+  border-color: var(--border-secondary);
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.sessionButtonActive {
+  border-color: var(--brand-indigo);
+  background: rgba(99, 102, 241, 0.1);
+  color: var(--brand-indigo);
+}
+
+.sessionButtonIssue {
+  border-color: rgba(245, 158, 11, 0.4);
+  background: rgba(245, 158, 11, 0.06);
+  color: var(--status-warning);
+}
+
+.sessionButtonUpcoming {
+  opacity: 0.48;
+}
+
+.sessionButtonPast {
+  opacity: 0.86;
+}
+
+.sessionButtonTitle {
+  display: block;
+  font-size: 10px;
+  font-weight: 590;
+  line-height: 1.2;
+}
+
+.sessionButtonMeta {
+  display: block;
+  margin-top: 2px;
+  font-size: 9px;
+  font-weight: 400;
+  color: currentColor;
+  opacity: 0.78;
+  line-height: 1.15;
+}
+
+.clickableRow {
+  cursor: pointer;
+}
+
 /* Thin vertical divider to group filters */
 .toolbarSeparator {
   width: 1px; height: 24px;
@@ -775,10 +960,124 @@
 .filterInput:focus { border-color: var(--brand-indigo); box-shadow: var(--shadow-focus); }
 @media (max-width: 600px) { .filterInput { width: 100%; } }
 
+.compactSelectWrapper {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.compactSelectLabel {
+  font-size: 13px;
+  font-weight: 510;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+.compactSelect {
+  background: var(--bg-panel);
+  border: 1px solid var(--border-primary);
+  color: var(--text-primary);
+  padding: var(--space-1) 24px var(--space-1) var(--space-3);
+  border-radius: var(--radius-standard);
+  font-size: 13px;
+  font-weight: 510;
+  outline: none;
+  font-family: inherit;
+  letter-spacing: -0.13px;
+  transition: all 0.15s ease;
+  min-width: 140px;
+  max-width: 100%;
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'%3E%3C/path%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+}
+.compactSelect:hover { border-color: var(--border-secondary); background-color: var(--bg-surface); }
+.compactSelect:focus { border-color: var(--brand-indigo); box-shadow: var(--shadow-focus); background-color: var(--bg-surface); }
+
+.viewModeToggle {
+  display: flex;
+  padding: 4px;
+  background: var(--bg-panel);
+  border-radius: var(--radius-standard);
+  gap: 4px;
+  border: 1px solid var(--border-primary);
+  margin-bottom: var(--space-4);
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.02);
+  width: 100%; /* Full width for visibility */
+}
+
+.viewModeBtn {
+  flex: 1; /* Each tab takes equal space */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  min-height: 36px;
+  line-height: 1;
+}
+
+.viewModeBtnActive {
+  background: var(--bg-surface);
+  color: var(--brand-indigo);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1), 0 1px 1px rgba(0,0,0,0.05);
+}
+
+.viewModeBtn:hover:not(.viewModeBtnActive) {
+  color: var(--text-primary);
+  background: rgba(0,0,0,0.04);
+}
+
+.viewModeBtn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.weekNavigator {
+  display: grid;
+  grid-template-columns: minmax(96px, auto) minmax(0, 1fr) minmax(96px, auto);
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  margin-bottom: 0;
+  border-bottom: 1px solid var(--border-primary);
+  background: var(--bg-elevated);
+}
+
+.weekNavigatorCenter {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  text-align: center;
+}
+
+@media (max-width: 600px) {
+  .compactSelect { width: 100%; }
+  .weekNavigator {
+    grid-template-columns: 1fr 1fr;
+  }
+  .weekNavigatorCenter {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+}
+
 /* Pill filter chip */
 .filterChip {
-  background: rgba(0, 0, 0, 0.02);
-  border: 1px solid var(--border-input);
+  background: var(--bg-panel);
+  border: 1px solid var(--border-primary);
   color: var(--text-tertiary);
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-pill);
@@ -788,7 +1087,7 @@
   transition: all 0.15s ease; white-space: nowrap;
 }
 .filterChip:hover { background: rgba(0, 0, 0, 0.04); border-color: var(--border-secondary); color: var(--text-secondary); }
-.filterChip.chipActive { background: rgba(251, 146, 60, 0.08); border-color: rgba(251, 146, 60, 0.25); color: var(--status-dark-orange); }
+.filterChip.chipActive { background: var(--bg-surface); border-color: var(--brand-indigo); color: var(--brand-indigo); box-shadow: var(--shadow-card); }
 
 .chipBadge {
   background: var(--status-error); color: var(--bg-surface);
@@ -920,7 +1219,7 @@
    Horizontally scrollable on mobile
 ══════════════════════════════════════════════════════════════════════════════ */
 .tableSection {
-  background: rgba(0, 0, 0, 0.02);
+  background: var(--bg-surface);
   border: 1px solid var(--border-primary);
   border-radius: var(--radius-card);
   box-shadow: var(--shadow-card);
@@ -989,10 +1288,10 @@
   align-items: start; /* start not center: reasons column wraps and grows tall */
   transition: background 0.1s ease;
   cursor: pointer;
-  background: rgba(0,0,0,0.01);
+  background: var(--bg-surface);
   min-width: 700px;
 }
-.classItem:hover { background: rgba(0,0,0,0.03); }
+.classItem:hover { background: var(--bg-elevated); }
 .classItem:last-child { border-bottom: none; }
 
 .sortableCol {
@@ -1303,10 +1602,10 @@
    SIDEBAR FILTER PANELS (right column on desktop)
 ══════════════════════════════════════════════════════════════════════════════ */
 .filterPanel {
-  background: rgba(0, 0, 0, 0.02);
+  background: var(--bg-surface);
   border: 1px solid var(--border-primary);
   border-radius: var(--radius-card);
-  padding: var(--space-4);
+  padding: var(--space-3);
   box-shadow: var(--shadow-card);
 }
 @media (min-width: 1100px) { .filterPanel { position: sticky; top: 68px; } }
@@ -1554,7 +1853,7 @@
 }
 .studentTable th, .studentTable td {
   text-align: left; 
-  padding: var(--space-3); /* Consistent padding */
+  padding: var(--space-3) var(--space-4); /* Consistent padding */
   border-bottom: 1px solid var(--border-primary);
   font-size: 13px; 
   letter-spacing: -0.13px;
@@ -1578,7 +1877,7 @@
   transition: background-color 0.1s ease;
 }
 .studentTable tbody tr:hover {
-  background: rgba(0,0,0,0.02);
+  background: var(--bg-elevated);
 }
 .studentTable tbody tr[style*="cursor: pointer"]:hover {
   background: rgba(0,0,0,0.04);
@@ -1656,6 +1955,11 @@
   animation: spin 0.7s linear infinite; flex-shrink: 0;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 
 .skeletonRow {
   display: grid; grid-template-columns: 2.5fr 0.6fr 1fr 2fr;
