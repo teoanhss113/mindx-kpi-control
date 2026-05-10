@@ -18,12 +18,12 @@ import { surveyColor, KPI_COLORS, SURVEY_LEGEND } from '@/lib/kpiScoring';
 import { fetchTickets, updateTicket, searchUsers } from '@/services/ticketService';
 import { fetchPendingSurveyClasses } from '@/services/classesService';
 import { classSurveyKey, fetchStudentClassSurveys, STUDENT_TEACHING_SURVEY_ID } from '@/services/classSurveyService';
-import { Ticket, LmsUser } from '@/types/ticket';
+import { Ticket, LmsUser, TicketQuestion } from '@/types/ticket';
 import { Class } from '@/types/classes';
 import {
   Icon, SortIcon, MultiSelect, SelectOption, CompactSelect,
   Toolbar, StatCard, ChartSectionHeader,
-  TableToolbar, TableGroupHeader, AdminTableSection, Modal, ModalHeader, EmptyState,
+  TableToolbar, TableGroupHeader, SubTableGroupHeader, AdminTableSection, Modal, ModalHeader, EmptyState,
   ViewModeToggle,
   initials,
   ToastContainer,
@@ -40,6 +40,8 @@ import { CACHE_KEYS, LABELS, MESSAGES, ENTITIES, FORMAT, CHART_COLORS, TICKET_LA
 import { useSharedDateRange, useSharedCentres } from '@/hooks/useSharedFilterState';
 import { ProtectedPage } from '@/components/ProtectedPage';
 import styles from '@/app/dashboard.module.css';
+import GoogleSheetsSection from '@/components/tickets/GoogleSheetsSection';
+import { normalizeString } from '@/lib/googleSheetsMatching';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const SURVEY_TARGETS = [
@@ -153,9 +155,14 @@ export default function TicketsDashboard() {
   const [selectedFeedbackTopics, setSelectedFeedbackTopics] = useState<string[]>([]);
   const [selectedSessions, setSelectedSessions] = useState<string[]>([]);
   const [search, setSearch] = useState('');
+  
+  // Storage for post-processed Google Sheet data pulled UP from the child component!
+  const [sheetProcessedRows, setSheetProcessedRows] = useState<any[]>([]);
+  const [googleSheetsRawData, setGoogleSheetsRawData] = useState<any[]>([]);
 
   // ── Layout states ──────────────────────────────────────────────────────────
   const [showActiveTable, setShowActiveTable] = useState(true);
+  const [showLmsList, setShowLmsList] = useState(true);
   const [quickFilter, setQuickFilter] = useState<string | null>(null);
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
 
@@ -171,6 +178,9 @@ export default function TicketsDashboard() {
   
   // ── Modal states for grouped views ──
   const [selectedClassForModal, setSelectedClassForModal] = useState<{ className: string; tickets: typeof filteredTickets; classData?: any | null } | null>(null);
+  
+  // Single state to view detail popup for Google Sheet rows
+  const [viewingSheetRow, setViewingSheetRow] = useState<any | null>(null);
   
   // Section expansion states
   const [standardExpanded, setStandardExpanded] = useState(true);
@@ -205,7 +215,16 @@ export default function TicketsDashboard() {
 
   // ── Data Fetching ───────────────────────────────────────────────────────────
   const loadData = useCallback(async (start: string, end: string) => {
-    if (!start || !end) return;
+    if (!start || !end) {
+      addToast(MESSAGES.ERROR.DATE_RANGE_REQUIRED, 'error');
+      return;
+    }
+    const fDate = new Date(start), tDate = new Date(end);
+    if (fDate > tDate) {
+      addToast(MESSAGES.ERROR.DATE_RANGE_INVALID, 'error');
+      return;
+    }
+
     if (abortRef.current) abortRef.current.abort();
     abortRef.current = new AbortController();
     const signal = abortRef.current.signal;
@@ -219,6 +238,8 @@ export default function TicketsDashboard() {
     let curTickets: Ticket[] = [];
     let _centres = centres;
 
+    const tid = addToast(MESSAGES.LOADING.CONNECTING, 'loading');
+
     try {
       if (_centres.length === 0) {
         const cachedCentres = await getCache(CACHE_KEYS.CENTRES);
@@ -231,8 +252,21 @@ export default function TicketsDashboard() {
       const dStart = new Date(start); dStart.setHours(0, 0, 0, 0);
       const dEnd = new Date(end); dEnd.setHours(23, 59, 59, 999);
 
-      // Fetch tickets and pending classes in parallel
-      const [ticketsRes, pendingRes] = await Promise.all([
+      // Construct google sheet URL based on current filter parameters
+      let sheetUrl = `/api/google-sheets?_t=${Date.now()}`; 
+      if (start) sheetUrl += `&fromDate=${encodeURIComponent(start)}`;
+      if (end) sheetUrl += `&toDate=${encodeURIComponent(end)}`;
+      if (selectedCentres.length > 0 && _centres.length > 0) {
+        const shortCodes = selectedCentres
+          .map(id => _centres.find(c => c.id === id)?.shortName)
+          .filter(Boolean);
+        if (shortCodes.length > 0) {
+          sheetUrl += `&center=${encodeURIComponent(shortCodes.join(','))}`;
+        }
+      }
+
+      // Fetch tickets, pending classes, and Google Sheets data in parallel
+      const [ticketsRes, pendingRes, sheetsRes] = await Promise.all([
         fetchTickets({
           createdAt_gte: dStart.toISOString(),
           createdAt_lte: dEnd.toISOString(),
@@ -246,9 +280,19 @@ export default function TicketsDashboard() {
           dStart,
           dEnd,
           selectedCentres,
-          undefined,
+          () => {
+            // Toast only once per phase to avoid spam, query is fast
+            // No action needed here, we trigger phase below
+          },
           signal
-        )
+        ).then(res => {
+           addToast('Đã nạp cấu trúc lớp học!', 'success');
+           return res;
+        }),
+        fetch(sheetUrl, { signal }).then(r => r.json()).catch(err => {
+          console.error('Sheet fetch error:', err);
+          return { data: [] };
+        })
       ]);
 
       const surveyLookups = pendingRes.flatMap(c => {
@@ -270,6 +314,7 @@ export default function TicketsDashboard() {
       let enrichedPending = pendingRes;
       if (surveyLookups.length > 0) {
         try {
+          addToast(`Bắt đầu đối soát khảo sát (${surveyLookups.length} lớp)...`, 'info');
           const surveyMap = await fetchStudentClassSurveys(surveyLookups, signal);
           enrichedPending = pendingRes.map(c => {
             const surveySessions = (c.slots || []).flatMap((slot, slotIndex) => {
@@ -298,19 +343,29 @@ export default function TicketsDashboard() {
       }
 
       if (!signal.aborted) {
+        const rawSheetData = sheetsRes?.data || [];
         setTickets(ticketsRes.data);
         setPendingClasses(enrichedPending);
+        setGoogleSheetsRawData(rawSheetData);
+        
         await setCache(CACHE_KEYS.TICKETS, { 
           tickets: ticketsRes.data, 
           pendingClasses: enrichedPending, 
+          googleSheetsRawData: rawSheetData,
           timestamp: Date.now() 
         });
+        removeToast(tid);
         addToast(MESSAGES.LOADING.SUCCESS(ticketsRes.data.length, ENTITIES.TICKETS), 'success');
       }
     } catch (err: any) {
       if (!signal.aborted) {
-        console.error(err);
-        addToast(MESSAGES.ERROR.GENERIC, 'error');
+        removeToast(tid);
+        if (err.message === 'Aborted' || err.name === 'AbortError') {
+          addToast(MESSAGES.LOADING.STOPPED, 'info');
+        } else {
+          console.error(err);
+          addToast(MESSAGES.ERROR.GENERIC, 'error');
+        }
       }
     } finally {
       if (!signal.aborted) {
@@ -540,11 +595,11 @@ export default function TicketsDashboard() {
         return t;
       }));
 
-      addToast(`Đã cập nhật ${selectedTicketIds.size} phiếu`, 'success');
+      addToast(MESSAGES.SUCCESS.UPDATED(`${selectedTicketIds.size} phiếu`), 'success');
       setSelectedTicketIds(new Set());
       setShowBulkModal(false);
     } catch (err) {
-      addToast('Có lỗi xảy ra khi cập nhật hàng loạt', 'error');
+      addToast(MESSAGES.ERROR.GENERIC, 'error');
     } finally {
       setBulkSaving(false);
     }
@@ -575,6 +630,9 @@ export default function TicketsDashboard() {
         }
         if (cached?.pendingClasses) {
           setPendingClasses(cached.pendingClasses);
+        }
+        if (cached?.googleSheetsRawData) {
+          setGoogleSheetsRawData(cached.googleSheetsRawData);
         }
       } catch (e) {
         console.error('State parse error', e);
@@ -643,8 +701,56 @@ export default function TicketsDashboard() {
       return { ...t, courseCategory, _safeDate: dateStr, _avgScore: avgScore, _groupScores: parsedGroupScores };
     };
 
-    return tickets.map(processTicket);
-  }, [tickets, pendingClasses]);
+    const base = tickets.map(processTicket);
+    
+    // Map Google Sheets data into standard simulated Ticket shapes for seamless integration into Stats and Charts!
+    const sheetMapped = sheetProcessedRows.map((row, idx) => {
+      const cls = row.matchedClass;
+      
+      // Derive course category natively using canonical system utilities to ensure filter alignment
+      const courseCategory = cls 
+        ? getCourseCategory(cls) 
+        : getCourseCategory({ name: row.normalizedClassCode || '' });
+
+      // Standardize centre resolution and reverse ID linkage
+      let centreShort = 'Không rõ';
+      let centreId = '';
+      if (cls?.centre) {
+        centreShort = cls.centre.shortName;
+        centreId = cls.centre.id;
+      } else {
+        const segs = row.normalizedClassCode?.split('-') || [];
+        centreShort = segs[0] || 'Không rõ';
+        const match = centres.find(c => c.shortName === centreShort);
+        if (match) centreId = match.id;
+      }
+
+      // Inject teacher score with precise compatible keys recognized by down-stream hooks
+      const parsedGroupScores = row.avgScore != null
+        ? [{ group: 'GIÁO VIÊN', avg: row.avgScore.toFixed(1) }]
+        : [];
+
+      return {
+        id: `sheet-row-${idx}-${row.timestamp}`,
+        status: 'CLOSED', // Sheets are treated as resolved submittals
+        feedbackTopic: 'TEACHER', // Defaults to Teaching surveys
+        priority: 'LOW',
+        courseCategory,
+        _isGoogleSheet: true,
+        _safeDate: row.timestamp ? new Date(row.timestamp).toLocaleDateString('vi-VN') : '—',
+        _avgScore: row.avgScore != null ? row.avgScore.toFixed(1) : null,
+        _groupScores: parsedGroupScores,
+        ticketSource: {
+          centre: { shortName: centreShort, id: centreId },
+          centreId,
+          className: cls?.name || row.normalizedClassCode,
+          studentName: row.studentName,
+        }
+      } as any;
+    });
+
+    return [...base, ...sheetMapped];
+  }, [tickets, pendingClasses, sheetProcessedRows, centres]);
 
   const courseLineOptions = useMemo(() => {
     const cats = new Set<string>();
@@ -825,7 +931,7 @@ export default function TicketsDashboard() {
 
   // ── Table filtering & Sorting ───────────────────────────────────────────────
   const filteredTickets = useMemo(() => {
-    let list = baseFilteredTickets;
+    let list = baseFilteredTickets.filter(t => !(t as any)._isGoogleSheet);
     if (search.trim()) {
       const q = search.toLowerCase();
       list = list.filter(t => 
@@ -953,6 +1059,7 @@ export default function TicketsDashboard() {
       groups.get(key)!.tickets.push(t);
     });
 
+
     // 2. Process pending classes (to get total students and session context)
     let filteredPending = pendingClasses;
     if (search.trim()) {
@@ -1010,10 +1117,59 @@ export default function TicketsDashboard() {
       });
     });
 
+    // 1.5 Process Google Sheets data AFTER class data has built official rosters
+    sheetProcessedRows.forEach(row => {
+       const classId = row.matchedClass?.id;
+       const className = row.matchedClass?.className || row.matchedClass?.name || row.normalizedClassCode;
+       const key = classId || className;
+       
+       if (!groups.has(key)) {
+         groups.set(key, { className, tickets: [], sessionsInRange: [] });
+       }
+       const g = groups.get(key)!;
+       
+       // Master Identity Linkage: Search group's official roster to discover legitimate LMS ID!
+       // Allows Google Sheet rows to automatically fuse with existing LMS student profiles instantly.
+       let resolvedStudentId = `st-sheet-${row.studentName}`;
+       const targetNameKey = normalizeString(row.studentName).replace(/\s+/g, '');
+       
+       if (targetNameKey && g.classData?.students) {
+          const matchedRosterStudent = g.classData.students.find((st: any) => {
+             const lmsNameKey = normalizeString(st.student?.fullName || '').replace(/\s+/g, '');
+             return lmsNameKey === targetNameKey; // Semantic absolute overlap match
+          });
+          
+          if (matchedRosterStudent?.student?.id) {
+             resolvedStudentId = matchedRosterStudent.student.id; // BINGO! Official connection forged.
+          }
+       }
+
+       const syntheticTicket = {
+          id: `sheet-${row.timestamp}-${row.studentName}`,
+          _isGoogleSheet: true,
+          _sheetAvgScore: row.avgScore,
+          _safeDate: row.timestamp,
+          _originalRow: row.row, // Raw key-value pairs
+          _fullRecord: row, // Includes normalization metadata
+          status: 'CLOSED',
+          ticketSource: {
+             classId,
+             className,
+             studentName: row.studentName,
+             studentId: resolvedStudentId,
+          }
+       } as any;
+       
+       g.tickets.push(syntheticTicket);
+    });
+
     const result = Array.from(groups.entries())
       .map(([id, g]) => {
         const tickets = g.tickets;
         const avgScores = tickets.map(t => {
+          // If synthetic sheet item, pull injected direct score
+          if ((t as any)._isGoogleSheet) return (t as any)._sheetAvgScore;
+
           const teacherScore = (t as any)._groupScores?.find((gs: any) => {
             const gName = gs.group.toUpperCase();
             return gName.includes('TEACHER') || gName.includes('GIÁO VIÊN') || gName === 'GV';
@@ -1071,7 +1227,7 @@ export default function TicketsDashboard() {
     }
 
     return result;
-  }, [filteredTickets, pendingClasses, search, tableSelectedCentres, tableCentreIds, fromDate, toDate, selectedSessions, centres]);
+  }, [filteredTickets, pendingClasses, search, tableSelectedCentres, tableCentreIds, fromDate, toDate, selectedSessions, centres, sheetProcessedRows]);
 
   const activeGroups = useMemo(() =>
     groupedByClass.filter(g => !CLASS_INACTIVE_STATUSES.has(g.classStatus?.toUpperCase?.() || '')),
@@ -1134,7 +1290,7 @@ export default function TicketsDashboard() {
     if (!selectedEntry) return [];
     
     const questions = selectedEntry.ticketSource?.questions || [];
-    return questions.map(q => {
+    return questions.map((q: TicketQuestion) => {
       const ans = selectedEntry.ticketSource.answers?.find((a: any) => a.questionId === q.id);
       return {
         id: q.id,
@@ -1179,8 +1335,14 @@ export default function TicketsDashboard() {
           onFetch={() => loadData(fromDate, toDate)}
           onCancel={handleCancelFetch}
           loading={loading} progress={progress}
-          hasData={tickets.length > 0 || pendingClasses.length > 0}
-          onClearCache={() => { setTickets([]); setPendingClasses([]); clearCache(CACHE_KEYS.TICKETS); }}
+          hasData={tickets.length > 0 || pendingClasses.length > 0 || googleSheetsRawData.length > 0}
+          onClearCache={() => { 
+            setTickets([]); 
+            setPendingClasses([]); 
+            setGoogleSheetsRawData([]); 
+            clearCache(CACHE_KEYS.TICKETS); 
+            addToast(MESSAGES.CACHE.CLEARED, 'success');
+          }}
           showRegionQuickSelect={true}
           quickFilterSlots={
             hasPreferences && (
@@ -1333,7 +1495,7 @@ export default function TicketsDashboard() {
             {(stats.total > 0 || loading || pendingLoading || tickets.length > 0 || pendingClasses.length > 0) && (
               <AdminTableSection
                 title={viewMode === 'list' ? TICKET_LABELS.TICKET_LIST : TICKET_LABELS.CLASS_ANALYSIS}
-                count={viewMode === 'list' ? filteredTickets.length : activeGroups.length}
+                count={viewMode === 'list' ? baseFilteredTickets.length : (standardGroups.length + earlyLateGroups.length)}
                 loading={loading || pendingLoading}
                 progress={progress}
                 isExpanded={showActiveTable}
@@ -1411,6 +1573,23 @@ export default function TicketsDashboard() {
                     
                     {/* LIST VIEW */}
                     {viewMode === 'list' && (
+                      <>
+                        {/* Subheader Divider: Identical aesthetic alignment */}
+                        <SubTableGroupHeader
+                          title="DANH SÁCH PHIẾU TỪ HỆ THỐNG LMS"
+                          count={filteredTickets.length}
+                          icon={<Icon.ClipboardCheck size={13} />}
+                          isExpanded={showLmsList}
+                          onToggle={() => setShowLmsList(!showLmsList)}
+                        />
+                        <AnimatePresence initial={false}>
+                          {showLmsList && (
+                            <motion.div
+                              initial={{ height: 0, opacity: 0 }}
+                              animate={{ height: 'auto', opacity: 1 }}
+                              exit={{ height: 0, opacity: 0 }}
+                              style={{ overflow: 'hidden' }}
+                            >
                       <div className={styles.tableScrollWrapper}>
                         {/* Headers */}
                         <div style={{
@@ -1564,6 +1743,23 @@ export default function TicketsDashboard() {
                         </div>
                       )}
                     </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                    
+                    {/* ── Tách Bảng Google Sheets Vào View Chung ── */}
+                    <GoogleSheetsSection 
+                      classes={pendingClasses} 
+                      fromDate={fromDate} 
+                      toDate={toDate} 
+                      centres={centres} 
+                      selectedCentres={selectedCentres}
+                      externalRawData={googleSheetsRawData}
+                      parentLoading={loading}
+                      onDataProcessed={setSheetProcessedRows}
+                      onViewDetails={(item) => setViewingSheetRow(item)}
+                    />
+                    </>
                     )}
 
                     {/* BY CLASS VIEW */}
@@ -1595,17 +1791,13 @@ export default function TicketsDashboard() {
                         {/* Standard Surveys Section */}
                         {standardGroups.length > 0 && (
                           <>
-                            <div 
-                              style={{ padding: '10px 16px', background: 'var(--bg-elevated)', fontSize: 11, fontWeight: 700, color: 'var(--brand-indigo)', borderBottom: '1px solid var(--border-primary)', display: 'flex', alignItems: 'center', gap: 8, letterSpacing: '0.02em', cursor: 'pointer', userSelect: 'none' }}
-                              onClick={() => setStandardExpanded(!standardExpanded)}
-                            >
-                               <motion.span animate={{ rotate: standardExpanded ? 0 : -90 }} transition={{ duration: 0.2 }}>
-                                 <Icon.ChevronDown size={14} />
-                               </motion.span>
-                               <Icon.Calendar size={13} />
-                               ĐÚNG ĐỢT (BUỔI 4 & 8)
-                               <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 4, background: 'var(--brand-indigo)', color: 'white' }}>{standardGroups.length}</span>
-                            </div>
+                            <SubTableGroupHeader
+                              title="ĐÚNG ĐỢT (BUỔI 4 & 8)"
+                              count={standardGroups.length}
+                              icon={<Icon.Calendar size={13} />}
+                              isExpanded={standardExpanded}
+                              onToggle={() => setStandardExpanded(!standardExpanded)}
+                            />
                             <AnimatePresence initial={false}>
                               {standardExpanded && (
                                 <motion.div
@@ -1706,16 +1898,15 @@ export default function TicketsDashboard() {
                         {/* Early/Late Surveys Section */}
                         {earlyLateGroups.length > 0 && (
                           <>
-                            <div 
-                              style={{ padding: '10px 16px', background: 'var(--bg-elevated)', fontSize: 11, fontWeight: 700, color: 'var(--status-warning)', borderBottom: '1px solid var(--border-primary)', marginTop: 12, display: 'flex', alignItems: 'center', gap: 8, letterSpacing: '0.02em', cursor: 'pointer', userSelect: 'none' }}
-                              onClick={() => setEarlyLateExpanded(!earlyLateExpanded)}
-                            >
-                               <motion.span animate={{ rotate: earlyLateExpanded ? 0 : -90 }} transition={{ duration: 0.2 }}>
-                                 <Icon.ChevronDown size={14} />
-                               </motion.span>
-                               <Icon.Clock size={13} />
-                               KHẢO SÁT SỚM / MUỘN (NGOÀI ĐỢT)
-                               <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 4, background: 'var(--status-warning)', color: 'white' }}>{earlyLateGroups.length}</span>
+                            <div style={{ marginTop: 12 }}>
+                              <SubTableGroupHeader
+                                title="KHẢO SÁT SỚM / MUỘN (NGOÀI ĐỢT)"
+                                count={earlyLateGroups.length}
+                                icon={<Icon.Clock size={13} />}
+                                color="var(--status-warning)"
+                                isExpanded={earlyLateExpanded}
+                                onToggle={() => setEarlyLateExpanded(!earlyLateExpanded)}
+                              />
                             </div>
                             <AnimatePresence initial={false}>
                               {earlyLateExpanded && (
@@ -1806,7 +1997,7 @@ export default function TicketsDashboard() {
                           </>
                         )}
 
-                        {activeGroups.length === 0 && (
+                        {(standardGroups.length === 0 && earlyLateGroups.length === 0) && (
                           <div style={{ padding: '28px 16px', textAlign: 'center', color: 'var(--text-quaternary)', fontSize: 13 }}>
                             Không có dữ liệu để hiển thị.
                           </div>
@@ -1968,6 +2159,7 @@ export default function TicketsDashboard() {
               subtitle={'Chọn khoảng thời gian và nhấn "Tải dữ liệu"'}
             />
           )}
+
       </PageLayout>
 
       {/* ── CLASS STUDENTS MODAL (By Class View) ── */}
@@ -1977,37 +2169,75 @@ export default function TicketsDashboard() {
           const classStudents = selectedClassForModal.classData?.students || [];
           const validStudents = classStudents.filter((st: any) => !isExemptStudent(st, selectedClassForModal.classData?.slots));
           
-          // Group existing tickets by student
-          const ticketGroups = new Map<string, typeof selectedClassForModal.tickets>();
+          // 1. Build dual lookups for maximum fault tolerance (Exact ID + Fuzzy Semantic Name)
+          // This perfectly repairs native LMS data inconsistencies AND unifies Google Sheets in one fell swoop!
+          const idToTickets = new Map<string, typeof selectedClassForModal.tickets>();
+          const nameToTickets = new Map<string, typeof selectedClassForModal.tickets>();
+          
           selectedClassForModal.tickets.forEach(t => {
-            const key = t.ticketSource?.studentId || 'unknown';
-            if (!ticketGroups.has(key)) ticketGroups.set(key, []);
-            ticketGroups.get(key)!.push(t);
-          });
-
-          // Assemble consistent list
-          const rowList: Array<{ name: string; tickets: any[]; studentId?: string; }> = [];
-          const processedIds = new Set<string>();
-
-          validStudents.forEach((st: any) => {
-            const id = st.student?.id;
-            const name = st.student?.fullName || 'Học viên';
-            const tkts = id ? (ticketGroups.get(id) || []) : [];
-            rowList.push({ name, tickets: tkts, studentId: id });
-            if (id) processedIds.add(id);
-          });
-
-          // Add residual ticket-only students (in case some students have tickets but aren't on current class list)
-          ticketGroups.forEach((tkts, id) => {
-            if (id !== 'unknown' && !processedIds.has(id)) {
-              const name = tkts[0]?.ticketSource?.studentName || 'Học viên';
-              rowList.push({ name, tickets: tkts, studentId: id });
+            const studentId = t.ticketSource?.studentId;
+            const studentName = t.ticketSource?.studentName || '';
+            const normalizedKey = normalizeString(studentName).replace(/\s+/g, '');
+            
+            if (studentId && studentId !== 'unknown') {
+               if (!idToTickets.has(studentId)) idToTickets.set(studentId, []);
+               idToTickets.get(studentId)!.push(t);
+            }
+            if (normalizedKey) {
+               if (!nameToTickets.has(normalizedKey)) nameToTickets.set(normalizedKey, []);
+               nameToTickets.get(normalizedKey)!.push(t);
             }
           });
-          
-          if (ticketGroups.has('unknown')) {
-             rowList.push({ name: 'Học viên không rõ ID', tickets: ticketGroups.get('unknown')! });
-          }
+
+          const rowList: Array<{ name: string; tickets: any[]; studentId?: string; }> = [];
+          const processedTicketIds = new Set<string>();
+
+          // 2. Assemble unified students by scanning both Primary ID AND Secondary Fuzzy Key on roster!
+          validStudents.forEach((st: any) => {
+            const id = st.student?.id;
+            const fullName = st.student?.fullName || 'Học viên';
+            const normalizedRosterKey = normalizeString(fullName).replace(/\s+/g, '');
+            
+            let studentTickets: any[] = [];
+            // Path A: Traditional system lookup
+            if (id && idToTickets.has(id)) {
+               studentTickets.push(...idToTickets.get(id)!);
+            }
+            // Path B: Smart secondary recovery for inconsistent identifiers (LMS native bug-fix)
+            if (normalizedRosterKey && nameToTickets.has(normalizedRosterKey)) {
+               const nameMatched = nameToTickets.get(normalizedRosterKey)!;
+               nameMatched.forEach(candidate => {
+                  // Ensure zero overlap counting
+                  if (!studentTickets.some(exists => exists.id === candidate.id)) {
+                     studentTickets.push(candidate);
+                  }
+               });
+            }
+            
+            const finalTickets = Array.from(new Map(studentTickets.map(x => [x.id, x])).values());
+            finalTickets.forEach(x => processedTicketIds.add(x.id));
+            
+            rowList.push({ name: fullName, tickets: finalTickets, studentId: id });
+          });
+
+          // 3. Residual Sweep: Safely scoop remaining orphan tickets into self-consistent buckets
+          selectedClassForModal.tickets.forEach(t => {
+             if (!processedTicketIds.has(t.id)) {
+                const ticketGivenName = t.ticketSource?.studentName || 'Học viên không rõ';
+                const normalizedKey = normalizeString(ticketGivenName).replace(/\s+/g, '');
+                
+                const existingResidual = rowList.find(r => 
+                   !r.studentId && normalizeString(r.name).replace(/\s+/g, '') === normalizedKey
+                );
+                
+                if (existingResidual) {
+                   existingResidual.tickets.push(t);
+                } else {
+                   rowList.push({ name: ticketGivenName, tickets: [t], studentId: t.ticketSource?.studentId });
+                }
+                processedTicketIds.add(t.id);
+             }
+          });
 
           rowList.sort((a, b) => a.name.localeCompare(b.name));
 
@@ -2049,21 +2279,43 @@ export default function TicketsDashboard() {
                       }
 
                       return tickets.map((t, idx) => {
+                        const isSheet = (t as any)._isGoogleSheet;
                         const teacherScore = (t as any)._groupScores?.find((gs: any) => {
                           const gName = gs.group.toUpperCase();
                           return gName.includes('TEACHER') || gName.includes('GIÁO VIÊN') || gName === 'GV';
                         });
-                        const score = teacherScore ? parseFloat(teacherScore.avg) : null;
+                        const score = isSheet ? (t as any)._sheetAvgScore : (teacherScore ? parseFloat(teacherScore.avg) : null);
                         
                         return (
                           <tr key={t.id} 
-                            onClick={() => { setSelectedTicketId(t.id); openEditForTicket(t as any); setSelectedClassForModal(null); }}
+                            onClick={() => { 
+                               if (isSheet) {
+                                  setViewingSheetRow((t as any)._fullRecord);
+                                  return;
+                               }
+                               setSelectedTicketId(t.id); 
+                               openEditForTicket(t as any); 
+                               setSelectedClassForModal(null); 
+                            }}
                             style={{ cursor: 'pointer' }}>
                             {idx === 0 && (
                               <td rowSpan={tickets.length} style={{ fontWeight: 510 }}>
-                                {name}
+                                <div style={{ marginBottom: 2 }}>{name}</div>
+                                {(() => {
+                                   const sheetNames = Array.from(new Set(
+                                      tickets.filter((t: any) => t._isGoogleSheet)
+                                             .map((t: any) => t.ticketSource?.studentName)
+                                             .filter(Boolean)
+                                   ));
+                                   if (sheetNames.length === 0) return null;
+                                   return sheetNames.map((sn: any) => (
+                                      <div key={sn} style={{ fontSize: 9, color: '#c5221f', fontWeight: 500, marginTop: 2, display: 'flex', alignItems: 'center', gap: 3, opacity: 0.9 }}>
+                                         <span style={{ background: '#fce8e6', padding: '1px 3px', borderRadius: 2, fontSize: 8, letterSpacing: 0.2 }}>GỐC</span> {sn}
+                                      </div>
+                                   ));
+                                })()}
                                 {tickets.length > 1 && (
-                                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4 }}>
+                                  <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 4, background: 'var(--bg-panel)', display: 'inline-block', padding: '1px 4px', borderRadius: 3, border: '1px solid var(--border-primary)' }}>
                                     {tickets.length} đợt
                                   </div>
                                 )}
@@ -2076,10 +2328,18 @@ export default function TicketsDashboard() {
                               {(t as any)._safeDate}
                             </td>
                             <td>
-                              <TicketStatusBadge status={t.status} />
+                               {isSheet ? (
+                                  <Badge variant="info" size="sm" style={{ background: '#e8f0fe', color: '#1967d2' }}>Đã nộp</Badge>
+                               ) : (
+                                  <TicketStatusBadge status={t.status} />
+                               )}
                             </td>
                             <td style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
-                              {t.ticketCode || '—'}
+                              {isSheet ? (
+                                 <Badge variant="custom" size="sm" style={{ background: '#fce8e6', color: '#c5221f', fontWeight: 600, fontSize: 9 }}>GOOGLE SHEETS</Badge>
+                              ) : (
+                                 t.ticketCode || '—'
+                              )}
                             </td>
                             <td style={{ textAlign: 'center' }}>
                               {score !== null ? (
@@ -2133,6 +2393,159 @@ export default function TicketsDashboard() {
         })()}
       </Modal>
 
+
+      {/* ── GOOGLE SHEETS DETAIL MODAL ── */}
+      <Modal open={!!viewingSheetRow} onClose={() => setViewingSheetRow(null)}>
+        {viewingSheetRow && (() => {
+           const rowData = viewingSheetRow.row || {};
+           const studentName = viewingSheetRow.studentName;
+           const timestamp = viewingSheetRow.timestamp;
+           
+           // 1. Dynamic Attribute Harvesting: Extract implicit fields to promote to Header Grid!
+           let extractedCentre = '';
+           let extractedCourse = '';
+           
+           Object.entries(rowData).forEach(([k, v]) => {
+              const keyUpper = k.toUpperCase().trim();
+              const valStr = String(v || '').trim();
+              // Skip empty or explicit default empty markers
+              if (!valStr || valStr === 'Chưa trả lời' || valStr === '-' || valStr === 'FALSE') return;
+              
+              if (keyUpper.includes('MÃ CƠ SỞ CỦA EM LÀ') || keyUpper === 'MÃ CS') {
+                 // Capture the more descriptive choice if duplicates exist
+                 if (!extractedCentre || extractedCentre.length < valStr.length) {
+                    extractedCentre = valStr;
+                 }
+              }
+              if (keyUpper.includes('EM ĐANG HỌC BỘ MÔN NÀO')) {
+                 extractedCourse = valStr;
+              }
+           });
+
+           // 2. Strict Inclusions Matrix: Lock down display to exactly 8 user-targeted columns!
+           const isExplicitlyTargetedQuestion = (k: string): boolean => {
+              const u = k.toUpperCase();
+              return (
+                 u.includes('ĐÁNH GIÁ THẾ NÀO VỀ BUỔI HỌC TRƯỚC') || // Col E
+                 u.includes('NỘI DUNG THỰC HÀNH CÓ DỄ KHÔNG') ||    // Col F
+                 u.includes('HÌNH ẢNH VÀ VIDEO HỖ TRỢ') ||          // Col G
+                 u.includes('XEM THẦY TRỰC TIẾP HƯỚNG DẪN HƠN') ||  // Col H
+                 u.includes('THÊM HOẠT ĐỘNG GÌ TRONG LỚP HỌC') ||    // Col I
+                 u.includes('GIẢNG BÀI DỄ HIỂU CHỨ') ||             // Col K
+                 u.includes('YÊU THÍCH GIÁO VIÊN LỚP MÌNH CHỨ') ||   // Col L
+                 u.includes('CẢI THIỆN ĐIỀU GÌ HƠN TRONG TƯƠNG LAI') // Col O
+              );
+           };
+
+           // 3. Hardened Taxonomy Mapping tuned strictly to surviving whitelist payload
+           const getLmsGroup = (key: string): string => {
+              const u = key.toUpperCase();
+              // Map E-H to DOCUMENT based on content tags
+              if (u.includes('BUỔI HỌC') || u.includes('THỰC HÀNH') || u.includes('VIDEO')) {
+                 return 'DOCUMENT';
+              }
+              // Map I,K,L,O to TEACHER
+              return 'TEACHER';
+           };
+
+           return (
+             <>
+               <ModalHeader 
+                 title="Phiếu khảo sát Google Sheets"
+                 subtitle={`${studentName} • ${timestamp}`}
+                 onClose={() => setViewingSheetRow(null)}
+               />
+               <div style={{ overflowY: 'auto', flex: 1, minHeight: 0 }}>
+                  {/* Top Summary Grid with dynamic metadata injection using shared UI Components */}
+                  <div style={{ padding: '16px 20px', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12 }}>
+                     <div>
+                        <div style={{ fontSize: 11, fontWeight: 590, color: 'var(--text-quaternary)', textTransform: 'uppercase', marginBottom: 6 }}>Học viên (Form)</div>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', padding: '7px 0' }}>{studentName}</div>
+                     </div>
+                     <div>
+                        <div style={{ fontSize: 11, fontWeight: 590, color: 'var(--text-quaternary)', textTransform: 'uppercase', marginBottom: 6 }}>Mã lớp</div>
+                        <div style={{ padding: '5px 0' }}>
+                          <Badge variant="default" size="sm" shape="rounded">{viewingSheetRow.normalizedClassCode}</Badge>
+                        </div>
+                     </div>
+                     {extractedCentre && (
+                        <div>
+                           <div style={{ fontSize: 11, fontWeight: 590, color: 'var(--text-quaternary)', textTransform: 'uppercase', marginBottom: 6 }}>Cơ sở Khai báo</div>
+                           <div style={{ padding: '5px 0' }}>
+                             <CentreBadge name={extractedCentre} />
+                           </div>
+                        </div>
+                     )}
+                     {extractedCourse && (
+                        <div>
+                           <div style={{ fontSize: 11, fontWeight: 590, color: 'var(--text-quaternary)', textTransform: 'uppercase', marginBottom: 6 }}>Bộ môn</div>
+                           <div style={{ padding: '5px 0' }}>
+                             <CourseCategoryBadge category={extractedCourse} />
+                           </div>
+                        </div>
+                     )}
+                     <div>
+                        <div style={{ fontSize: 11, fontWeight: 590, color: 'var(--text-quaternary)', textTransform: 'uppercase', marginBottom: 6 }}>Điểm trung bình</div>
+                        <div style={{ fontSize: 18, fontWeight: 700, color: surveyColor(viewingSheetRow.avgScore), padding: '2px 0' }}>
+                          ★ {viewingSheetRow.avgScore?.toFixed(1)}
+                        </div>
+                     </div>
+                  </div>
+
+                  {/* Standard QA Matrix utilizing purified data subset */}
+                  <div style={{ padding: '0 20px 20px' }}>
+                     <div style={{ marginBottom: 12, fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', borderBottom: '1px solid var(--border-primary)', paddingBottom: 8 }}>
+                        Nội dung khảo sát
+                     </div>
+                     <div className={styles.tableScrollWrapper}>
+                        <table className={styles.studentTable}>
+                           <thead>
+                              <tr>
+                                 <th style={{ width: '15%', paddingLeft: 12 }}>Chủ đề</th>
+                                 <th style={{ width: '35%' }}>Câu hỏi</th>
+                                 <th style={{ width: '50%' }}>Câu trả lời</th>
+                              </tr>
+                           </thead>
+                           <tbody>
+                              {Object.entries(rowData).map(([k, v]) => {
+                                 // Strictly quarantine content: enforce 100% exclusion for non-whitelisted keys
+                                 if (!isExplicitlyTargetedQuestion(k)) return null;
+                                 
+                                 const valStr = String(v || '');
+                                 const numericVal = parseFloat(valStr);
+                                 const isStarRating = !isNaN(numericVal) && numericVal > 0 && numericVal <= 6 && valStr.length <= 3;
+
+                                 return (
+                                    <tr key={k} style={{ cursor: 'default' }}>
+                                       <td style={{ paddingLeft: 12 }}>
+                                          <TopicBadge topic={getLmsGroup(k)} size="sm" />
+                                       </td>
+                                       <td>
+                                          <div style={{ fontSize: 13, fontWeight: 510, color: 'var(--text-primary)', lineHeight: 1.4, wordBreak: 'break-word' }}>
+                                             {k}
+                                          </div>
+                                       </td>
+                                       <td>
+                                          <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5, wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>
+                                             {isStarRating ? (
+                                                <span style={{ color: 'var(--text-primary)', fontWeight: 600, fontSize: 14 }}>★ {numericVal.toFixed(1)}</span>
+                                             ) : (
+                                                valStr || <span style={{ color: 'var(--text-quaternary)', fontStyle: 'italic' }}>Chưa trả lời</span>
+                                             )}
+                                          </div>
+                                       </td>
+                                    </tr>
+                                 )
+                              })}
+                           </tbody>
+                        </table>
+                     </div>
+                  </div>
+               </div>
+             </>
+           )
+        })()}
+      </Modal>
 
       {/* ── TICKET MODAL ── */}
       {selectedEntry && editDraft && (

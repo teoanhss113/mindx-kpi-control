@@ -15,10 +15,10 @@ export interface GraphQLRequest {
   operationName?: string;
 }
 
-export async function lmsQuery<T>(request: GraphQLRequest & { signal?: AbortSignal }): Promise<T> {
+export async function lmsQuery<T>(request: GraphQLRequest & { signal?: AbortSignal; allowPartialErrors?: boolean }): Promise<T> {
   const token = await getValidToken();
 
-  const { signal, ...graphqlBody } = request;
+  const { signal, allowPartialErrors, ...graphqlBody } = request;
 
   const res = await fetch(LMS_BASE_URL, {
     method: 'POST',
@@ -36,7 +36,7 @@ export async function lmsQuery<T>(request: GraphQLRequest & { signal?: AbortSign
 
   const data = await res.json();
 
-  if (data.errors?.length) {
+  if (data.errors?.length && !allowPartialErrors) {
     const messages = data.errors.map((e: { message: string }) => e.message).join('; ');
     throw new Error(`GraphQL error: ${messages}`);
   }

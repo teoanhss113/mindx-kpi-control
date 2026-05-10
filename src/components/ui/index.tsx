@@ -1328,6 +1328,7 @@ export function Toolbar({
   onFetch,
   loading,
   progress,
+  loadingText,
   hasData,
   onClearCache,
   onCancel,
@@ -1347,6 +1348,7 @@ export function Toolbar({
   onFetch: () => void
   loading: boolean
   progress?: { loaded: number; total: number }
+  loadingText?: string
   hasData: boolean
   onClearCache: () => void
   onCancel?: () => void
@@ -1901,6 +1903,7 @@ export function TableGroupHeader({
   isExpanded,
   onToggle,
   actionSlot,
+  icon,
 }: {
   title: string
   count?: number
@@ -1912,6 +1915,7 @@ export function TableGroupHeader({
   isExpanded?: boolean
   onToggle?: () => void
   actionSlot?: React.ReactNode
+  icon?: React.ReactNode
 }) {
   return (
     <div className={styles.tableHeader}>
@@ -1928,6 +1932,7 @@ export function TableGroupHeader({
         onClick={onToggle}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flex: 1, minWidth: 0 }}>
+          {icon && <span style={{ color: 'var(--brand-indigo)', display: 'flex', alignItems: 'center' }}>{icon}</span>}
           <span className={styles.groupTitle} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {title}
           </span>
@@ -1989,6 +1994,71 @@ export function TableGroupHeader({
           )}
         </div>
       </div>
+    </div>
+  )
+}
+
+export function SubTableGroupHeader({
+  title,
+  count,
+  icon,
+  isExpanded = true,
+  onToggle,
+  color,
+}: {
+  title: string
+  count?: number
+  icon?: React.ReactNode
+  isExpanded?: boolean
+  onToggle?: () => void
+  color?: string
+}) {
+  const activeColor = color || 'var(--brand-indigo)';
+  return (
+    <div
+      style={{
+        padding: '10px 16px',
+        background: 'var(--bg-elevated)',
+        fontSize: 11,
+        fontWeight: 700,
+        color: activeColor,
+        borderBottom: '1px solid var(--border-primary)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        letterSpacing: '0.02em',
+        cursor: onToggle ? 'pointer' : 'default',
+        userSelect: 'none',
+      }}
+      onClick={onToggle}
+    >
+      {onToggle && (
+        <motion.span
+          animate={{ rotate: isExpanded ? 0 : -90 }}
+          transition={{ duration: 0.2 }}
+          style={{ display: 'flex', alignItems: 'center' }}
+        >
+          <Icon.ChevronDown size={14} />
+        </motion.span>
+      )}
+      {icon && <span style={{ display: 'flex', alignItems: 'center' }}>{icon}</span>}
+      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        {title}
+      </span>
+      {typeof count === 'number' && (
+        <span
+          style={{
+            fontSize: 10,
+            padding: '1px 5px',
+            borderRadius: 4,
+            background: activeColor,
+            color: 'white',
+            flexShrink: 0
+          }}
+        >
+          {count}
+        </span>
+      )}
     </div>
   )
 }
