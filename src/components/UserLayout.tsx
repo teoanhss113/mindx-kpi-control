@@ -3,7 +3,8 @@
 import { ReactNode, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
-import { initials } from '@/components/ui';
+import { usePermissionsContext } from '@/lib/PermissionsContext';
+import { initials, Icon } from '@/components/ui';
 import { NotificationBell } from '@/components/NotificationBell';
 import styles from '@/app/dashboard.module.css';
 
@@ -23,8 +24,11 @@ export function UserLayout({
   onSidebarToggle 
 }: UserLayoutProps) {
   const { session, logout } = useAuth();
+  const { permissions } = usePermissionsContext();
   const router = useRouter();
   const [internalSidebarOpen, setInternalSidebarOpen] = useState(false);
+
+  const hasAdminAccess = permissions && permissions.length > 0;
 
   // User display
   const _displayName = session?.displayName?.trim() || '';
@@ -113,6 +117,17 @@ export function UserLayout({
               <line x1="10" y1="14" x2="21" y2="3" />
             </svg>
           </a>
+
+          {/* Unified Context Switcher (placed at bottom via margin-top: auto) */}
+          {hasAdminAccess && (
+            <div 
+              className={styles.contextSwitcher}
+              onClick={() => router.push('/admin')}
+            >
+              <Icon.Repeat size={14} color="var(--brand-indigo)" />
+              Trang Quản trị
+            </div>
+          )}
         </nav>
 
         {/* User block */}

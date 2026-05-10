@@ -7,7 +7,7 @@ import { Icon, ToastContainer, useToast, EmptyState, Toolbar, StatCard } from '@
 import { KPICard } from '@/components/dashboard/KPICard';
 import { ActionableInsight } from '@/components/dashboard/ActionableInsight';
 import { getCache, setCache, clearCache } from '@/lib/idb';
-import { CACHE_KEYS, LABELS, FORMAT, ANIMATION, DATE_UTILS, MESSAGES, CLASS_INACTIVE_STATUSES } from '@/constants';
+import { CACHE_KEYS, LABELS, FORMAT, ANIMATION, DATE_UTILS, MESSAGES, CLASS_INACTIVE_STATUSES, ENTITIES, TEACHER_SCHEDULE_CACHE_VERSION } from '@/constants';
 import { useSharedFilterState } from '@/hooks/useSharedFilterState';
 import { analyzeComments, analyzeAttendance } from '@/lib/classQualityAnalysis';
 import { 
@@ -174,7 +174,11 @@ export default function DashboardPage() {
       dateFrom.setHours(0, 0, 0, 0);
       dateTo.setHours(23, 59, 59, 999);
       
-      const { schedules: teacherSchedulesResult } = await fetchTeacherSchedules(
+      const { 
+        schedules: teacherSchedulesResult, 
+        rawClasses: activeClassesResult, 
+        rawOfficeHours: officeHoursResultData 
+      } = await fetchTeacherSchedules(
         dateFrom,
         dateTo,
         centreIds,
@@ -219,21 +223,7 @@ export default function DashboardPage() {
       );
       removeToast(ticketsToastId);
 
-      // Step 3: Fetch office hours
-      const officeHoursToastId = addToast(MESSAGES.LOADING.LOADING_OFFICE_HOURS, 'loading');
-      setProgress({ loaded: 0, total: 0 }); // Initialize progress immediately
-      const officeHoursResult = await fetchOfficeHours(
-        {
-          centreIn: centreIds,
-          timeFrom: new Date(fromDate).toISOString(),
-          timeTo: new Date(toDate).toISOString(),
-        },
-        (loaded, total) => {
-          setProgress({ loaded, total });
-        },
-        officeHoursController.signal
-      );
-      removeToast(officeHoursToastId);
+      // Step 3: Office hours data is already merged from teacherSchedulesResult optimize loop
 
       // Step 4: Fetch teachers
       const teachersToastId = addToast('Đang tải dữ liệu giáo viên...', 'loading');
@@ -279,15 +269,29 @@ export default function DashboardPage() {
       const completionCache = { classes: classesResult, timestamp: Date.now() };
       const teacherChangeCache = { classes: classesResult, timestamp: Date.now() };
       const classQualityCache = { 
-        classes: classesResult, 
-        violations: [], // TODO: Extract from classes
-        attendanceWarnings: [], // TODO: Extract from classes
+        classes: activeClassesResult, // Quality uses ACTIVE classes derived from operations fetch
+        violations: [], 
+        attendanceWarnings: [], 
         timestamp: Date.now() 
       };
       const ticketsCache = { tickets: ticketsResult.data, timestamp: Date.now() };
-      const officeHoursCache = { officeHours: officeHoursResult.data, timestamp: Date.now() };
+      const officeHoursCache = { officeHours: officeHoursResultData, timestamp: Date.now() };
       const teachersCache = { teachers: allTeachers, timestamp: Date.now() };
-      const teacherSchedulesCache = { schedules: teacherSchedulesResult, timestamp: Date.now() };
+      const teacherSchedulesCache = { 
+        version: TEACHER_SCHEDULE_CACHE_VERSION,
+        schedules: teacherSchedulesResult, 
+        rawClasses: activeClassesResult, // Critical hydration for /admin/operations visibility
+        loadedCentreIds: centreIds,
+        loadedRange: { from: fromDate, to: toDate },
+        timestamp: Date.now(),
+        selectedTeachers: [],
+        selectedCourseLines: [],
+        calendarCentreFilter: [],
+        scheduleTypeFilter: 'ALL',
+        exemptedSessions: [],
+        exemptOneOnOneClasses: true,
+        holidayPeriods: []
+      };
 
       await Promise.all([
         setCache(CACHE_KEYS.COMPLETION, completionCache),
@@ -306,7 +310,7 @@ export default function DashboardPage() {
       setOfficeHoursData(officeHoursCache);
 
       addToast(
-        `Tải thành công ${classesResult.length} lớp, ${ticketsResult.data.length} phiếu, ${officeHoursResult.data.length} ca, ${allTeachers.length} GV, ${teacherSchedulesResult.length} lịch dạy!`, 
+        `Tải thành công ${classesResult.length} lớp, ${ticketsResult.data.length} phiếu, ${officeHoursResultData.length} ca, ${allTeachers.length} GV, ${teacherSchedulesResult.length} lịch dạy!`, 
         'success'
       );
     } catch (err: any) {

@@ -240,7 +240,7 @@ export async function fetchTeacherSchedules(
   onProgress?: (loaded: number, total: number) => void,
   signal?: AbortSignal,
   preFetchedClasses?: Class[]
-): Promise<{ schedules: TeacherSchedule[], rawClasses: Class[] }> {
+): Promise<{ schedules: TeacherSchedule[], rawClasses: Class[], rawOfficeHours: OfficeHour[] }> {
   // Fetch classes with slots in the date range
   const haveSlotIn = haveSlotInToUtcRange(dateFrom, dateTo);
   
@@ -336,7 +336,7 @@ export async function fetchTeacherSchedules(
     );
   });
   
-  return { schedules, rawClasses: classes };
+  return { schedules, rawClasses: classes, rawOfficeHours: officeHours.data };
 }
 
 export async function fetchClassTeacherSchedules(classId: string): Promise<TeacherSchedule[]> {

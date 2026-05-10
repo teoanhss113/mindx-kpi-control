@@ -4,7 +4,7 @@ import { ReactNode, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { usePermissionsContext } from '@/lib/PermissionsContext';
-import { initials } from '@/components/ui';
+import { initials, Icon } from '@/components/ui';
 import { NotificationBell } from '@/components/NotificationBell';
 import styles from '@/app/dashboard.module.css';
 
@@ -274,6 +274,14 @@ export function PageLayout({ children, title, activePage, sidebarOpen = false, o
               )}
             </>
           )}
+          {/* Unified Context Switcher (placed at bottom via margin-top: auto) */}
+          <div 
+            className={styles.contextSwitcher}
+            onClick={() => { router.push('/'); handleSidebarToggle(false); }}
+          >
+            <Icon.Repeat size={14} color="var(--brand-indigo)" />
+            Trang Giáo viên
+          </div>
         </nav>
 
         {/* User block */}

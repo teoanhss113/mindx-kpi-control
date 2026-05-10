@@ -22,10 +22,39 @@ function LoginForm() {
   const [error, setError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
 
-  // If already authenticated, redirect to dashboard or callbackUrl
+  // If already authenticated, asynchronously check permissions and redirect smartly
   useEffect(() => {
     if (isAuthenticated()) {
-      router.replace(callbackUrl || '/');
+      const session = loadSession();
+      if (!session || !session.idToken) {
+        router.replace(callbackUrl || '/');
+        return;
+      }
+      
+      // Flag that this is a login/restore event for down-stream routing intelligence
+      sessionStorage.setItem('mindx_just_logged_in', 'true');
+
+      // Perform a quick check to see if user deserves Admin routing
+      fetch('/api/auth/sync-profile', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.idToken}`,
+        },
+        body: JSON.stringify({
+          uid: session.uid,
+          email: session.email,
+        }),
+      })
+      .then(res => res.ok ? res.json() : null)
+      .then(() => {
+        // Decoupled: Always route to target or Home. 
+        // The Interceptor on HomePage handles the smart Admin bounce based on actual permissions.
+        router.replace(callbackUrl || '/');
+      })
+      .catch(() => {
+        router.replace(callbackUrl || '/');
+      });
     }
   }, [router, callbackUrl]);
 
@@ -47,6 +76,10 @@ function LoginForm() {
       });
       
       persistSession(session);
+      
+      // Critical: Set flag BEFORE updating state so next page sees it even if React unmounts this form
+      sessionStorage.setItem('mindx_just_logged_in', 'true');
+      
       updateSession(session);
 
       // Sync profile (creates if missing) and learn the user's role.
@@ -83,13 +116,10 @@ function LoginForm() {
 
       await new Promise((r) => setTimeout(r, 400));
 
-      if (profile?.role_id && profile.is_active) {
-        console.log('[Login] Redirecting to:', callbackUrl || '/admin');
-        router.replace(callbackUrl || '/admin');
-      } else {
-        console.log('[Login] Redirecting to:', callbackUrl || '/');
-        router.replace(callbackUrl || '/');
-      }
+      // Final safety catch: Blindly route to target landing zone.
+      // The rock-solid Interceptor logic on the HomePage now definitively handles
+      // splitting traffic correctly based on real-time hydrate permissions flawlessly.
+      router.replace(callbackUrl || '/');
     } catch (err) {
       console.error('[Login] Login error:', err);
       const msg = err instanceof Error ? err.message : 'Đăng nhập thất bại';

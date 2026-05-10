@@ -78,6 +78,7 @@ import {
   TEACHER_SCHEDULE_LABELS,
   TEACHER_SCHEDULE_TYPE_OPTIONS,
   TEACHER_SCHEDULE_VIEW_OPTIONS,
+  TEACHER_SCHEDULE_CACHE_VERSION,
 } from '@/constants';
 import { useSharedDateRange, useSharedCentres } from '@/hooks/useSharedFilterState';
 import styles from '@/app/dashboard.module.css';
@@ -120,7 +121,6 @@ const DEFAULT_HOLIDAY_PERIODS: HolidayPeriod[] = [
   { name: 'Giỗ Tổ Hùng Vương', from: '2026-04-25', to: '2026-04-26' },
   { name: 'Giải phóng miền Nam & Quốc tế Lao động', from: '2026-04-30', to: '2026-05-02' },
 ];
-const TEACHER_SCHEDULE_CACHE_VERSION = 7;
 
 
 

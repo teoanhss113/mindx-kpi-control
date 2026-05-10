@@ -137,6 +137,32 @@
   box-shadow: var(--shadow-surface);
   border: 1px solid var(--border-primary);
 }
+ 
+/* Context Switcher for unified User/Admin transition */
+.contextSwitcher {
+  margin-top: auto;
+  display: flex; align-items: center; gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  margin-top: auto; /* Crucial: pushes to bottom of flex container */
+  margin-bottom: var(--space-3);
+  background: var(--bg-panel);
+  border: 1px solid var(--border-secondary);
+  border-radius: var(--radius-comfortable);
+  font-size: 12px; font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer; transition: all 0.15s ease;
+  box-shadow: var(--shadow-sm);
+  letter-spacing: -0.1px;
+}
+.contextSwitcher:hover {
+  border-color: var(--brand-indigo);
+  color: var(--brand-indigo);
+  background: rgba(94, 106, 210, 0.04);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+.contextSwitcher svg { flex-shrink: 0; opacity: 0.8; transition: opacity 0.15s; }
+.contextSwitcher:hover svg { opacity: 1; }
 
 /* Sidebar divider */
 .sidebarDivider {
@@ -1218,11 +1244,10 @@
   cursor: pointer; font-family: inherit; letter-spacing: -0.13px;
   transition: border-color 0.15s ease, background 0.15s ease;
   white-space: nowrap;
-  /* Remove width: 100% to allow fit-content behavior */
   box-sizing: border-box;
   min-width: 0;
-  /* Set a reasonable min-width for usability */
   min-width: 120px;
+  text-align: left; /* Force consistent left alignment overriding button default */
 }
 .multiDropdownTrigger:hover { background: rgba(0, 0, 0, 0.04); border-color: var(--border-secondary); }
 .multiDropdownTrigger.triggerActive { border-color: var(--brand-indigo); color: var(--brand-indigo); background: rgba(94, 106, 210, 0.08); }

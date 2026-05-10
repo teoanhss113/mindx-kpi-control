@@ -2489,7 +2489,7 @@ export function CompactSelect<T extends string>({
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [open])
 
-  const selectedLabel = options.find(o => o.value === value)?.label || value
+  const selectedLabel = options.find(o => String(o.value).toUpperCase() === String(value).toUpperCase())?.label || value
 
   const menuContent = (
     <AnimatePresence>
