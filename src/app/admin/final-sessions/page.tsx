@@ -7,6 +7,7 @@ import {
   useToast, ToastContainer, Toolbar, TableGroupHeader, EmptyState, Modal, ModalHeader, ModalFooter, SortIcon, Badge,
   AttendanceSessionCell, AttendanceStatusBadge, CommentStatusBadge, isAttendanceStatus,
   BatchStatusBadge, COMMENT_STATUS_COUNT_LABELS, CourseCategoryBadge, RescheduleStatusBadge,
+  Icon, TableActionButton, TableActionGroup,
 } from '@/components/ui';
 import { authFetch } from '@/lib/auth/clientAuth';
 import { dateRangeToUtcRange, fetchAllClasses } from '@/services/classesService';
@@ -473,7 +474,7 @@ export default function FinalSessionsAdminPage() {
       {/* ── No results empty state ── */}
       {fetchedOnce && !loading && candidates.length === 0 && (
         <EmptyState
-          icon={<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M12 2L2 7l10 5 10-5-10-5z" /><path d="M2 17l10 5 10-5" /><path d="M2 12l10 5 10-5" /></svg>}
+          icon={<Icon.BookOpen size={40} />}
           title="Không tìm thấy buổi cuối khoá"
           subtitle="Thử điều chỉnh khoảng thời gian hoặc cơ sở"
         />
@@ -508,7 +509,7 @@ export default function FinalSessionsAdminPage() {
                         : `${candidates.length} buổi — chọn để đưa vào đợt`}
                     </span>
                     <button
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: 'var(--brand-indigo)', padding: 0, fontWeight: 510 }}
+                      className={styles.textActionBtn}
                       onClick={selected.size === candidates.length ? clearAll : selectAll}
                     >
                       {selected.size === candidates.length ? 'Bỏ chọn tất cả' : 'Chọn tất cả'}
@@ -617,7 +618,7 @@ export default function FinalSessionsAdminPage() {
       {/* ── Existing đợt table ── */}
       {!dotsLoading && dots.length === 0 ? (
         <EmptyState
-          icon={<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M12 2L2 7l10 5 10-5-10-5z" /><path d="M2 17l10 5 10-5" /><path d="M2 12l10 5 10-5" /></svg>}
+          icon={<Icon.BookOpen size={40} />}
           title="Chưa có đợt nào"
           subtitle="Tải dữ liệu bên trên, chọn buổi và tạo đợt đầu tiên"
         />
@@ -636,20 +637,20 @@ export default function FinalSessionsAdminPage() {
           {showDots && (
             <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} style={{ overflow: 'hidden' }}>
               <div className={styles.tableScrollWrapper}>
-                <div className={styles.classItemHeader} style={{ gridTemplateColumns: 'minmax(0,2fr) minmax(0,1.2fr) 60px 60px minmax(0,0.8fr) minmax(0,2fr)', minWidth: 640 }}>
+                <div className={styles.classItemHeader} style={{ gridTemplateColumns: 'minmax(0,2fr) minmax(0,1.2fr) 60px 60px minmax(0,0.8fr) 140px', minWidth: 640 }}>
                   <div>Tiêu đề</div>
                   <div>Thời gian</div>
                   <div style={{ textAlign: 'center' }}>Buổi</div>
                   <div style={{ textAlign: 'center' }}>Yêu cầu</div>
                   <div>Trạng thái</div>
-                  <div>Hành động</div>
+                  <div></div>
                 </div>
                 <AnimatePresence initial={false}>
                   {dots.map((dot, idx) => (
                     <motion.div
                       key={dot.id}
                       className={styles.classItem}
-                      style={{ gridTemplateColumns: 'minmax(0,2fr) minmax(0,1.2fr) 60px 60px minmax(0,0.8fr) minmax(0,2fr)', minWidth: 640, opacity: dot.is_active ? 1 : 0.55 }}
+                      style={{ gridTemplateColumns: 'minmax(0,2fr) minmax(0,1.2fr) 60px 60px minmax(0,0.8fr) 140px', minWidth: 640, opacity: dot.is_active ? 1 : 0.55 }}
                       initial={{ opacity: 0, y: 8 }}
                       animate={{ opacity: dot.is_active ? 1 : 0.55, y: 0 }}
                       transition={{ duration: 0.18, delay: Math.min(idx * 0.015, 0.3) }}
@@ -666,23 +667,12 @@ export default function FinalSessionsAdminPage() {
 	                      <div>
 	                        <BatchStatusBadge active={dot.is_active} />
 	                      </div>
-                      <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', flexWrap: 'wrap' }}>
-                        <button className={styles.primaryBtn} style={{ fontSize: 12, padding: '4px 10px' }} onClick={() => router.push(`/admin/final-sessions/${dot.id}`)}>
-                          Xem
-                        </button>
-                        <button className={styles.clearCacheBtn} style={{ fontSize: 12, padding: '4px 10px' }} onClick={() => copyLink(dot.slug)} title="Sao chép link chia sẻ">
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 4 }}>
-                            <rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-                          </svg>
-                          Sao chép link
-                        </button>
-                        <button className={styles.clearCacheBtn} style={{ fontSize: 12, padding: '4px 10px' }} onClick={() => toggleActive(dot)}>
-                          {dot.is_active ? 'Đóng' : 'Mở lại'}
-                        </button>
-                        <button className={styles.clearCacheBtn} style={{ fontSize: 12, padding: '4px 10px', color: 'var(--status-error)' }} onClick={() => deleteDot(dot)}>
-                          Xoá
-                        </button>
-                      </div>
+                      <TableActionGroup>
+                        <TableActionButton label="Xem chi tiết" icon={<Icon.Eye />} onClick={() => router.push(`/admin/final-sessions/${dot.id}`)} />
+                        <TableActionButton label="Sao chép link chia sẻ" icon={<Icon.Copy />} onClick={() => copyLink(dot.slug)} />
+                        <TableActionButton label={dot.is_active ? 'Đóng đợt' : 'Mở lại đợt'} icon={dot.is_active ? <Icon.XCircle /> : <Icon.CheckCircle />} onClick={() => toggleActive(dot)} />
+                        <TableActionButton label="Xoá" icon={<Icon.Trash />} onClick={() => deleteDot(dot)} variant="danger" />
+                      </TableActionGroup>
                     </motion.div>
                   ))}
                 </AnimatePresence>

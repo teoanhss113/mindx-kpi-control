@@ -8,7 +8,7 @@ import { findUser, createDebouncedUserLookup, type LMSUser } from '@/services/us
 import { searchUsers } from '@/services/ticketService';
 import { AdminPageWrapper } from '@/components/AdminPageWrapper';
 import { useTableSort } from '@/hooks/useTableSort';
-import { SortableHeader, AdminToolbar, AdminTableSection, Icon, Spinner, MultiSelect, EmptyState, UserSearchInput, type UserSearchResult, ModalFooter, Modal, ModalHeader, ConfirmDialog, useToast, ToastContainer, ActiveStatusBadge, CompactSelect } from '@/components/ui';
+import { SortableHeader, AdminToolbar, AdminTableSection, Icon, Spinner, MultiSelect, EmptyState, UserSearchInput, type UserSearchResult, ModalFooter, Modal, ModalHeader, ConfirmDialog, useToast, ToastContainer, ActiveStatusBadge, CompactSelect, TableActionButton, TableActionGroup } from '@/components/ui';
 import { COURSES, LABELS, MESSAGES, ENTITIES } from '@/constants';
 import styles from '@/app/dashboard.module.css';
 import type { Role } from '@/lib/supabase/types';
@@ -472,24 +472,10 @@ export default function UsersPage() {
                       {new Date(user.created_at).toLocaleDateString('vi-VN')}
                     </td>
                     <td>
-                      <div style={{ display: 'flex', gap: 'var(--space-1)' }}>
-                        <button
-                          className={styles.clearCacheBtn}
-                          onClick={() => openEditModal(user)}
-                          title="Chỉnh sửa"
-                          style={{ padding: 'var(--space-2)', minWidth: 'auto' }}
-                        >
-                          <Icon.Edit size={16} />
-                        </button>
-                        <button
-                          className={styles.clearCacheBtn}
-                          onClick={() => handleDelete(user)}
-                          title="Xoá"
-                          style={{ padding: 'var(--space-2)', minWidth: 'auto' }}
-                        >
-                          <Icon.Trash size={16} />
-                        </button>
-                      </div>
+                      <TableActionGroup>
+                        <TableActionButton label="Chỉnh sửa" icon={<Icon.Edit />} onClick={() => openEditModal(user)} />
+                        <TableActionButton label="Xoá" icon={<Icon.Trash />} onClick={() => handleDelete(user)} variant="danger" />
+                      </TableActionGroup>
                     </td>
                   </tr>
                 ))}
@@ -543,14 +529,9 @@ export default function UsersPage() {
                       {new Date(user.created_at).toLocaleDateString('vi-VN')}
                     </td>
                     <td>
-                      <button
-                        className={styles.clearCacheBtn}
-                        onClick={() => openEditModal(user as Profile)}
-                        title="Gán vai trò"
-                        style={{ padding: 'var(--space-2)', minWidth: 'auto', fontSize: 12 }}
-                      >
-                        <Icon.Edit size={16} />
-                      </button>
+                      <TableActionGroup>
+                        <TableActionButton label="Gán vai trò" icon={<Icon.Edit />} onClick={() => openEditModal(user as Profile)} />
+                      </TableActionGroup>
                     </td>
                   </tr>
                 ))}

@@ -7,7 +7,7 @@ import { getRegions, createRegion, updateRegion, deleteRegion } from '@/lib/admi
 import { getAuthToken } from '@/lib/auth/clientAuth';
 import { AdminPageWrapper } from '@/components/AdminPageWrapper';
 import { useTableSort } from '@/hooks/useTableSort';
-import { ActiveStatusBadge, SortableHeader, AdminToolbar, AdminTableSection, Icon, Spinner, EmptyState, CentreSelect } from '@/components/ui';
+import { ActiveStatusBadge, SortableHeader, AdminToolbar, AdminTableSection, Icon, Spinner, EmptyState, CentreSelect, TableActionButton, TableActionGroup } from '@/components/ui';
 import { fetchAllCentres, type Centre } from '@/services/centresService';
 import { getCache, setCache } from '@/lib/idb';
 import { LABELS, MESSAGES, ENTITIES, CACHE_KEYS } from '@/constants';
@@ -321,24 +321,10 @@ export default function RegionsPage() {
                       {new Date(region.created_at).toLocaleDateString('vi-VN')}
                     </td>
                     <td>
-                      <div style={{ display: 'flex', gap: 'var(--space-1)' }}>
-                        <button
-                          className={styles.clearCacheBtn}
-                          onClick={() => openEditModal(region)}
-                          title="Chỉnh sửa"
-                          style={{ padding: 'var(--space-2)', minWidth: 'auto' }}
-                        >
-                          <Icon.Edit size={16} />
-                        </button>
-                        <button
-                          className={styles.clearCacheBtn}
-                          onClick={() => handleDelete(region)}
-                          title="Xoá"
-                          style={{ padding: 'var(--space-2)', minWidth: 'auto' }}
-                        >
-                          <Icon.Trash size={16} />
-                        </button>
-                      </div>
+                      <TableActionGroup>
+                        <TableActionButton label="Chỉnh sửa" icon={<Icon.Edit />} onClick={() => openEditModal(region)} />
+                        <TableActionButton label="Xoá" icon={<Icon.Trash />} onClick={() => handleDelete(region)} variant="danger" />
+                      </TableActionGroup>
                     </td>
                   </tr>
                 ))}
@@ -371,9 +357,7 @@ export default function RegionsPage() {
                 </p>
               </div>
               <button className={styles.closeModalBtn} onClick={() => setShowModal(false)}>
-                <svg width="var(--space-4)" height="var(--space-4)" viewBox="0 0 16 16" fill="none">
-                  <path d="M12 4L4 12M4 4l8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                </svg>
+                <Icon.Close size={16} />
               </button>
             </div>
 

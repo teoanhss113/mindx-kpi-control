@@ -34,7 +34,6 @@ import {
   TableToolbar,
   TableGroupHeader,
   AdminTableSection,
-  AdminToolbar,
   Modal,
   ModalHeader,
   EmptyState,
@@ -3282,28 +3281,6 @@ export default function TeacherSchedulePage() {
           <ScheduleViewToggle value={viewMode} onChange={setViewMode} />
         )}
 
-        {(schedules.length > 0 || loading) && (
-          <AdminToolbar
-            search={searchTerm}
-            onSearchChange={setSearchTerm}
-            searchPlaceholder="Tìm giáo viên (mã, tên, email)..."
-            actionLabel="Tìm giáo viên rảnh"
-            actionIcon={<Icon.Search />}
-            onAction={() => {
-              setSelectedSlot(null);
-              setCoordinationRequest({
-                date: '',
-                startTime: '08:00',
-                endTime: '10:00',
-                centreId: '',
-              });
-              setAvailableTeachers([]);
-              setUnavailableTeachers([]);
-              setShowCoordinationPanel(true);
-            }}
-          />
-        )}
-
         {viewMode === 'calendar' && schedules.length > 0 && (
           <AdminTableSection
             title={TEACHER_SCHEDULE_LABELS.WEEKLY_SCHEDULE}
@@ -3311,6 +3288,27 @@ export default function TeacherSchedulePage() {
             loading={loading}
             progress={progress}
             isExpanded={true}
+            actionSlot={
+              <button
+                type="button"
+                className={styles.primaryBtn}
+                onClick={() => {
+                  setSelectedSlot(null);
+                  setCoordinationRequest({
+                    date: '',
+                    startTime: '08:00',
+                    endTime: '10:00',
+                    centreId: '',
+                  });
+                  setAvailableTeachers([]);
+                  setUnavailableTeachers([]);
+                  setShowCoordinationPanel(true);
+                }}
+              >
+                <Icon.Search />
+                Tìm giáo viên rảnh
+              </button>
+            }
             toolbarSlot={
               <>
                 <TableToolbar

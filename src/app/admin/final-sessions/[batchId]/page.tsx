@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { PageLayout } from '@/components/PageLayout';
-import { BatchStatusBadge, Badge, CourseCategoryBadge, DateMarkerBadge, JudgeRequestStatusBadge, useToast, ToastContainer, Modal, ModalHeader, ModalFooter, EmptyState, Toolbar, SortIcon, TableGroupHeader, UserSearchInput, ShiftRequestSuggestions, type ShiftRequest, type UserSearchResult } from '@/components/ui';
+import { BatchStatusBadge, Badge, CourseCategoryBadge, DateMarkerBadge, JudgeRequestStatusBadge, useToast, ToastContainer, Modal, ModalHeader, ModalFooter, EmptyState, Toolbar, SortIcon, TableGroupHeader, UserSearchInput, ShiftRequestSuggestions, type ShiftRequest, type UserSearchResult, Icon, TableActionButton, TableActionGroup, DetailGrid, DetailField, DetailText } from '@/components/ui';
 import { motion, AnimatePresence } from 'framer-motion';
 import { authFetch } from '@/lib/auth/clientAuth';
 import { dateRangeToUtcRange, fetchAllClasses } from '@/services/classesService';
@@ -585,11 +585,9 @@ export default function BatchDetailPage() {
       <div style={{ marginBottom: 'var(--space-5)' }}>
         <button
           onClick={() => router.push('/admin/final-sessions')}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6, padding: 0, marginBottom: 'var(--space-3)' }}
+          className={styles.backLinkBtn}
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <polyline points="15 18 9 12 15 6" />
-          </svg>
+          <Icon.ChevronLeft size={14} />
           Danh sách đợt
         </button>
 
@@ -607,14 +605,13 @@ export default function BatchDetailPage() {
           </div>
 
           <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
-            <button className={styles.clearCacheBtn} style={{ fontSize: 13, padding: '7px 14px' }} onClick={copyLink}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 5 }}>
-                <rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-              </svg>
+            <button className={styles.clearCacheBtn} onClick={copyLink}>
+              <Icon.Copy />
               Copy link
             </button>
-            <button className={styles.primaryBtn} style={{ fontSize: 13, padding: '7px 14px' }} onClick={() => setShowAddPanel(true)}>
-              + Thêm buổi từ LMS
+            <button className={styles.primaryBtn} onClick={() => setShowAddPanel(true)}>
+              <Icon.Plus />
+              Thêm buổi từ LMS
             </button>
           </div>
         </div>
@@ -623,7 +620,7 @@ export default function BatchDetailPage() {
       {/* Sessions table */}
       {sortedSessions.length === 0 ? (
         <EmptyState
-          icon={<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M12 2L2 7l10 5 10-5-10-5z" /><path d="M2 17l10 5 10-5" /><path d="M2 12l10 5 10-5" /></svg>}
+          icon={<Icon.BookOpen size={40} />}
           title="Chưa có buổi nào"
           subtitle={'Nhấn "Thêm buổi từ LMS" để tải và chọn'}
         />
@@ -713,18 +710,17 @@ export default function BatchDetailPage() {
                         <JudgeRequestStatusBadge status={null} />
                       )}
                     </div>
-                    <div>
-                      <button
-                        className={styles.clearCacheBtn}
-                        style={{ fontSize: 11, padding: '3px 8px', color: 'var(--status-error)' }}
+                    <TableActionGroup>
+                      <TableActionButton
+                        label="Xoá khỏi đợt"
+                        icon={<Icon.Trash />}
+                        variant="danger"
                         onClick={(event) => {
                           event.stopPropagation();
                           removeSession(s.id);
                         }}
-                      >
-                        Xoá
-                      </button>
-                    </div>
+                      />
+                    </TableActionGroup>
                   </motion.div>
                 );
               })}
@@ -743,33 +739,27 @@ export default function BatchDetailPage() {
             />
 
             <div style={{ overflowY: 'auto', flex: 1, minHeight: 0 }}>
-              <div style={{ padding: 'var(--space-4) var(--space-5)', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 'var(--space-4)', borderBottom: '1px solid var(--border-primary)' }}>
-                <div>
-                  <div style={{ fontSize: 11, fontWeight: 590, color: 'var(--text-quaternary)', textTransform: 'uppercase', marginBottom: 'var(--space-2)' }}>Thời gian</div>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
+              <DetailGrid>
+                <DetailField label="Thời gian">
+                  <DetailText meta={formatDate(selectedFinalSession.session_date)}>
                     {formatTime(selectedFinalSession.start_time_utc)} - {formatTime(selectedFinalSession.end_time_utc)}
-                  </div>
-                  <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{formatDate(selectedFinalSession.session_date)}</div>
-                </div>
-                <div>
-                  <div style={{ fontSize: 11, fontWeight: 590, color: 'var(--text-quaternary)', textTransform: 'uppercase', marginBottom: 'var(--space-2)' }}>{LABELS.CLASS_TITLE}</div>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{selectedFinalSession.class_name}</div>
-                </div>
-                <div>
-                  <div style={{ fontSize: 11, fontWeight: 590, color: 'var(--text-quaternary)', textTransform: 'uppercase', marginBottom: 'var(--space-2)' }}>{LABELS.COURSE}</div>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{selectedFinalSession.course_short_name || selectedFinalSession.category || '—'}</div>
-                </div>
-                <div>
-                  <div style={{ fontSize: 11, fontWeight: 590, color: 'var(--text-quaternary)', textTransform: 'uppercase', marginBottom: 'var(--space-2)' }}>{LABELS.STUDENTS}</div>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{selectedFinalSession.student_count} học viên</div>
-                </div>
-                <div>
-                  <div style={{ fontSize: 11, fontWeight: 590, color: 'var(--text-quaternary)', textTransform: 'uppercase', marginBottom: 'var(--space-2)' }}>{LABELS.CENTRE}</div>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{selectedFinalSession.centre_name || '—'}</div>
-                  <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{LABELS.MAIN_TEACHER}: {selectedFinalSession.main_teacher || '—'}</div>
-                </div>
-                <div>
-                  <div style={{ fontSize: 11, fontWeight: 590, color: 'var(--text-quaternary)', textTransform: 'uppercase', marginBottom: 'var(--space-2)' }}>Giám khảo</div>
+                  </DetailText>
+                </DetailField>
+                <DetailField label={LABELS.CLASS_TITLE}>
+                  <DetailText>{selectedFinalSession.class_name}</DetailText>
+                </DetailField>
+                <DetailField label={LABELS.COURSE}>
+                  <DetailText>{selectedFinalSession.course_short_name || selectedFinalSession.category || '—'}</DetailText>
+                </DetailField>
+                <DetailField label={LABELS.STUDENTS}>
+                  <DetailText>{selectedFinalSession.student_count} học viên</DetailText>
+                </DetailField>
+                <DetailField label={LABELS.CENTRE}>
+                  <DetailText meta={`${LABELS.MAIN_TEACHER}: ${selectedFinalSession.main_teacher || '—'}`}>
+                    {selectedFinalSession.centre_name || '—'}
+                  </DetailText>
+                </DetailField>
+                <DetailField label="Giám khảo">
                   <UserSearchInput
                     value={teacherSearch}
                     onChange={handleTeacherInputChange}
@@ -825,8 +815,8 @@ export default function BatchDetailPage() {
                       }]);
                     }}
                   />
-                </div>
-              </div>
+                </DetailField>
+              </DetailGrid>
             </div>
 
             <ModalFooter
@@ -879,7 +869,7 @@ export default function BatchDetailPage() {
         <div style={{ maxHeight: '55vh', overflowY: 'auto' }}>
           {candidates.length === 0 && !lmsLoading && (
             <EmptyState
-              icon={<svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M12 2L2 7l10 5 10-5-10-5z" /><path d="M2 17l10 5 10-5" /><path d="M2 12l10 5 10-5" /></svg>}
+              icon={<Icon.BookOpen size={36} />}
               title="Chưa có dữ liệu"
               subtitle='Chọn cơ sở, khoảng ngày rồi nhấn "Tải dữ liệu"'
             />
@@ -890,7 +880,7 @@ export default function BatchDetailPage() {
                 <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
                   {sortedCandidates.filter(c => !c.alreadyAdded).length} buổi khả dụng · {selected.size} đã chọn
                 </span>
-                <button style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: 'var(--brand-indigo)', padding: 0 }} onClick={selectAll}>
+                <button className={styles.textActionBtn} onClick={selectAll}>
                   Chọn tất cả
                 </button>
               </div>

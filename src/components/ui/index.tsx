@@ -26,7 +26,8 @@ import {
   Download as _Download, Settings as _Settings, Info as _Info,
   GripVertical as _GripVertical,
   FileText as _FileText, Calendar as _Calendar, CalendarDays as _CalendarDays,
-  ClipboardCheck as _ClipboardCheck, Target as _Target, BookOpen as _BookOpen
+  ClipboardCheck as _ClipboardCheck, Target as _Target, BookOpen as _BookOpen,
+  Copy as _Copy
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import styles from '@/app/dashboard.module.css'
@@ -174,6 +175,78 @@ export const Icon = {
   ClipboardCheck: (p?: P) => <_ClipboardCheck  size={p?.size ?? 16} color={p?.color} />,
   Target:         (p?: P) => <_Target          size={p?.size ?? 16} color={p?.color} />,
   BookOpen:       (p?: P) => <_BookOpen        size={p?.size ?? 15} color={p?.color} />,
+  Copy:           (p?: P) => <_Copy            size={p?.size ?? 14} color={p?.color} />,
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TABLE ACTIONS — icon-only actions for dense admin tables
+// ─────────────────────────────────────────────────────────────────────────────
+export function TableActionGroup({ children }: { children: React.ReactNode }) {
+  return <div className={styles.tableActionGroup}>{children}</div>
+}
+
+export function TableActionButton({
+  label,
+  icon,
+  onClick,
+  variant = 'neutral',
+  disabled = false,
+}: {
+  label: string
+  icon: React.ReactNode
+  onClick: React.MouseEventHandler<HTMLButtonElement>
+  variant?: 'neutral' | 'danger'
+  disabled?: boolean
+}) {
+  return (
+    <button
+      type="button"
+      className={`${styles.tableActionBtn} ${variant === 'danger' ? styles.tableActionBtnDanger : ''}`}
+      onClick={onClick}
+      title={label}
+      aria-label={label}
+      disabled={disabled}
+    >
+      {icon}
+    </button>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DETAIL GRID — modal/detail metadata blocks
+// ─────────────────────────────────────────────────────────────────────────────
+export function DetailGrid({ children }: { children: React.ReactNode }) {
+  return <div className={styles.detailGrid}>{children}</div>
+}
+
+export function DetailField({
+  label,
+  children,
+}: {
+  label: React.ReactNode
+  children: React.ReactNode
+}) {
+  return (
+    <div>
+      <div className={styles.detailFieldLabel}>{label}</div>
+      {children}
+    </div>
+  )
+}
+
+export function DetailText({
+  children,
+  meta,
+}: {
+  children: React.ReactNode
+  meta?: React.ReactNode
+}) {
+  return (
+    <>
+      <div className={styles.detailFieldValue}>{children}</div>
+      {meta !== undefined && <div className={styles.detailFieldMeta}>{meta}</div>}
+    </>
+  )
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

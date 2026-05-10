@@ -16,7 +16,7 @@ import { getCache, setCache, clearCache } from '@/lib/idb';
 import { getOfficeHourCategory } from '@/lib/courseCategories';
 import { sendNotification, NotificationTemplates } from '@/lib/sendNotification';
 import { OfficeHour, OFFICE_HOUR_STATUS, OFFICE_HOUR_TYPE } from '@/types/officeHours';
-import { useToast, ToastContainer, initials, EmptyState, Toolbar, SelectOption, TableGroupHeader, AdminTableSection, Modal, ModalHeader, MultiSelect, TableToolbar, ChartSectionHeader, StandardXAxis, StandardYAxisCategory, StandardYAxisNumber, ChartLegend, ComposedChartConfig, CustomTooltip, UserSearchInput, type UserSearchResult, ModalFooter, CentreSelect, QuickFilterChips, ShiftRequestSuggestions, type ShiftRequest, OFFICE_HOUR_STATUS_LABELS, OfficeHourStatusBadge, OfficeHourTypeBadge, getOfficeHourTypeLabel, KPIThresholdSuggestions, Icon } from '@/components/ui';
+import { useToast, ToastContainer, initials, EmptyState, Toolbar, SelectOption, TableGroupHeader, AdminTableSection, Modal, ModalHeader, MultiSelect, TableToolbar, ChartSectionHeader, StandardXAxis, StandardYAxisCategory, StandardYAxisNumber, ChartLegend, ComposedChartConfig, CustomTooltip, UserSearchInput, type UserSearchResult, ModalFooter, CentreSelect, QuickFilterChips, ShiftRequestSuggestions, type ShiftRequest, OfficeHourTypeBadge, getOfficeHourTypeLabel, KPIThresholdSuggestions, Icon, ViewModeToggle, DetailGrid, DetailField, DetailText, Badge, type BadgeVariant } from '@/components/ui';
 import { useQuickFilterChips } from '@/hooks/useUserPreferences';
 import { PageLayout } from '@/components/PageLayout';
 import { getNavItemsWithRouter } from '@/lib/navigation';
@@ -49,6 +49,77 @@ const CONVERSION_TARGETS = [
 const DEFAULT_EXEMPT_TYPES = ['Event', 'Makeup', 'Tutor'];
 const DEFAULT_EXEMPT_STATUSES = ['ABANDONED', 'DENIED', 'REJECTED'];
 const DEFAULT_EXEMPT_APPOINTMENT_STATUSES = ['CANCELED'];
+const OFFICE_HOUR_LIST_GRID = 'minmax(0, 1.2fr) minmax(0, 0.8fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 0.7fr) minmax(0, 0.6fr) minmax(0, 0.9fr) minmax(0, 0.8fr) minmax(0, 0.9fr) minmax(0, 1fr) minmax(0, 1fr)';
+const TEACHER_OFFICE_HOUR_GRID = 'minmax(0, 1.2fr) minmax(0, 0.8fr) minmax(0, 1fr) minmax(0, 0.7fr) minmax(0, 0.6fr) minmax(0, 0.9fr) minmax(0, 0.8fr) minmax(0, 0.9fr) minmax(0, 1fr) minmax(0, 1fr)';
+
+function getOfficeHourStatusVariant(status: string | null | undefined): BadgeVariant {
+  const normalized = (status || '').trim().toUpperCase();
+  if (normalized === 'APPROVED') return 'passed';
+  if (normalized === 'REJECTED' || normalized === 'ABANDONED') return 'failed';
+  if (normalized === 'PENDING') return 'warning';
+  return 'exempt';
+}
+
+function getEvaluationStatusVariant(status: string | null | undefined): BadgeVariant {
+  const normalized = (status || '').trim().toUpperCase();
+  if (['PASS', 'PASSED', 'CONFIRMED', 'APPROVED'].includes(normalized)) return 'passed';
+  if (['FAIL', 'FAILED', 'DENIED', 'REJECTED', 'CANCELED', 'CANCELLED'].includes(normalized)) return 'failed';
+  if (['WAITING', 'PENDING'].includes(normalized)) return 'warning';
+  return 'exempt';
+}
+
+function RawStatusBadge({
+  status,
+  variant,
+}: {
+  status: string | null | undefined;
+  variant: BadgeVariant;
+}) {
+  return (
+    <Badge variant={variant} size="sm" shape="rounded">
+      {status || '—'}
+    </Badge>
+  );
+}
+
+function getEvaluationStatusCounts(appointments?: OfficeHour['appointments']) {
+  const counts: Record<string, number> = {};
+  appointments?.forEach(apt => {
+    const status = apt.status || 'UNKNOWN';
+    counts[status] = (counts[status] || 0) + 1;
+  });
+  return Object.entries(counts).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+}
+
+function getDominantEvaluationStatus(officeHour: OfficeHour): string {
+  return getEvaluationStatusCounts(officeHour.appointments)[0]?.[0] || '';
+}
+
+function EvaluationStatusSummary({ appointments }: { appointments?: OfficeHour['appointments'] }) {
+  const counts = getEvaluationStatusCounts(appointments);
+  if (counts.length === 0) {
+    return <span style={{ color: 'var(--text-tertiary)' }}>—</span>;
+  }
+
+  return (
+    <div className={styles.reasonsPreview}>
+      {counts.slice(0, 3).map(([status, count]) => (
+        <Badge
+          key={status}
+          variant={getEvaluationStatusVariant(status)}
+          size="sm"
+          shape="rounded"
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-1)' }}
+        >
+          {count > 1 ? `${status}: ${count}` : status}
+        </Badge>
+      ))}
+      {counts.length > 3 && (
+        <Badge variant="exempt" size="sm" shape="rounded">+{counts.length - 3}</Badge>
+      )}
+    </div>
+  );
+}
 
 function OfficeHoursPageInner() {
   const { session, isLoading: authLoading, logout } = useAuth();
@@ -75,6 +146,7 @@ function OfficeHoursPageInner() {
   // Table-level filters (for client-side filtering)
   const [tableSelectedCentres, setTableSelectedCentres] = useState<string[]>([]);
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
+  const [selectedEvaluationStatuses, setSelectedEvaluationStatuses] = useState<string[]>([]);
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
   const [selectedGrades, setSelectedGrades] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -89,7 +161,7 @@ function OfficeHoursPageInner() {
   const [exemptAppointmentStatuses, setExemptAppointmentStatuses] = useState<string[]>(DEFAULT_EXEMPT_APPOINTMENT_STATUSES);
 
   // UI state
-  const [sortBy, setSortBy] = useState<'time' | 'status' | 'students' | 'type' | 'course' | 'teacher' | 'centre' | 'paid' | 'comments' | 'confirmed'>('time');
+  const [sortBy, setSortBy] = useState<'time' | 'status' | 'students' | 'type' | 'course' | 'teacher' | 'centre' | 'evaluation' | 'paid' | 'comments' | 'confirmed'>('time');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [selectedOfficeHourId, setSelectedOfficeHourId] = useState<string | null>(null);
   const [showActiveTable, setShowActiveTable] = useState(true);
@@ -216,7 +288,19 @@ function OfficeHoursPageInner() {
         statuses.add(oh.status);
       }
     });
-    return Array.from(statuses).sort().map(status => ({ value: status, label: OFFICE_HOUR_STATUS_LABELS[status] || status }));
+    return Array.from(statuses).sort().map(status => ({ value: status, label: status }));
+  }, [officeHours]);
+
+  const evaluationStatusOptions: SelectOption[] = useMemo(() => {
+    const statuses = new Set<string>();
+    officeHours.forEach(oh => {
+      oh.appointments?.forEach(apt => {
+        if (apt.status) {
+          statuses.add(apt.status);
+        }
+      });
+    });
+    return Array.from(statuses).sort().map(status => ({ value: status, label: status }));
   }, [officeHours]);
 
   // Type options (based on actual data, not just enum)
@@ -602,13 +686,14 @@ function OfficeHoursPageInner() {
 
   // Check if any table filter is active
   const hasTableFilter = useMemo(() => {
-    return tableSelectedCentres.length > 0 || selectedStatuses.length > 0 || selectedTypes.length > 0 || selectedGrades.length > 0 || searchQuery.trim().length > 0;
-  }, [tableSelectedCentres, selectedStatuses, selectedTypes, selectedGrades, searchQuery]);
+    return tableSelectedCentres.length > 0 || selectedStatuses.length > 0 || selectedEvaluationStatuses.length > 0 || selectedTypes.length > 0 || selectedGrades.length > 0 || searchQuery.trim().length > 0;
+  }, [tableSelectedCentres, selectedStatuses, selectedEvaluationStatuses, selectedTypes, selectedGrades, searchQuery]);
 
   // Clear all table filters
   const clearTableFilters = () => {
     setTableSelectedCentres([]);
     setSelectedStatuses([]);
+    setSelectedEvaluationStatuses([]);
     setSelectedTypes([]);
     setSelectedGrades([]);
     setSearchQuery('');
@@ -628,6 +713,11 @@ function OfficeHoursPageInner() {
     // Status filter
     if (selectedStatuses.length > 0 && selectedStatuses.length !== statusOptions.length) {
       filtered = filtered.filter(oh => selectedStatuses.includes(oh.status));
+    }
+
+    // Evaluation status filter (appointment-level)
+    if (selectedEvaluationStatuses.length > 0 && selectedEvaluationStatuses.length !== evaluationStatusOptions.length) {
+      filtered = filtered.filter(oh => oh.appointments?.some(apt => selectedEvaluationStatuses.includes(apt.status)));
     }
 
     // Type filter
@@ -651,6 +741,7 @@ function OfficeHoursPageInner() {
         oh.courses?.some(c => c.name?.toLowerCase().includes(query) || c.shortName?.toLowerCase().includes(query)) ||
         oh.centre?.name?.toLowerCase().includes(query) ||
         oh.centre?.shortName?.toLowerCase().includes(query) ||
+        oh.appointments?.some(apt => apt.status?.toLowerCase().includes(query)) ||
         oh.note?.toLowerCase().includes(query)
       );
     }
@@ -681,6 +772,8 @@ function OfficeHoursPageInner() {
         const aCentre = a.centre?.shortName || a.centre?.name || '';
         const bCentre = b.centre?.shortName || b.centre?.name || '';
         comparison = aCentre.localeCompare(bCentre);
+      } else if (sortBy === 'evaluation') {
+        comparison = getDominantEvaluationStatus(a).localeCompare(getDominantEvaluationStatus(b));
       } else if (sortBy === 'paid') {
         const aPaid = a.appointments?.filter(apt => apt.resultAfterTrial?.isHasPayment).length || 0;
         const bPaid = b.appointments?.filter(apt => apt.resultAfterTrial?.isHasPayment).length || 0;
@@ -703,7 +796,7 @@ function OfficeHoursPageInner() {
     });
 
     return filtered;
-  }, [officeHours, tableSelectedCentres, selectedStatuses, selectedTypes, selectedGrades, searchQuery, sortBy, sortOrder, statusOptions, typeOptions, courseLineOptions]);
+  }, [officeHours, tableSelectedCentres, selectedStatuses, selectedEvaluationStatuses, selectedTypes, selectedGrades, searchQuery, sortBy, sortOrder, statusOptions, evaluationStatusOptions, typeOptions, courseLineOptions]);
 
   // Group by teacher for 'by-teacher' view
   const groupedByTeacher = useMemo(() => {
@@ -1194,111 +1287,103 @@ function OfficeHoursPageInner() {
 
               {/* Table */}
               {(officeHours.length > 0 || loading) && (
-                <AdminTableSection
-                  title={viewMode === 'all' ? 'Danh sách ca trải nghiệm' : 'Phân tích theo Giáo viên'}
-                  count={viewMode === 'all' ? filteredOfficeHours.length : Object.keys(groupedByTeacher).length}
-                  loading={loading}
-                  progress={progress}
-                  isExpanded={showActiveTable}
-                  onToggle={() => setShowActiveTable(p => !p)}
-                  toolbarSlot={
-                    <>
-                      {officeHours.length > 0 && (
-                        <TableToolbar
-                          search={searchQuery}
-                          onSearchChange={setSearchQuery}
-                          searchPlaceholder="Tìm kiếm..."
-                          quickFilterSlots={
-                            hasPreferences && (
-                              <QuickFilterChips
-                                centres={centres}
-                                selectedCentres={tableSelectedCentres}
-                                onCentresChange={setTableSelectedCentres}
-                                selectedCourses={selectedGrades}
-                                onCoursesChange={setSelectedGrades}
-                                showCentres={true}
-                                showCourses={true}
-                              />
-                            )
-                          }
-                          filterSlots={
-                            <>
-                              {tableCentreIds.length > 1 && (
-                                <CentreSelect menuPosition="fixed"
+                <>
+                  <ViewModeToggle
+                    value={viewMode}
+                    onChange={setViewMode}
+                    options={[
+                      { value: 'all', label: 'Danh sách', icon: <Icon.Table /> },
+                      { value: 'by-teacher', label: 'Theo giáo viên', icon: <Icon.User /> },
+                    ]}
+                  />
+
+                  <AdminTableSection
+                    title={viewMode === 'all' ? 'Danh sách ca trải nghiệm' : 'Phân tích theo Giáo viên'}
+                    count={viewMode === 'all' ? filteredOfficeHours.length : Object.keys(groupedByTeacher).length}
+                    loading={loading}
+                    progress={progress}
+                    isExpanded={showActiveTable}
+                    onToggle={() => setShowActiveTable(p => !p)}
+                    toolbarSlot={
+                      officeHours.length > 0 ? (
+                          <TableToolbar
+                            search={searchQuery}
+                            onSearchChange={setSearchQuery}
+                            searchPlaceholder="Tìm kiếm..."
+                            quickFilterSlots={
+                              hasPreferences && (
+                                <QuickFilterChips
                                   centres={centres}
-                                  selected={tableSelectedCentres}
-                                  onChange={setTableSelectedCentres}
-                                  filterToIds={tableCentreIds}
-                                  placeholder="Tất cả cơ sở"
-                                  searchable
+                                  selectedCentres={tableSelectedCentres}
+                                  onCentresChange={setTableSelectedCentres}
+                                  selectedCourses={selectedGrades}
+                                  onCoursesChange={setSelectedGrades}
+                                  showCentres={true}
+                                  showCourses={true}
                                 />
-                              )}
-                              {courseLineOptions.length > 1 && (
-                                <MultiSelect menuPosition="fixed"
-                                  options={courseLineOptions}
-                                  selected={selectedGrades}
-                                  onChange={setSelectedGrades}
-                                  placeholder="Tất cả khối"
-                                  maxDisplay={2}
-                                />
-                              )}
-                              {statusOptions.length > 1 && (
-                                <MultiSelect menuPosition="fixed"
-                                  options={statusOptions}
-                                  selected={selectedStatuses}
-                                  onChange={setSelectedStatuses}
-                                  placeholder="Tất cả trạng thái"
-                                />
-                              )}
-                              {typeOptions.length > 1 && (
-                                <MultiSelect menuPosition="fixed"
-                                  options={typeOptions}
-                                  selected={selectedTypes}
-                                  onChange={setSelectedTypes}
-                                  placeholder="Tất cả loại"
-                                />
-                              )}
-                            </>
-                          }
-                          hasFilter={hasTableFilter}
-                          onClearFilter={clearTableFilters}
-                        />
-                      )}
-                      <div className={styles.viewModeToggle}>
-                        <button
-                          className={`${viewMode === 'all' ? styles.primaryBtn : styles.clearCacheBtn} ${styles.viewModeButton}`}
-                          onClick={() => setViewMode('all')}
-                        >
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <rect x="3" y="3" width="7" height="9"/>
-                            <rect x="14" y="3" width="7" height="5"/>
-                            <rect x="14" y="12" width="7" height="9"/>
-                            <rect x="3" y="16" width="7" height="5"/>
-                          </svg>
-                          Danh sách
-                        </button>
-                        <button
-                          className={`${viewMode === 'by-teacher' ? styles.primaryBtn : styles.clearCacheBtn} ${styles.viewModeButton}`}
-                          onClick={() => setViewMode('by-teacher')}
-                        >
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-                            <circle cx="12" cy="7" r="4"/>
-                          </svg>
-                          Theo giáo viên
-                        </button>
-                      </div>
-                    </>
-                  }
-                >
+                              )
+                            }
+                            filterSlots={
+                              <>
+                                {tableCentreIds.length > 1 && (
+                                  <CentreSelect menuPosition="fixed"
+                                    centres={centres}
+                                    selected={tableSelectedCentres}
+                                    onChange={setTableSelectedCentres}
+                                    filterToIds={tableCentreIds}
+                                    placeholder="Tất cả cơ sở"
+                                    searchable
+                                  />
+                                )}
+                                {courseLineOptions.length > 1 && (
+                                  <MultiSelect menuPosition="fixed"
+                                    options={courseLineOptions}
+                                    selected={selectedGrades}
+                                    onChange={setSelectedGrades}
+                                    placeholder="Tất cả khối"
+                                    maxDisplay={2}
+                                  />
+                                )}
+                                {statusOptions.length > 1 && (
+                                  <MultiSelect menuPosition="fixed"
+                                    options={statusOptions}
+                                    selected={selectedStatuses}
+                                    onChange={setSelectedStatuses}
+                                    placeholder="Tất cả trạng thái ca"
+                                  />
+                                )}
+                                {evaluationStatusOptions.length > 1 && (
+                                  <MultiSelect menuPosition="fixed"
+                                    options={evaluationStatusOptions}
+                                    selected={selectedEvaluationStatuses}
+                                    onChange={setSelectedEvaluationStatuses}
+                                    placeholder="Tất cả đánh giá"
+                                  />
+                                )}
+                                {typeOptions.length > 1 && (
+                                  <MultiSelect menuPosition="fixed"
+                                    options={typeOptions}
+                                    selected={selectedTypes}
+                                    onChange={setSelectedTypes}
+                                    placeholder="Tất cả loại"
+                                  />
+                                )}
+                              </>
+                            }
+                            hasFilter={hasTableFilter}
+                            onClearFilter={clearTableFilters}
+                          />
+                      ) : null
+                    }
+                  >
                         <div className={styles.tableScrollWrapper}>
                 {/* Conditional rendering based on viewMode */}
                 {viewMode === 'all' ? (
                   <>
-                    {/* Inner wrapper with min-width for "Danh sách" view (10 columns) */}
-                    <div style={{ minWidth: '1300px' }}>
+                    {/* Inner wrapper with min-width for "Danh sách" view */}
+                    <div style={{ minWidth: '1450px' }}>
                     {/* Table Header - View: Danh sách */}
-                    <div className={styles.classItemHeader} style={{ gridTemplateColumns: 'minmax(0, 1.2fr) minmax(0, 0.8fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 0.7fr) minmax(0, 0.6fr) minmax(0, 0.8fr) minmax(0, 0.9fr) minmax(0, 1fr) minmax(0, 1fr)' }}>
+                    <div className={styles.classItemHeader} style={{ gridTemplateColumns: OFFICE_HOUR_LIST_GRID }}>
                   <div
                     className={`${styles.sortableCol} ${sortBy === 'time' ? styles.activeSort : ''}`}
                     onClick={() => handleSort('time')}
@@ -1393,8 +1478,23 @@ function OfficeHoursPageInner() {
                     className={`${styles.sortableCol} ${sortBy === 'status' ? styles.activeSort : ''}`}
                     onClick={() => handleSort('status')}
                   >
-                    Trạng thái
+                    Trạng thái ca
                     {sortBy === 'status' ? (
+                      sortOrder === 'asc' ? (
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="18 15 12 9 6 15" /></svg>
+                      ) : (
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9" /></svg>
+                      )
+                    ) : (
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="17 11 12 6 7 11" /><polyline points="17 18 12 13 7 18" /></svg>
+                    )}
+                  </div>
+                  <div
+                    className={`${styles.sortableCol} ${sortBy === 'evaluation' ? styles.activeSort : ''}`}
+                    onClick={() => handleSort('evaluation')}
+                  >
+                    Đánh giá
+                    {sortBy === 'evaluation' ? (
                       sortOrder === 'asc' ? (
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="18 15 12 9 6 15" /></svg>
                       ) : (
@@ -1453,9 +1553,9 @@ function OfficeHoursPageInner() {
 
                 {/* Skeleton loading */}
                 {loading && officeHours.length === 0 && Array.from({ length: 8 }).map((_, i) => (
-                  <div key={i} className={styles.skeletonRow} style={{ gridTemplateColumns: 'minmax(0, 1.2fr) minmax(0, 0.8fr) minmax(0, 1fr) minmax(0, 0.7fr) minmax(0, 0.6fr) minmax(0, 0.8fr) minmax(0, 0.9fr) minmax(0, 1fr) minmax(0, 1fr)', minWidth: 1000 }}>
-                    {Array.from({ length: 9 }).map((_, j) => (
-                      <div key={j} className={styles.skeletonBlock} style={{ width: `${[70, 50, 60, 40, 30, 50, 45, 40, 80][j]}%` }} />
+                  <div key={i} className={styles.skeletonRow} style={{ gridTemplateColumns: OFFICE_HOUR_LIST_GRID, minWidth: 1450 }}>
+                    {Array.from({ length: 11 }).map((_, j) => (
+                      <div key={j} className={styles.skeletonBlock} style={{ width: `${[70, 50, 60, 40, 30, 50, 65, 45, 40, 40, 80][j]}%` }} />
                     ))}
                   </div>
                 ))}
@@ -1479,7 +1579,7 @@ function OfficeHoursPageInner() {
                       key={oh.id}
                       className={styles.classItem}
                       style={{ 
-                        gridTemplateColumns: 'minmax(0, 1.2fr) minmax(0, 0.8fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 0.7fr) minmax(0, 0.6fr) minmax(0, 0.8fr) minmax(0, 0.9fr) minmax(0, 1fr) minmax(0, 1fr)',
+                        gridTemplateColumns: OFFICE_HOUR_LIST_GRID,
                         cursor: 'pointer'
                       }}
                       onClick={() => { setSelectedOfficeHourId(oh.id); openEditForOfficeHour(oh); }}
@@ -1512,8 +1612,10 @@ function OfficeHoursPageInner() {
                       <div className={styles.sizeCol}>{totalAppointments}</div>
 
                       <div className={styles.sizeCol}>
-                        <OfficeHourStatusBadge status={oh.status} />
+                        <RawStatusBadge status={oh.status} variant={getOfficeHourStatusVariant(oh.status)} />
                       </div>
+
+                      <EvaluationStatusSummary appointments={oh.appointments} />
 
                       {/* Cột Đã xác nhận */}
                       <div className={styles.sizeCol}>
@@ -1961,6 +2063,7 @@ function OfficeHoursPageInner() {
               </div>
               {/* End of tableScrollWrapper */}
                 </AdminTableSection>
+                </>
           )}
             </div>
 
@@ -1970,9 +2073,7 @@ function OfficeHoursPageInner() {
                 <div className={styles.chartsSection}>
                   <div className={styles.chartsSectionHeader} onClick={() => setShowExemptPanel(!showExemptPanel)} style={{ cursor: 'pointer' }}>
                     <div className={styles.chartsSectionTitle}>
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-	                      </svg>
+                      <Icon.CheckCircle size={15} />
 	                      Quy tắc Miễn trừ
 	                    </div>
 	                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
@@ -1988,14 +2089,14 @@ function OfficeHoursPageInner() {
 	                      >
 	                        <Icon.Refresh />
 	                      </button>
-	                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+	                      <Icon.ChevronDown
+	                        size={16}
+	                        color="var(--text-tertiary)"
 	                        style={{
-	                          color: 'var(--text-tertiary)',
 	                          transform: showExemptPanel ? 'rotate(180deg)' : 'rotate(0deg)',
 	                          transition: 'transform 0.2s ease'
-	                        }}>
-	                        <polyline points="6 9 12 15 18 9" />
-	                      </svg>
+	                        }}
+	                      />
 	                    </div>
 	                  </div>
                   <AnimatePresence initial={false}>
@@ -2052,7 +2153,7 @@ function OfficeHoursPageInner() {
                                     }}
                                   />
                                   <div className={styles.reasonLabel}>
-                                    <span>{OFFICE_HOUR_STATUS_LABELS[status] || status}</span>
+                                    <span>{status}</span>
                                     <span className={styles.reasonCount}>{exemptionCounts.statusCounts[status] || 0}</span>
                                   </div>
                                 </label>
@@ -2124,43 +2225,34 @@ function OfficeHoursPageInner() {
 
               <div style={{ overflowY: 'auto', flex: 1, minHeight: 0 }}>
                 {/* Thông tin cơ bản */}
-                <div style={{ padding: 'var(--space-4) var(--space-5)', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 'var(--space-4)', borderBottom: '1px solid var(--border-primary)' }}>
-                  <div>
-                    <div style={{ fontSize: 11, fontWeight: 590, color: 'var(--text-quaternary)', textTransform: 'uppercase', marginBottom: 'var(--space-2)' }}>Thời gian</div>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
+                <DetailGrid>
+                  <DetailField label="Thời gian">
+                    <DetailText meta={formatDate(selectedEntry.startTime)}>
                       {formatTime(selectedEntry.startTime)} - {formatTime(selectedEntry.endTime)}
-                    </div>
-                    <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                      {formatDate(selectedEntry.startTime)}
-                    </div>
-                  </div>
+                    </DetailText>
+                  </DetailField>
 
-                  <div>
-                    <div style={{ fontSize: 11, fontWeight: 590, color: 'var(--text-quaternary)', textTransform: 'uppercase', marginBottom: 'var(--space-2)' }}>Trạng thái</div>
-                    <OfficeHourStatusBadge status={selectedEntry.status} />
-                  </div>
+                  <DetailField label="Trạng thái">
+                    <RawStatusBadge status={selectedEntry.status} variant={getOfficeHourStatusVariant(selectedEntry.status)} />
+                  </DetailField>
 
-                  <div>
-                    <div style={{ fontSize: 11, fontWeight: 590, color: 'var(--text-quaternary)', textTransform: 'uppercase', marginBottom: 'var(--space-2)' }}>Loại ca</div>
+                  <DetailField label="Loại ca">
 	                    <OfficeHourTypeBadge type={selectedEntry.type} />
-                  </div>
+                  </DetailField>
 
-                  <div>
-                    <div style={{ fontSize: 11, fontWeight: 590, color: 'var(--text-quaternary)', textTransform: 'uppercase', marginBottom: 'var(--space-2)' }}>Số học viên</div>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
+                  <DetailField label="Số học viên">
+                    <DetailText>
                       {selectedEntry.studentCount || 0} học viên
-                    </div>
-                  </div>
+                    </DetailText>
+                  </DetailField>
 
-                  <div>
-                    <div style={{ fontSize: 11, fontWeight: 590, color: 'var(--text-quaternary)', textTransform: 'uppercase', marginBottom: 'var(--space-2)' }}>Cơ sở</div>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
+                  <DetailField label="Cơ sở">
+                    <DetailText>
                       {selectedEntry.centre?.shortName || selectedEntry.centre?.name || '—'}
-                    </div>
-                  </div>
+                    </DetailText>
+                  </DetailField>
 
-                  <div>
-                    <div style={{ fontSize: 11, fontWeight: 590, color: 'var(--text-quaternary)', textTransform: 'uppercase', marginBottom: 'var(--space-2)' }}>Giáo viên</div>
+                  <DetailField label="Giáo viên">
                     <UserSearchInput
                       value={teacherSearch}
                       onChange={handleTeacherInputChange}
@@ -2207,10 +2299,9 @@ function OfficeHoursPageInner() {
                         setTeacherSearchResults([teacher]);
                       }}
                     />
-                  </div>
+                  </DetailField>
 
-                  <div>
-                    <div style={{ fontSize: 11, fontWeight: 590, color: 'var(--text-quaternary)', textTransform: 'uppercase', marginBottom: 'var(--space-2)' }}>Ghi chú giáo viên</div>
+                  <DetailField label="Ghi chú giáo viên">
                     <textarea
                       value={editDraft.teacherNote}
                       onChange={(e) => setEditDraft(d => d ? { ...d, teacherNote: e.target.value } : d)}
@@ -2235,8 +2326,8 @@ function OfficeHoursPageInner() {
                         e.target.style.borderColor = 'var(--border-secondary)';
                       }}
                     />
-                  </div>
-                </div>
+                  </DetailField>
+                </DetailGrid>
 
                 {/* Khoá học */}
                 {selectedEntry.courses && selectedEntry.courses.length > 0 && (
@@ -2408,9 +2499,7 @@ function OfficeHoursPageInner() {
 
                             {/* Trạng thái */}
                             <div>
-                              <span className={`${styles.statusPill} ${styles.exempt}`} style={{ fontSize: 11, padding: '4px 10px', display: 'inline-block' }}>
-                                {apt.status}
-                              </span>
+                              <RawStatusBadge status={apt.status} variant={getEvaluationStatusVariant(apt.status)} />
                             </div>
 
                             {/* Khoá học */}
@@ -2689,13 +2778,14 @@ function OfficeHoursPageInner() {
               <div style={{ padding: '16px', maxHeight: '70vh', overflowY: 'auto' }}>
                 <div className={styles.tableScrollWrapper}>
                   {/* Table Header */}
-                  <div className={styles.classItemHeader} style={{ gridTemplateColumns: 'minmax(0, 1.2fr) minmax(0, 0.8fr) minmax(0, 1fr) minmax(0, 0.7fr) minmax(0, 0.6fr) minmax(0, 0.8fr) minmax(0, 0.9fr) minmax(0, 1fr) minmax(0, 1fr)' }}>
+                  <div className={styles.classItemHeader} style={{ gridTemplateColumns: TEACHER_OFFICE_HOUR_GRID, minWidth: 1200 }}>
                     <div>Thời gian</div>
                     <div>Loại ca</div>
                     <div>Khoá học</div>
                     <div>Cơ sở</div>
                     <div>Học viên</div>
-                    <div>Trạng thái</div>
+                    <div>Trạng thái ca</div>
+                    <div>Đánh giá</div>
                     <div>Đã xác nhận</div>
                     <div>Đã thanh toán</div>
                     <div>Nhận xét GV</div>
@@ -2715,12 +2805,14 @@ function OfficeHoursPageInner() {
                         key={oh.id}
                         className={styles.classItem}
                         style={{ 
-                          gridTemplateColumns: 'minmax(0, 1.2fr) minmax(0, 0.8fr) minmax(0, 1fr) minmax(0, 0.7fr) minmax(0, 0.6fr) minmax(0, 0.8fr) minmax(0, 0.9fr) minmax(0, 1fr) minmax(0, 1fr)',
+                          gridTemplateColumns: TEACHER_OFFICE_HOUR_GRID,
+                          minWidth: 1200,
                           cursor: 'pointer'
                         }}
                         onClick={() => {
                           setSelectedTeacherForModal(null);
                           setSelectedOfficeHourId(oh.id);
+                          openEditForOfficeHour(oh);
                         }}
                       >
                         <div className={styles.className}>
@@ -2747,8 +2839,10 @@ function OfficeHoursPageInner() {
                         <div className={styles.sizeCol}>{totalAppointments}</div>
 
                         <div className={styles.sizeCol}>
-                          <OfficeHourStatusBadge status={oh.status} />
+                          <RawStatusBadge status={oh.status} variant={getOfficeHourStatusVariant(oh.status)} />
                         </div>
+
+                        <EvaluationStatusSummary appointments={oh.appointments} />
 
                         <div className={styles.sizeCol}>
                           {totalAppointments > 0 ? (
