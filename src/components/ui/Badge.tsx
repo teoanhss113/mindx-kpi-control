@@ -234,3 +234,31 @@ export const CourseCategoryBadge = ({
     </Badge>
   );
 };
+
+export const CentreBadge = ({
+  name,
+  ...props
+}: {
+  name: string | null | undefined;
+} & Omit<BadgeProps, 'variant' | 'customColors' | 'children'>) => {
+  const label = name || '—';
+  return (
+    <Badge
+      variant="exempt"
+      size="sm"
+      shape="rounded"
+      {...props}
+      style={{
+        textTransform: 'capitalize',
+        fontSize: 11,
+        fontWeight: 510,
+        color: 'var(--text-tertiary)',
+        backgroundColor: 'var(--bg-panel)',
+        border: '1px solid var(--border-primary)',
+        ...(props.style || {}),
+      }}
+    >
+      {label}
+    </Badge>
+  );
+};

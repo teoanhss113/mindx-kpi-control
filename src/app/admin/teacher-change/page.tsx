@@ -32,7 +32,7 @@ import {
   StandardXAxis, StandardYAxisCategory, CustomTooltip, VerticalBarChartConfig,
   SortableColumn, SortableHeader,
   CentreSelect, QuickFilterChips, ExportButton, KPIThresholdSuggestions,
-  CSVExportSettings, RoleBadge as SharedRoleBadge, TeacherAssignmentStatusBadge, FilterChip, type CSVColumnConfig,
+  CSVExportSettings, RoleBadge as SharedRoleBadge, TeacherAssignmentStatusBadge, FilterChip, CourseCategoryBadge, CentreBadge, type CSVColumnConfig,
 } from '@/components/ui';
 import { PageLayout } from '@/components/PageLayout';
 import { useTableSort } from '@/hooks/useTableSort';
@@ -946,9 +946,10 @@ export default function TeacherChangePage() {
                             )}
                             {a.cls.name}
                           </span>
-                          <span className={styles.centreName}>
-                            {a.courseLineName ? `${a.courseLineName} — ` : ''}{a.cls.centre?.name}
-                          </span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-1)', marginTop: 2 }}>
+                            <CourseCategoryBadge category={a.courseLineName} size="sm" />
+                            <CentreBadge name={a.cls.centre?.name} />
+                          </div>
                         </div>
 
                         {/* Status replacing Total slots */}
@@ -1059,7 +1060,10 @@ export default function TeacherChangePage() {
                           style={{ gridTemplateColumns: 'minmax(0,2.5fr) minmax(0,1.2fr) minmax(0,1.2fr)', minWidth: 520, cursor: 'pointer', padding: '8px 16px' }}
                           onClick={() => setSelectedClassId(a.cls.id)}>
                           <div className={styles.className}>{a.cls.name}</div>
-                          <div style={{ fontSize: 11, color: 'var(--text-quaternary)' }}>{a.cls.centre?.name}</div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-1)' }}>
+                            <CourseCategoryBadge category={a.courseLineName} size="sm" />
+                            <CentreBadge name={a.cls.centre?.name} />
+                          </div>
                           <div style={{ fontSize: 11, color: 'var(--text-quaternary)' }}>{a.cls.status}</div>
                         </div>
                       ))}

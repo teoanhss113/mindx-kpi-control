@@ -42,7 +42,7 @@ export function getCourseCategory(cls: {
     combined.includes('PYA') || combined.includes('WEB') || 
     combined.includes('GAME') || combined.includes('PRO') || 
     combined.includes('CODING') || combined.includes('PYTHON') || 
-    combined.includes('CSB') || combined.includes('CSI')
+    combined.includes('CSA') || combined.includes('CSB') || combined.includes('CSI')
   ) return 'Coding';
 
   return 'Others';
@@ -63,7 +63,7 @@ export function getCourseLineCategory(
   // Check courseLine first
   if (courseLine) {
     const line = courseLine.toUpperCase();
-    if (line.match(/C4K|C4T|JSA|JSI|JSB|PYA|WEB|GAME|PRO|CODING|PYTHON|CSB|CSI/)) return 'Coding';
+    if (line.match(/C4K|C4T|JSA|JSI|JSB|PYA|WEB|GAME|PRO|CODING|PYTHON|CSA|CSB|CSI/)) return 'Coding';
     if (line.includes('ROB')) return 'Robotics';
     if (line.includes('ART') || line.includes('XART')) return 'Art';
   }
@@ -71,7 +71,7 @@ export function getCourseLineCategory(
   // Fallback to className if courseLine is not available
   if (className) {
     const name = className.toUpperCase();
-    if (name.match(/C4K|C4T|JSA|JSI|JSB|PYA|WEB|GAME|PRO|CODING|PYTHON|CSB|CSI/)) return 'Coding';
+    if (name.match(/C4K|C4T|JSA|JSI|JSB|PYA|WEB|GAME|PRO|CODING|PYTHON|CSA|CSB|CSI/)) return 'Coding';
     if (name.includes('ROB')) return 'Robotics';
     if (name.includes('ART') || name.includes('XART')) return 'Art';
   }
@@ -131,7 +131,7 @@ export function getOfficeHourCategory(
   if (/\bXART|\bART\b/.test(haystack)) return 'Art';
 
   // Coding — broad token set covering MindX product codes.
-  if (/C4K|C4T|JSA|JSI|JSB|PYA|WEB|GAME|PRO|CODING|PYTHON|CSB|CSI/.test(haystack)) {
+  if (/C4K|C4T|JSA|JSI|JSB|PYA|WEB|GAME|PRO|CODING|PYTHON|CSA|CSB|CSI/.test(haystack)) {
     return 'Coding';
   }
 

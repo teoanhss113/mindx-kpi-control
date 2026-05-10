@@ -30,7 +30,7 @@ import {
   KPIThresholdSuggestions,
   CSVExportSettings, FilterChip, type CSVColumnConfig,
   COMPLETION_STATUS_LABELS, CompletionStatusBadge, type CompletionStatusKind,
-  Badge,
+  Badge, CourseCategoryBadge, CentreBadge,
 } from '@/components/ui';
 import { useTableSort } from '@/hooks/useTableSort';
 import { useQuickFilterChips } from '@/hooks/useUserPreferences';
@@ -830,9 +830,10 @@ export default function DashboardPage() {
                                 onClick={() => setSelectedClassId(cls.id)}>
                                 <div className={styles.className}>
                                   {cls.name}
-                                  <span className={styles.centreName}>
-                                    {cls.courseLineName ? `${cls.courseLineName} — ` : ''}{cls.centre?.name}
-                                  </span>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-1)', marginTop: 2 }}>
+                                    <CourseCategoryBadge category={cls.courseLineName} size="sm" />
+                                    <CentreBadge name={cls.centre?.name} />
+                                  </div>
                                 </div>
                                 <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
                                   {getClassTeacher(cls)}
@@ -897,7 +898,11 @@ export default function DashboardPage() {
                               {cancelledClasses.map((cls: any) => (
                                 <div key={cls.id} className={styles.classItem} style={{ gridTemplateColumns: '2fr 1fr' }} onClick={() => setSelectedClassId(cls.id)}>
                                   <div className={styles.className}>{cls.name}</div>
-                                  <div style={{ fontSize: 11, color: 'var(--text-quaternary)' }}>{cls.centre?.name} — {cls.status}</div>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-1)', marginTop: 2 }}>
+                                    <CourseCategoryBadge category={cls.courseLineName} size="sm" />
+                                    <CentreBadge name={cls.centre?.name} />
+                                    <span style={{ fontSize: 11, color: 'var(--text-quaternary)', marginLeft: 4 }}>• {cls.status}</span>
+                                  </div>
                                 </div>
                               ))}
                             </div>

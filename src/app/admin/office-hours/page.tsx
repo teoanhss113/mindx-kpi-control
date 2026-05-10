@@ -16,7 +16,7 @@ import { getCache, setCache, clearCache } from '@/lib/idb';
 import { getOfficeHourCategory } from '@/lib/courseCategories';
 import { sendNotification, NotificationTemplates } from '@/lib/sendNotification';
 import { OfficeHour, OFFICE_HOUR_STATUS, OFFICE_HOUR_TYPE } from '@/types/officeHours';
-import { useToast, ToastContainer, initials, EmptyState, Toolbar, SelectOption, TableGroupHeader, AdminTableSection, Modal, ModalHeader, MultiSelect, TableToolbar, ChartSectionHeader, StandardXAxis, StandardYAxisCategory, StandardYAxisNumber, ChartLegend, ComposedChartConfig, CustomTooltip, UserSearchInput, type UserSearchResult, ModalFooter, CentreSelect, QuickFilterChips, ShiftRequestSuggestions, type ShiftRequest, OfficeHourTypeBadge, getOfficeHourTypeLabel, KPIThresholdSuggestions, Icon, ViewModeToggle, DetailGrid, DetailField, DetailText, Badge, RawStatusBadge, getRawStatusVariant } from '@/components/ui';
+import { useToast, ToastContainer, initials, EmptyState, Toolbar, SelectOption, TableGroupHeader, AdminTableSection, Modal, ModalHeader, MultiSelect, TableToolbar, ChartSectionHeader, StandardXAxis, StandardYAxisCategory, StandardYAxisNumber, ChartLegend, ComposedChartConfig, CustomTooltip, UserSearchInput, type UserSearchResult, ModalFooter, CentreSelect, QuickFilterChips, ShiftRequestSuggestions, type ShiftRequest, OfficeHourTypeBadge, getOfficeHourTypeLabel, KPIThresholdSuggestions, Icon, ViewModeToggle, DetailGrid, DetailField, DetailText, Badge, CentreBadge, RawStatusBadge, getRawStatusVariant } from '@/components/ui';
 import { useQuickFilterChips } from '@/hooks/useUserPreferences';
 import { PageLayout } from '@/components/PageLayout';
 import { getNavItemsWithRouter } from '@/lib/navigation';
@@ -1578,7 +1578,7 @@ function OfficeHoursPageInner() {
                         {oh.teacher?.fullName || '—'}
                       </div>
 
-                      <div className={styles.centreName}>{oh.centre?.shortName || oh.centre?.name || '—'}</div>
+                      <div><CentreBadge name={oh.centre?.shortName || oh.centre?.name} /></div>
 
                       <div className={styles.sizeCol}>{totalAppointments}</div>
 
@@ -2803,7 +2803,7 @@ function OfficeHoursPageInner() {
                           ))}
                         </div>
 
-                        <div className={styles.centreName}>{oh.centre?.shortName || oh.centre?.name || '—'}</div>
+                        <div><CentreBadge name={oh.centre?.shortName || oh.centre?.name} /></div>
 
                         <div className={styles.sizeCol}>{totalAppointments}</div>
 

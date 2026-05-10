@@ -250,4 +250,30 @@ export async function fetchClassesForMonth(
 }
 // Improved retry logic
 
-// Improved retry logic
+/**
+ * Fetch classes that have slots in the selected range.
+ * This replaces the previous unpassedSessionIndex approach which was 
+ * only accurate for the current moment. By fetching all classes in the range,
+ * the client can accurately identify classes that had session 4 or 8 in that period.
+ */
+export async function fetchPendingSurveyClasses(
+  fromDate: Date,
+  toDate: Date,
+  centres?: string[],
+  onProgress?: (loaded: number, total: number, chunk: Class[]) => void,
+  signal?: AbortSignal
+): Promise<Class[]> {
+  const haveSlotIn = haveSlotInToUtcRange(fromDate, toDate);
+  
+  // We fetch all classes that have any activity in this period.
+  // We exclude TRIAL/Experience classes by filtering for specific statuses if needed,
+  // but generally, fetchAllClasses with haveSlotIn is the standard administrative query.
+  return fetchAllClasses(
+    {
+      haveSlotIn,
+      ...(centres && centres.length > 0 ? { centres } : {}),
+    },
+    onProgress,
+    signal
+  );
+}

@@ -3697,15 +3697,24 @@ export default function TeacherSchedulePage() {
                   loading={classQualityLoading}
                   isExpanded={true}
                   actionSlot={classQualityData && !classQualityLoading ? (
-                    <div className={styles.toolbarCluster}>
-                      <span className={classQualityData.commentAnalysis.emptyCount + classQualityData.commentAnalysis.briefCount > 0 ? styles.warningText : styles.successText}>
-                        {CLASS_QUALITY_LABELS.TEACHER_COMMENTS}: {classQualityData.commentAnalysis.emptyCount + classQualityData.commentAnalysis.briefCount} lỗi
+                    <div className={styles.toolbarCluster} style={{ color: 'var(--text-quaternary)', fontSize: 11, fontWeight: 500, display: 'flex', gap: 12 }}>
+                      <span>
+                        {CLASS_QUALITY_LABELS.TEACHER_COMMENTS}:{' '}
+                        <span className={classQualityData.commentAnalysis.emptyCount + classQualityData.commentAnalysis.briefCount > 0 ? styles.warningText : styles.successText} style={{ fontWeight: 600 }}>
+                          {classQualityData.commentAnalysis.emptyCount + classQualityData.commentAnalysis.briefCount} lỗi
+                        </span>
                       </span>
-                      <span className={classQualityData.attendanceAnalysis.totalAlerts > 0 ? styles.errorText : styles.successText}>
-                        {CLASS_QUALITY_LABELS.ATTENDANCE}: {classQualityData.attendanceAnalysis.studentsWithAlerts.length} {LABELS.STUDENTS.toLowerCase()}
+                      <span>
+                        {CLASS_QUALITY_LABELS.ATTENDANCE}:{' '}
+                        <span className={classQualityData.attendanceAnalysis.totalAlerts > 0 ? styles.errorText : styles.successText} style={{ fontWeight: 600 }}>
+                          {classQualityData.attendanceAnalysis.studentsWithAlerts.length} {LABELS.STUDENTS.toLowerCase()}
+                        </span>
                       </span>
-                      <span className={classQualityData.reschedulingAnalysis.rescheduledSessions > 0 ? styles.warningText : styles.successText}>
-                        {CLASS_QUALITY_LABELS.SCHEDULE_CHANGES}: {classQualityData.reschedulingAnalysis.rescheduledSessions} buổi
+                      <span>
+                        {CLASS_QUALITY_LABELS.SCHEDULE_CHANGES}:{' '}
+                        <span className={classQualityData.reschedulingAnalysis.rescheduledSessions > 0 ? styles.warningText : styles.successText} style={{ fontWeight: 600 }}>
+                          {classQualityData.reschedulingAnalysis.rescheduledSessions} buổi
+                        </span>
                       </span>
                     </div>
                   ) : undefined}

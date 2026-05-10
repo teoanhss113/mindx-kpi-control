@@ -23,6 +23,8 @@ import {
   QuickFilterChips,
   ACTIVE_STATUS_OPTIONS,
   ActiveStatusBadge,
+  CourseCategoryBadge,
+  CentreBadge,
 } from '@/components/ui';
 import { LABELS, MESSAGES, ENTITIES, FORMAT, ANIMATION, CACHE_KEYS } from '@/constants';
 import { getTeachers } from '@/services/teacherService';
@@ -544,17 +546,28 @@ export default function TeachersPage() {
                       <td style={{ fontWeight: 510, color: 'var(--text-primary)' }}>{teacher.code}</td>
                       <td style={{ fontWeight: 510 }}>{teacher.fullName}</td>
                       <td style={{ color: 'var(--text-secondary)', fontSize: 13 }}>{teacher.email}</td>
-                      <td style={{ fontSize: 13 }}>
-                        {teacher.courseLines.length > 0 
-                          ? Array.from(new Set(teacher.courseLines.map(cl => getCourseLineCategory(cl.name)))).join(', ')
-                          : '—'}
+                      <td>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-1)' }}>
+                          {teacher.courseLines.length > 0 
+                            ? Array.from(new Set(teacher.courseLines.map(cl => getCourseLineCategory(cl.name)))).map(category => (
+                                <CourseCategoryBadge key={category} category={category} size="sm" />
+                              ))
+                            : '—'}
+                        </div>
                       </td>
-                      <td style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-                        {teacher.centres.length > 0
-                          ? teacher.centres.length > 2
-                            ? `${teacher.centres.slice(0, 2).map(c => c.name).join(', ')} +${teacher.centres.length - 2}`
-                            : teacher.centres.map(c => c.name).join(', ')
-                          : '—'}
+                      <td>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-1)' }}>
+                          {teacher.centres.length > 0
+                            ? teacher.centres.length > 2
+                              ? (
+                                  <>
+                                    {teacher.centres.slice(0, 2).map(c => <CentreBadge key={c.id} name={c.name} />)}
+                                    <CentreBadge name={`+${teacher.centres.length - 2}`} />
+                                  </>
+                                )
+                              : teacher.centres.map(c => <CentreBadge key={c.id} name={c.name} />)
+                            : '—'}
+                        </div>
                       </td>
                       <td>
                         <span 
@@ -754,9 +767,7 @@ export default function TeachersPage() {
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
                     {selectedTeacher.courseLines.length > 0 ? (
                       Array.from(new Set(selectedTeacher.courseLines.map(cl => getCourseLineCategory(cl.name)))).map(category => (
-                        <span key={category} className={styles.statusPill} style={{ fontSize: 13 }}>
-                          {category}
-                        </span>
+                        <CourseCategoryBadge key={category} category={category} />
                       ))
                     ) : (
                       <span style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>Chưa có khối</span>
@@ -798,9 +809,7 @@ export default function TeachersPage() {
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
                 {selectedTeacher.centres.length > 0 ? (
                   selectedTeacher.centres.map(centre => (
-                    <span key={centre.id} className={styles.statusPill} style={{ fontSize: 13, textTransform: 'capitalize' }}>
-                      {centre.name}
-                    </span>
+                    <CentreBadge key={centre.id} name={centre.name} style={{ fontSize: 13 }} />
                   ))
                 ) : (
                   <span style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>Chưa có cơ sở</span>

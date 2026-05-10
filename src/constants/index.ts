@@ -219,6 +219,7 @@ export const TICKET_LABELS = {
   TICKETS_BY_CENTRE: 'Số Phiếu Theo Cơ Sở',
   TICKETS_BY_COURSE_LINE: 'Số Phiếu Theo Khối',
   AVG_SCORE_GV: 'ĐIỂM TRUNG BÌNH (GV)',
+  PENDING_SURVEYS: 'Cần khảo sát',
 } as const;
 
 /**

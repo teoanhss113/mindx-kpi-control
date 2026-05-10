@@ -51,7 +51,7 @@ export {
 // ─────────────────────────────────────────────────────────────────────────────
 // BADGE COMPONENTS — Reusable badge system
 // ─────────────────────────────────────────────────────────────────────────────
-export { Badge, StatusBadge, CountBadge, TopicBadge, RoleBadge, CourseCategoryBadge } from './Badge'
+export { Badge, StatusBadge, CountBadge, TopicBadge, RoleBadge, CourseCategoryBadge, CentreBadge } from './Badge'
 export type { BadgeVariant, BadgeSize, BadgeShape, BadgeProps } from './Badge'
 export {
   ATTENDANCE_STATUS_STYLES,

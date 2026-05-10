@@ -16,7 +16,10 @@ import { getNavItemsWithRouter } from '@/lib/navigation';
 import { useAllowedPages } from '@/hooks/useAllowedPages';
 import { surveyColor, KPI_COLORS, SURVEY_LEGEND } from '@/lib/kpiScoring';
 import { fetchTickets, updateTicket, searchUsers } from '@/services/ticketService';
+import { fetchPendingSurveyClasses } from '@/services/classesService';
+import { classSurveyKey, fetchStudentClassSurveys, STUDENT_TEACHING_SURVEY_ID } from '@/services/classSurveyService';
 import { Ticket, LmsUser } from '@/types/ticket';
+import { Class } from '@/types/classes';
 import {
   Icon, SortIcon, MultiSelect, SelectOption, CompactSelect,
   Toolbar, StatCard, ChartSectionHeader,
@@ -26,14 +29,14 @@ import {
   ToastContainer,
   useToast,
   StandardXAxis, StandardYAxisCategory, ChartLegend, VerticalBarChartConfig, CustomTooltip,
-  SortableHeader, TopicBadge, UserSearchInput, type UserSearchResult, ModalFooter,
-  CentreSelect, CourseCategoryBadge, QuickFilterChips, TicketStatusBadge, FilterChip, KPIThresholdSuggestions, getPriorityMeta, getTicketStatusMeta, Badge,
+  SortableHeader, SortableColumn, TopicBadge, UserSearchInput, type UserSearchResult, ModalFooter,
+  CentreSelect, CourseCategoryBadge, CentreBadge, QuickFilterChips, TicketStatusBadge, FilterChip, KPIThresholdSuggestions, getPriorityMeta, getTicketStatusMeta, Badge,
 } from '@/components/ui';
 import { useTableSort } from '@/hooks/useTableSort';
 import { useFilterOptions } from '@/hooks/useFilterOptions';
 import { useQuickFilterChips } from '@/hooks/useUserPreferences';
 import { PageLayout } from '@/components/PageLayout';
-import { CACHE_KEYS, LABELS, MESSAGES, ENTITIES, FORMAT, CHART_COLORS, TICKET_LABELS } from '@/constants';
+import { CACHE_KEYS, LABELS, MESSAGES, ENTITIES, FORMAT, CHART_COLORS, TICKET_LABELS, CLASS_INACTIVE_STATUSES } from '@/constants';
 import { useSharedDateRange, useSharedCentres } from '@/hooks/useSharedFilterState';
 import { ProtectedPage } from '@/components/ProtectedPage';
 import styles from '@/app/dashboard.module.css';
@@ -45,12 +48,80 @@ const SURVEY_TARGETS = [
   { value: 4.8, label: '> 4.7' },
 ];
 
+const TICKET_EXEMPTED_REASONS = [
+  'CHANGE_CLASS_SCHEDULE_CHANGE',
+  'TRANSFER_COURSE_LINE',
+  'WRONG_ENROLL',
+  'ON_HOLD',
+  'DROP_OUT',
+  'On hold'
+];
+
+function normalizeCompletionReason(reason?: string | null): string {
+  const trimmed = reason?.trim();
+  if (!trimmed) return '';
+  if (trimmed.toUpperCase().replace(/\s+/g, '_') === 'ON_HOLD') return 'ON_HOLD';
+  return trimmed;
+}
+
+function isExemptStudent(st: any, classSlots?: any[]): boolean {
+  const info = st.completionInfo;
+  const hasAttendance = classSlots?.some(slot => 
+    slot.studentAttendance?.some((a: any) => a.student?.id === st.student?.id)
+  );
+  
+  // Original logic: WAITING status with no attendance
+  if (info && (info as any).status === 'WAITING' && !hasAttendance) {
+    return true;
+  }
+  
+  // Deactivated student with no attendance
+  if (!st.activeInClass && !hasAttendance) {
+    return true;
+  }
+
+  // Exclude explicitly based on completion reasons (on hold, dropped out, etc)
+  if (info?.reason) {
+    const normReason = normalizeCompletionReason(info.reason);
+    if (TICKET_EXEMPTED_REASONS.includes(normReason)) {
+      return true;
+    }
+  }
+  
+  return false;
+}
+
 function getPriorityColor(priority: string) {
   return getPriorityMeta(priority).color;
 }
 
 function getStatusColor(status: string) {
   return getTicketStatusMeta(status).color;
+}
+
+function getSurveyBadgeMeta(group: {
+  uniqueStudentsDone: number;
+  count: number;
+  courseCategory?: string;
+  surveySessions?: Class['surveySessions'];
+}) {
+  const sessions = group.surveySessions || [];
+  if (sessions.length === 0) {
+    if ((group.uniqueStudentsDone || group.count || 0) > 0) {
+      return { label: 'Đã mở', color: 'var(--status-success)', bg: 'rgba(16, 185, 129, 0.12)' };
+    }
+    if (group.courseCategory === 'Robotics') {
+      return { label: 'Chưa rõ', color: 'var(--text-quaternary)', bg: 'var(--bg-panel)' };
+    }
+    return { label: 'Chưa mở', color: 'var(--status-error)', bg: 'rgba(239, 68, 68, 0.10)' };
+  }
+
+  const unopened = sessions.filter(session => !session.opened).length;
+  if (unopened === sessions.length) {
+    return { label: 'Chưa mở', color: 'var(--status-error)', bg: 'rgba(239, 68, 68, 0.10)' };
+  }
+
+  return { label: 'Đã mở', color: 'var(--status-success)', bg: 'rgba(16, 185, 129, 0.12)' };
 }
 
 export default function TicketsDashboard() {
@@ -65,7 +136,9 @@ export default function TicketsDashboard() {
   // ── Data states ─────────────────────────────────────────────────────────────
   const [centres, setCentres] = useState<Centre[]>([]);
   const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [pendingClasses, setPendingClasses] = useState<Class[]>([]);
   const [loading, setLoading] = useState(false);
+  const [pendingLoading, setPendingLoading] = useState(false);
   const [progress, setProgress] = useState({ loaded: 0, total: 100 });
 
   // ── Shared filter state (synced across pages) ──────────────────────────────
@@ -78,6 +151,7 @@ export default function TicketsDashboard() {
   const [selectedCourseLines, setSelectedCourseLines] = useState<string[]>([]);
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
   const [selectedFeedbackTopics, setSelectedFeedbackTopics] = useState<string[]>([]);
+  const [selectedSessions, setSelectedSessions] = useState<string[]>([]);
   const [search, setSearch] = useState('');
 
   // ── Layout states ──────────────────────────────────────────────────────────
@@ -88,15 +162,20 @@ export default function TicketsDashboard() {
   const [sortKey, setSortKey] = useState<'title' | 'centre' | 'status' | 'createdAt'>('createdAt');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
-  // ── View Mode: 'list' | 'by-class' | 'by-teacher' ──
-  const [viewMode, setViewMode] = useState<'list' | 'by-class' | 'by-teacher'>('list');
+  // ── View Mode: 'list' | 'by-class' | 'by-teacher' | 'pending' ──
+  const [viewMode, setViewMode] = useState<'list' | 'by-class' | 'by-teacher' | 'pending'>('by-class');
   
   // Sort state for by-class view
-  const [classSortBy, setClassSortBy] = useState<'className' | 'count' | 'students' | 'avgScore'>('avgScore');
+  const [classSortBy, setClassSortBy] = useState<'className' | 'sessions' | 'students' | 'count' | 'avgScore' | 'surveyStatus' | 'ticketStatus'>('avgScore');
   const [classSortOrder, setClassSortOrder] = useState<'asc' | 'desc'>('desc');
   
   // ── Modal states for grouped views ──
-  const [selectedClassForModal, setSelectedClassForModal] = useState<{ className: string; tickets: typeof filteredTickets } | null>(null);
+  const [selectedClassForModal, setSelectedClassForModal] = useState<{ className: string; tickets: typeof filteredTickets; classData?: any | null } | null>(null);
+  
+  // Section expansion states
+  const [standardExpanded, setStandardExpanded] = useState(true);
+  const [earlyLateExpanded, setEarlyLateExpanded] = useState(true);
+  const [inactiveExpanded, setInactiveExpanded] = useState(true);
 
   // ── Edit / Save states ──────────────────────────────────────────────────
   const [editDraft, setEditDraft] = useState<{ status: string; priority: string; feedbackTopic: string; assigneeId: string; assigneeName: string } | null>(null);
@@ -132,8 +211,10 @@ export default function TicketsDashboard() {
     const signal = abortRef.current.signal;
 
     setLoading(true);
+    setPendingLoading(true);
     setProgress({ loaded: 0, total: 100 });
     setTickets([]);
+    setPendingClasses([]);
     
     let curTickets: Ticket[] = [];
     let _centres = centres;
@@ -150,19 +231,81 @@ export default function TicketsDashboard() {
       const dStart = new Date(start); dStart.setHours(0, 0, 0, 0);
       const dEnd = new Date(end); dEnd.setHours(23, 59, 59, 999);
 
-      const res = await fetchTickets({
-        createdAt_gte: dStart.toISOString(),
-        createdAt_lte: dEnd.toISOString(),
-        centreId_in: selectedCentres.length > 0 ? selectedCentres : [],
-      }, (loaded, total, chunk) => {
-        setProgress({ loaded, total: total || Math.max(loaded, 1) });
-        curTickets = [...curTickets, ...chunk];
-        setTickets([...curTickets]);
-      }, signal);
+      // Fetch tickets and pending classes in parallel
+      const [ticketsRes, pendingRes] = await Promise.all([
+        fetchTickets({
+          createdAt_gte: dStart.toISOString(),
+          createdAt_lte: dEnd.toISOString(),
+          centreId_in: selectedCentres.length > 0 ? selectedCentres : [],
+        }, (loaded, total, chunk) => {
+          setProgress({ loaded, total: total || Math.max(loaded, 1) });
+          curTickets = [...curTickets, ...chunk];
+          setTickets([...curTickets]);
+        }, signal),
+        fetchPendingSurveyClasses(
+          dStart,
+          dEnd,
+          selectedCentres,
+          undefined,
+          signal
+        )
+      ]);
+
+      const surveyLookups = pendingRes.flatMap(c => {
+        const slots = c.slots || [];
+        return [3, 7].flatMap(slotIndex => {
+          const slot = slots[slotIndex];
+          if (!slot?._id) return [];
+          const slotDate = new Date(slot.date);
+          if (slotDate < dStart || slotDate > dEnd) return [];
+          return [{
+            classId: c.id,
+            sessionId: slot._id,
+            sessionNumber: slotIndex + 1,
+            surveyId: STUDENT_TEACHING_SURVEY_ID,
+          }];
+        });
+      });
+
+      let enrichedPending = pendingRes;
+      if (surveyLookups.length > 0) {
+        try {
+          const surveyMap = await fetchStudentClassSurveys(surveyLookups, signal);
+          enrichedPending = pendingRes.map(c => {
+            const surveySessions = (c.slots || []).flatMap((slot, slotIndex) => {
+              if (![3, 7].includes(slotIndex) || !slot?._id) return [];
+              const slotDate = new Date(slot.date);
+              if (slotDate < dStart || slotDate > dEnd) return [];
+              const status = surveyMap.get(classSurveyKey(c.id, slot._id));
+              return status ? [{
+                sessionNumber: slotIndex + 1,
+                sessionId: slot._id,
+                classSurveyId: status.classSurveyId,
+                surveyId: status.surveyId || STUDENT_TEACHING_SURVEY_ID,
+                status: status.status,
+                responseCount: status.responseCount,
+                opened: status.opened,
+              }] : [];
+            });
+            return { ...c, surveySessions };
+          });
+        } catch (surveyErr) {
+          if (!signal.aborted) {
+            console.error('Failed to fetch class survey status', surveyErr);
+            addToast('Không tải được trạng thái mở form khảo sát. Dữ liệu phiếu vẫn được giữ lại.', 'info');
+          }
+        }
+      }
 
       if (!signal.aborted) {
-        await setCache(CACHE_KEYS.TICKETS, { tickets: res.data, timestamp: Date.now() });
-        addToast(MESSAGES.LOADING.SUCCESS(res.data.length, ENTITIES.TICKETS), 'success');
+        setTickets(ticketsRes.data);
+        setPendingClasses(enrichedPending);
+        await setCache(CACHE_KEYS.TICKETS, { 
+          tickets: ticketsRes.data, 
+          pendingClasses: enrichedPending, 
+          timestamp: Date.now() 
+        });
+        addToast(MESSAGES.LOADING.SUCCESS(ticketsRes.data.length, ENTITIES.TICKETS), 'success');
       }
     } catch (err: any) {
       if (!signal.aborted) {
@@ -172,6 +315,7 @@ export default function TicketsDashboard() {
     } finally {
       if (!signal.aborted) {
         setLoading(false);
+        setPendingLoading(false);
         setProgress({ loaded: 100, total: 100 });
       }
     }
@@ -429,6 +573,9 @@ export default function TicketsDashboard() {
         if (cached?.tickets) {
           setTickets(cached.tickets);
         }
+        if (cached?.pendingClasses) {
+          setPendingClasses(cached.pendingClasses);
+        }
       } catch (e) {
         console.error('State parse error', e);
       }
@@ -446,7 +593,11 @@ export default function TicketsDashboard() {
   // Memoize expensive ticket processing with individual ticket caching
   const mappedTickets = useMemo(() => {
     const processTicket = (t: Ticket) => {
-      const courseCategory = getCourseCategory({ name: t.ticketSource?.className || '' });
+      // Try to find matching class in pendingClasses for more accurate categorization
+      const matchingClass = pendingClasses.find(pc => pc.id === t.ticketSource?.classId);
+      const courseCategory = matchingClass 
+        ? getCourseCategory(matchingClass) 
+        : getCourseCategory({ name: t.ticketSource?.className || '' });
       
       let dateStr = '—';
       if (t.createdAt) {
@@ -493,9 +644,14 @@ export default function TicketsDashboard() {
     };
 
     return tickets.map(processTicket);
-  }, [tickets]);
+  }, [tickets, pendingClasses]);
 
-  const courseLineOptions = useFilterOptions(mappedTickets, (t) => t.courseCategory);
+  const courseLineOptions = useMemo(() => {
+    const cats = new Set<string>();
+    mappedTickets.forEach(t => cats.add(t.courseCategory));
+    pendingClasses.forEach(c => cats.add(getCourseCategory(c)));
+    return Array.from(cats).sort().map(cat => ({ value: cat, label: cat }));
+  }, [mappedTickets, pendingClasses]);
 
   // tableCentreIds: only centre IDs that appear in the loaded tickets (for table-level filtering)
   const tableCentreIds = useMemo(() => {
@@ -504,7 +660,7 @@ export default function TicketsDashboard() {
       if (t.ticketSource?.centreId) ids.add(t.ticketSource.centreId);
     });
     return Array.from(ids);
-  }, [mappedTickets]);
+  }, [mappedTickets, pendingClasses]);
 
   const statusOptions = useFilterOptions(
     mappedTickets,
@@ -732,15 +888,131 @@ export default function TicketsDashboard() {
   }, [filteredTickets, selectedTicketIds.size]);
 
   // ── Grouped Data ──────────────────────────────────────────────────────────
+  const sessionOptions = [
+    { value: '4', label: 'Buổi 4' },
+    { value: '8', label: 'Buổi 8' },
+    { value: 'other', label: 'Khác (Sớm/Muộn)' },
+  ];
+
+  const filteredPendingClasses = useMemo(() => {
+    let list = pendingClasses;
+
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      list = list.filter(c =>
+        c.name.toLowerCase().includes(q) ||
+        c.course?.name?.toLowerCase().includes(q) ||
+        c.centre?.shortName?.toLowerCase().includes(q)
+      );
+    }
+
+    if (tableSelectedCentres.length > 0) {
+      list = list.filter(c => tableSelectedCentres.includes(c.centre?.id));
+    }
+
+    if (selectedCourseLines.length > 0 && selectedCourseLines.length !== courseLineOptions.length) {
+      list = list.filter(c => selectedCourseLines.includes(getCourseCategory(c)));
+    }
+
+    if (selectedSessions.length > 0 && selectedSessions.length !== sessionOptions.length) {
+      const dStart = new Date(fromDate); dStart.setHours(0, 0, 0, 0);
+      const dEnd = new Date(toDate); dEnd.setHours(23, 59, 59, 999);
+      list = list.filter(c => {
+        const slots = c.slots || [];
+        const hasSession4 = Boolean(slots[3] && new Date(slots[3].date) >= dStart && new Date(slots[3].date) <= dEnd);
+        const hasSession8 = Boolean(slots[7] && new Date(slots[7].date) >= dStart && new Date(slots[7].date) <= dEnd);
+        return (
+          (selectedSessions.includes('4') && hasSession4) ||
+          (selectedSessions.includes('8') && hasSession8)
+        );
+      });
+    }
+
+    return list;
+  }, [pendingClasses, search, tableSelectedCentres, selectedCourseLines, courseLineOptions.length, selectedSessions, fromDate, toDate]);
+
   const groupedByClass = useMemo(() => {
-    const groups = new Map<string, typeof filteredTickets>();
+    // We use a Map to merge tickets and class data. 
+    // Key is either classId (best) or className (fallback).
+    const groups = new Map<string, { 
+      className: string; 
+      tickets: Ticket[]; 
+      classData?: Class;
+      sessionsInRange: number[];
+    }>();
+
+    // 1. Process tickets
     filteredTickets.forEach(t => {
-      const key = t.ticketSource?.className || 'Không xác định';
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key)!.push(t);
+      const classId = t.ticketSource?.classId;
+      const className = t.ticketSource?.className || 'Không xác định';
+      const key = classId || className;
+      
+      if (!groups.has(key)) {
+        groups.set(key, { className, tickets: [], sessionsInRange: [] });
+      }
+      groups.get(key)!.tickets.push(t);
     });
-    return Array.from(groups.entries())
-      .map(([className, tickets]) => {
+
+    // 2. Process pending classes (to get total students and session context)
+    let filteredPending = pendingClasses;
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      filteredPending = filteredPending.filter(c => 
+        c.name.toLowerCase().includes(q) || 
+        c.course?.name?.toLowerCase().includes(q) ||
+        c.centre?.shortName?.toLowerCase().includes(q)
+      );
+    }
+    if (tableSelectedCentres.length > 0 && tableSelectedCentres.length !== tableCentreIds.length) {
+      filteredPending = filteredPending.filter(c => tableSelectedCentres.includes(c.centre?.id));
+    }
+    if (selectedCourseLines.length > 0 && selectedCourseLines.length !== courseLineOptions.length) {
+      filteredPending = filteredPending.filter(c => selectedCourseLines.includes(getCourseCategory(c)));
+    }
+
+    filteredPending.forEach(c => {
+      const key = c.id;
+      const category = getCourseCategory(c);
+      
+      // Exclude 'Others' (Trial/Experience) classes from being added as "Pending" 
+      // unless they already have tickets associated with them.
+      if (category === 'Others' && !groups.has(key)) return;
+
+      if (!groups.has(key)) {
+        // Find if we already have a group by name (if classId wasn't in ticketSource)
+        const nameKey = Array.from(groups.keys()).find(k => groups.get(k)!.className === c.name);
+        if (nameKey) {
+          const existing = groups.get(nameKey)!;
+          groups.delete(nameKey);
+          groups.set(key, existing);
+        } else {
+          groups.set(key, { className: c.name, tickets: [], sessionsInRange: [] });
+        }
+      }
+      
+      const g = groups.get(key)!;
+      g.classData = c;
+      
+      // Determine sessions in range
+      const dStart = new Date(fromDate); dStart.setHours(0,0,0,0);
+      const dEnd = new Date(toDate); dEnd.setHours(23,59,59,999);
+      
+      const slots = c.slots || [];
+      // Session 4 is index 3, Session 8 is index 7
+      [3, 7].forEach(idx => {
+        const slot = slots[idx];
+        if (slot) {
+          const sDate = new Date(slot.date);
+          if (sDate >= dStart && sDate <= dEnd) {
+            g.sessionsInRange.push(idx + 1);
+          }
+        }
+      });
+    });
+
+    const result = Array.from(groups.entries())
+      .map(([id, g]) => {
+        const tickets = g.tickets;
         const avgScores = tickets.map(t => {
           const teacherScore = (t as any)._groupScores?.find((gs: any) => {
             const gName = gs.group.toUpperCase();
@@ -748,11 +1020,102 @@ export default function TicketsDashboard() {
           });
           return teacherScore ? parseFloat(teacherScore.avg) : null;
         }).filter(s => s !== null) as number[];
+        
         const avgScore = avgScores.length > 0 ? avgScores.reduce((a, b) => a + b, 0) / avgScores.length : 0;
-        return { className, tickets, avgScore, count: tickets.length };
+        
+        const validStudents = (g.classData?.students || []).filter((st: any) => !isExemptStudent(st, g.classData?.slots));
+        const totalStudents = validStudents.length;
+        const uniqueStudentsDone = new Set(tickets.map(t => t.ticketSource?.studentId)).size;
+        const firstTicket = tickets[0] as (Ticket & { courseCategory?: string }) | undefined;
+        const ticketCentreId = firstTicket?.ticketSource?.centreId;
+        const ticketCentreName = firstTicket?.ticketSource?.centre?.shortName
+          || centres.find(c => c.id === ticketCentreId)?.shortName;
+        const courseCategory = g.classData ? getCourseCategory(g.classData) : firstTicket?.courseCategory;
+
+        return { 
+          id,
+          className: g.className, 
+          tickets, 
+          avgScore, 
+          count: tickets.length,
+          totalStudents,
+          uniqueStudentsDone,
+          sessionsInRange: g.sessionsInRange,
+          surveySessions: g.classData?.surveySessions || [],
+          courseCategory,
+          classStatus: g.classData?.status,
+          courseLine: g.classData?.course?.courseLine?.name || courseCategory,
+          centreName: g.classData?.centre?.shortName || ticketCentreName,
+          classData: g.classData
+        };
       })
-      .sort((a, b) => b.count - a.count);
-  }, [filteredTickets]);
+      .sort((a, b) => {
+        if (a.sessionsInRange.length !== b.sessionsInRange.length) {
+          return b.sessionsInRange.length - a.sessionsInRange.length;
+        }
+        return b.count - a.count;
+      });
+
+    if (selectedSessions.length > 0 && selectedSessions.length !== sessionOptions.length) {
+      return result.filter(g => {
+        const hasSession4 = g.sessionsInRange.includes(4);
+        const hasSession8 = g.sessionsInRange.includes(8);
+        const isOther = g.sessionsInRange.length === 0 && g.count > 0;
+        
+        return (
+          (selectedSessions.includes('4') && hasSession4) ||
+          (selectedSessions.includes('8') && hasSession8) ||
+          (selectedSessions.includes('other') && isOther)
+        );
+      });
+    }
+
+    return result;
+  }, [filteredTickets, pendingClasses, search, tableSelectedCentres, tableCentreIds, fromDate, toDate, selectedSessions, centres]);
+
+  const activeGroups = useMemo(() =>
+    groupedByClass.filter(g => !CLASS_INACTIVE_STATUSES.has(g.classStatus?.toUpperCase?.() || '')),
+  [groupedByClass]);
+
+  const inactiveGroups = useMemo(() =>
+    groupedByClass.filter(g => CLASS_INACTIVE_STATUSES.has(g.classStatus?.toUpperCase?.() || '')),
+  [groupedByClass]);
+
+  const standardGroups = useMemo(() => 
+    activeGroups.filter(g => g.sessionsInRange.length > 0), 
+  [activeGroups]);
+
+  const earlyLateGroups = useMemo(() => 
+    activeGroups.filter(g => g.sessionsInRange.length === 0 && g.count > 0), 
+  [activeGroups]);
+
+  const sortClassGroups = useCallback((groups: typeof groupedByClass) => {
+    return [...groups].sort((a, b) => {
+      let comparison = 0;
+      if (classSortBy === 'className') {
+        comparison = a.className.localeCompare(b.className);
+      } else if (classSortBy === 'sessions') {
+        const aSession = a.sessionsInRange.length > 0 ? Math.min(...a.sessionsInRange) : 999;
+        const bSession = b.sessionsInRange.length > 0 ? Math.min(...b.sessionsInRange) : 999;
+        comparison = aSession - bSession;
+      } else if (classSortBy === 'students') {
+        comparison = a.uniqueStudentsDone - b.uniqueStudentsDone;
+      } else if (classSortBy === 'count') {
+        comparison = a.count - b.count;
+      } else if (classSortBy === 'avgScore') {
+        comparison = a.avgScore - b.avgScore;
+      } else if (classSortBy === 'surveyStatus') {
+        comparison = getSurveyBadgeMeta(a).label.localeCompare(getSurveyBadgeMeta(b).label);
+      } else if (classSortBy === 'ticketStatus') {
+        const aNew = a.tickets.filter(t => t.status === 'NEW').length;
+        const bNew = b.tickets.filter(t => t.status === 'NEW').length;
+        const aClosed = a.tickets.filter(t => t.status === 'CLOSED').length;
+        const bClosed = b.tickets.filter(t => t.status === 'CLOSED').length;
+        comparison = (aNew - bNew) || (aClosed - bClosed) || (a.count - b.count);
+      }
+      return classSortOrder === 'asc' ? comparison : -comparison;
+    });
+  }, [classSortBy, classSortOrder]);
 
   // Allowed pages (for navigation filtering)
   const { allowedPages } = useAllowedPages();
@@ -816,8 +1179,8 @@ export default function TicketsDashboard() {
           onFetch={() => loadData(fromDate, toDate)}
           onCancel={handleCancelFetch}
           loading={loading} progress={progress}
-          hasData={tickets.length > 0}
-          onClearCache={() => { setTickets([]); clearCache(CACHE_KEYS.TICKETS); }}
+          hasData={tickets.length > 0 || pendingClasses.length > 0}
+          onClearCache={() => { setTickets([]); setPendingClasses([]); clearCache(CACHE_KEYS.TICKETS); }}
           showRegionQuickSelect={true}
           quickFilterSlots={
             hasPreferences && (
@@ -953,29 +1316,29 @@ export default function TicketsDashboard() {
           )}
 
         {/* View Mode Toggle — Outside and above the panel for consistency */}
-        {(mappedTickets.length > 0 || loading) && (
+        {(mappedTickets.length > 0 || pendingClasses.length > 0 || loading || pendingLoading) && (
           <div style={{ marginTop: 'var(--space-6)' }}>
             <ViewModeToggle
               value={viewMode}
               onChange={setViewMode}
               options={[
-                { value: 'list', label: TICKET_LABELS.LIST_VIEW, icon: <Icon.Table /> },
                 { value: 'by-class', label: TICKET_LABELS.CLASS_ANALYSIS_VIEW, icon: <Icon.PieChart /> },
+                { value: 'list', label: TICKET_LABELS.LIST_VIEW, icon: <Icon.Table /> },
               ]}
             />          </div>
         )}
 
         <div id="section-entries">
             {/* ── Table Section ── */}
-            {(stats.total > 0 || loading || tickets.length > 0) && (
+            {(stats.total > 0 || loading || pendingLoading || tickets.length > 0 || pendingClasses.length > 0) && (
               <AdminTableSection
                 title={viewMode === 'list' ? TICKET_LABELS.TICKET_LIST : TICKET_LABELS.CLASS_ANALYSIS}
-                count={viewMode === 'list' ? filteredTickets.length : groupedByClass.length}
-                loading={loading}
+                count={viewMode === 'list' ? filteredTickets.length : activeGroups.length}
+                loading={loading || pendingLoading}
                 progress={progress}
                 isExpanded={showActiveTable}
                 onToggle={() => setShowActiveTable(p => !p)}
-                toolbarSlot={(mappedTickets.length > 0 || loading) ? (
+                toolbarSlot={(mappedTickets.length > 0 || pendingClasses.length > 0 || loading || pendingLoading) ? (
                   <>
                     <TableToolbar
                       search={search} onSearchChange={setSearch} searchPlaceholder="Mã phiếu, Lớp, Học viên, Nội dung..."
@@ -1008,6 +1371,7 @@ export default function TicketsDashboard() {
                           {courseLineOptions.length > 1 && <MultiSelect menuPosition="fixed" options={courseLineOptions} selected={selectedCourseLines} onChange={setSelectedCourseLines} placeholder="Tất cả khối" maxDisplay={2} />}
                           {statusOptions.length > 1 && <MultiSelect menuPosition="fixed" options={statusOptions} selected={selectedStatuses} onChange={setSelectedStatuses} placeholder="Tất cả trạng thái" />}
                           {feedbackTopicEnumOptions.length > 1 && <MultiSelect menuPosition="fixed" options={feedbackTopicEnumOptions} selected={selectedFeedbackTopics} onChange={setSelectedFeedbackTopics} placeholder="Tất cả chủ đề" />}
+                          <MultiSelect menuPosition="fixed" options={sessionOptions} selected={selectedSessions} onChange={setSelectedSessions} placeholder="Tất cả buổi" maxDisplay={1} />
                         </>
                       }
                       hasFilter={hasTableFilter} onClearFilter={clearTableFilters}
@@ -1208,7 +1572,7 @@ export default function TicketsDashboard() {
                         {/* Table Header */}
                         <div style={{
                           display: 'grid',
-                          gridTemplateColumns: 'minmax(0, 2.5fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.2fr)',
+                          gridTemplateColumns: 'minmax(0, 1.7fr) minmax(0, 0.6fr) minmax(0, 0.95fr) minmax(0, 0.7fr) minmax(0, 0.7fr) minmax(0, 1.15fr) minmax(0, 1fr)',
                           padding: '7px 16px',
                           borderBottom: '1px solid var(--border-primary)',
                           fontSize: 11,
@@ -1217,172 +1581,382 @@ export default function TicketsDashboard() {
                           letterSpacing: '0.04em',
                           textTransform: 'uppercase',
                           background: 'var(--bg-elevated)',
-                          minWidth: 700
+                          minWidth: 900
                         }}>
-                          <div
-                            className={`${styles.sortableCol} ${classSortBy === 'className' ? styles.activeSort : ''}`}
-                            onClick={() => handleClassSort('className')}
-                            style={{ display: 'flex', alignItems: 'center', gap: 3, cursor: 'pointer', userSelect: 'none' }}
-                          >
-                            Lớp học
-                            {classSortBy === 'className' ? (
-                              classSortOrder === 'asc' ? (
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="18 15 12 9 6 15" /></svg>
-                              ) : (
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9" /></svg>
-                              )
-                            ) : (
-                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="17 11 12 6 7 11" /><polyline points="17 18 12 13 7 18" /></svg>
-                            )}
-                          </div>
-                          <div
-                            className={`${styles.sortableCol} ${classSortBy === 'count' ? styles.activeSort : ''}`}
-                            onClick={() => handleClassSort('count')}
-                            style={{ display: 'flex', alignItems: 'center', gap: 3, cursor: 'pointer', userSelect: 'none' }}
-                          >
-                            Số phiếu
-                            {classSortBy === 'count' ? (
-                              classSortOrder === 'asc' ? (
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="18 15 12 9 6 15" /></svg>
-                              ) : (
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9" /></svg>
-                              )
-                            ) : (
-                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="17 11 12 6 7 11" /><polyline points="17 18 12 13 7 18" /></svg>
-                            )}
-                          </div>
-                          <div
-                            className={`${styles.sortableCol} ${classSortBy === 'students' ? styles.activeSort : ''}`}
-                            onClick={() => handleClassSort('students')}
-                            style={{ display: 'flex', alignItems: 'center', gap: 3, cursor: 'pointer', userSelect: 'none' }}
-                          >
-                            Học viên
-                            {classSortBy === 'students' ? (
-                              classSortOrder === 'asc' ? (
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="18 15 12 9 6 15" /></svg>
-                              ) : (
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9" /></svg>
-                              )
-                            ) : (
-                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="17 11 12 6 7 11" /><polyline points="17 18 12 13 7 18" /></svg>
-                            )}
-                          </div>
-                          <div
-                            className={`${styles.sortableCol} ${classSortBy === 'avgScore' ? styles.activeSort : ''}`}
-                            onClick={() => handleClassSort('avgScore')}
-                            style={{ display: 'flex', alignItems: 'center', gap: 3, cursor: 'pointer', userSelect: 'none' }}
-                          >
-                            Điểm TB (GV)
-                            {classSortBy === 'avgScore' ? (
-                              classSortOrder === 'asc' ? (
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="18 15 12 9 6 15" /></svg>
-                              ) : (
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9" /></svg>
-                              )
-                            ) : (
-                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="17 11 12 6 7 11" /><polyline points="17 18 12 13 7 18" /></svg>
-                            )}
-                          </div>
-                          <div>Trạng thái</div>
+                          <SortableColumn label="Lớp học" sortKey="className" currentSortKey={classSortBy} sortOrder={classSortOrder} onSort={(key) => handleClassSort(key as typeof classSortBy)} className={styles.sortableCol} />
+                          <SortableColumn label="Buổi" sortKey="sessions" currentSortKey={classSortBy} sortOrder={classSortOrder} onSort={(key) => handleClassSort(key as typeof classSortBy)} className={styles.sortableCol} />
+                          <SortableColumn label="Hoàn thành" sortKey="students" currentSortKey={classSortBy} sortOrder={classSortOrder} onSort={(key) => handleClassSort(key as typeof classSortBy)} className={styles.sortableCol} />
+                          <SortableColumn label="Số phiếu" sortKey="count" currentSortKey={classSortBy} sortOrder={classSortOrder} onSort={(key) => handleClassSort(key as typeof classSortBy)} className={styles.sortableCol} />
+                          <SortableColumn label="Điểm trung bình" sortKey="avgScore" currentSortKey={classSortBy} sortOrder={classSortOrder} onSort={(key) => handleClassSort(key as typeof classSortBy)} className={styles.sortableCol} />
+                          <SortableColumn label="Trạng thái khảo sát" sortKey="surveyStatus" currentSortKey={classSortBy} sortOrder={classSortOrder} onSort={(key) => handleClassSort(key as typeof classSortBy)} className={styles.sortableCol} />
+                          <SortableColumn label="Trạng thái" sortKey="ticketStatus" currentSortKey={classSortBy} sortOrder={classSortOrder} onSort={(key) => handleClassSort(key as typeof classSortBy)} className={styles.sortableCol} />
                         </div>
 
-                        {/* Table Rows */}
-                        {groupedByClass
-                          .map(group => {
-                            const uniqueStudents = new Set(group.tickets.map(t => t.ticketSource?.studentId || t.ticketSource?.studentName)).size;
-                            return { ...group, uniqueStudents };
-                          })
-                          .sort((a, b) => {
-                            let comparison = 0;
-                            
-                            if (classSortBy === 'className') {
-                              comparison = a.className.localeCompare(b.className);
-                            } else if (classSortBy === 'count') {
-                              comparison = a.count - b.count;
-                            } else if (classSortBy === 'students') {
-                              comparison = a.uniqueStudents - b.uniqueStudents;
-                            } else if (classSortBy === 'avgScore') {
-                              comparison = a.avgScore - b.avgScore;
-                            }
-                            
-                            return classSortOrder === 'asc' ? comparison : -comparison;
-                          })
-                          .map((group) => {
-                          // Count status
-                          const newCount = group.tickets.filter(t => t.status === 'NEW').length;
-                          const closedCount = group.tickets.filter(t => t.status === 'CLOSED').length;
-                          
-                          return (
-                            <div
-                              key={group.className}
-                              style={{
-                                display: 'grid',
-                                gridTemplateColumns: 'minmax(0, 2.5fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.2fr)',
-                                padding: '10px 16px',
-                                borderBottom: '1px solid var(--border-primary)',
-                                alignItems: 'center',
-                                transition: 'background 0.1s ease',
-                                cursor: 'pointer',
-                                background: 'var(--bg-surface)',
-                                minWidth: 700
-                              }}
-                              onClick={() => setSelectedClassForModal({ className: group.className, tickets: group.tickets })}
-                              onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-elevated)'}
-                              onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-surface)'}
+                        {/* Standard Surveys Section */}
+                        {standardGroups.length > 0 && (
+                          <>
+                            <div 
+                              style={{ padding: '10px 16px', background: 'var(--bg-elevated)', fontSize: 11, fontWeight: 700, color: 'var(--brand-indigo)', borderBottom: '1px solid var(--border-primary)', display: 'flex', alignItems: 'center', gap: 8, letterSpacing: '0.02em', cursor: 'pointer', userSelect: 'none' }}
+                              onClick={() => setStandardExpanded(!standardExpanded)}
                             >
-                              {/* Class Name */}
-                              <div style={{ fontSize: 13, fontWeight: 510, color: 'var(--text-primary)' }}>
-                                {group.className}
-                              </div>
-
-                              {/* Số phiếu */}
-                              <div style={{ fontSize: 15, fontWeight: 590, color: 'var(--text-primary)' }}>
-                                {group.count}
-                              </div>
-
-                              {/* Học viên */}
-                              <div style={{ fontSize: 15, fontWeight: 590, color: 'var(--text-primary)' }}>
-                                {group.uniqueStudents}
-                              </div>
-
-                              {/* Điểm TB (GV) */}
-                              <div style={{ 
-                                fontSize: 18, 
-                                fontWeight: 590, 
-                                color: group.avgScore > 0 ? surveyColor(group.avgScore) : 'var(--text-quaternary)',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: 4
-                              }}>
-                                <span>★</span>
-                                <span>{group.avgScore > 0 ? group.avgScore.toFixed(1) : '—'}</span>
-                              </div>
-
-                              {/* Trạng thái */}
-                              <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
-                                {newCount > 0 && (
-                                  <Badge variant="passed" size="sm" shape="rounded">
-                                    {newCount} mới
-                                  </Badge>
-                                )}
-                                {closedCount > 0 && (
-                                  <Badge variant="exempt" size="sm" shape="rounded">
-                                    {closedCount} đã xử lý
-                                  </Badge>
-                                )}
-                              </div>
+                               <motion.span animate={{ rotate: standardExpanded ? 0 : -90 }} transition={{ duration: 0.2 }}>
+                                 <Icon.ChevronDown size={14} />
+                               </motion.span>
+                               <Icon.Calendar size={13} />
+                               ĐÚNG ĐỢT (BUỔI 4 & 8)
+                               <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 4, background: 'var(--brand-indigo)', color: 'white' }}>{standardGroups.length}</span>
                             </div>
-                          );
-                        })}
+                            <AnimatePresence initial={false}>
+                              {standardExpanded && (
+                                <motion.div
+                                  initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+                                  style={{ overflow: 'hidden' }}
+                                >
+                                  {sortClassGroups(standardGroups)
+                                    .map((group) => {
+                                      const newCount = group.tickets.filter(t => t.status === 'NEW').length;
+                                      const closedCount = group.tickets.filter(t => t.status === 'CLOSED').length;
+                                      const surveyMeta = getSurveyBadgeMeta(group);
+                                      return (
+                                        <div
+                                          key={group.id}
+                                          style={{
+                                            display: 'grid',
+                                            gridTemplateColumns: 'minmax(0, 1.7fr) minmax(0, 0.6fr) minmax(0, 0.95fr) minmax(0, 0.7fr) minmax(0, 0.7fr) minmax(0, 1.15fr) minmax(0, 1fr)',
+                                            padding: '12px 16px',
+                                            borderBottom: '1px solid var(--border-primary)',
+                                            alignItems: 'center',
+                                            transition: 'background 0.1s ease',
+                                            cursor: 'pointer',
+                                            background: 'var(--bg-surface)',
+                                            minWidth: 900
+                                          }}
+                                          onClick={() => setSelectedClassForModal({ className: group.className, tickets: group.tickets as typeof filteredTickets, classData: group.classData })}
+                                          onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-elevated)'}
+                                          onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-surface)'}
+                                        >
+                                          <div style={{ fontSize: 13, fontWeight: 510, color: 'var(--text-primary)' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4, flexWrap: 'wrap' }}>
+                                              <span style={{ fontWeight: 600 }}>{group.className}</span>
+                                            </div>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-1)', marginTop: 4 }}>
+                                              <CourseCategoryBadge category={group.courseCategory} size="sm" />
+                                              <CentreBadge name={group.centreName} />
+                                            </div>
+                                          </div>
 
-                        {groupedByClass.length === 0 && (
+                                          {/* Buổi */}
+                                          <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--brand-indigo)' }}>
+                                            {group.sessionsInRange.join(', ')}
+                                          </div>
+
+                                          <div>
+                                            <div style={{ fontSize: 13, fontWeight: 590, color: 'var(--text-primary)' }}>
+                                              {group.uniqueStudentsDone} / {group.totalStudents || '?'} HV
+                                            </div>
+                                            {group.totalStudents > 0 && (
+                                              <div style={{ height: 4, width: '100%', maxWidth: 80, background: 'rgba(0,0,0,0.05)', borderRadius: 2, marginTop: 4, overflow: 'hidden' }}>
+                                                <div style={{ 
+                                                  height: '100%', 
+                                                  width: `${Math.min(100, (group.uniqueStudentsDone / group.totalStudents) * 100)}%`,
+                                                  background: (group.uniqueStudentsDone / group.totalStudents) >= 0.8 ? 'var(--status-success)' : 'var(--brand-indigo)'
+                                                }} />
+                                              </div>
+                                            )}
+                                          </div>
+
+                                          <div style={{ fontSize: 15, fontWeight: 590, color: 'var(--text-secondary)' }}>
+                                            {group.count}
+                                          </div>
+
+                                          <div style={{ 
+                                            fontSize: 16, 
+                                            fontWeight: 600, 
+                                            color: group.avgScore > 0 ? surveyColor(group.avgScore) : 'var(--text-quaternary)',
+                                            display: 'flex', alignItems: 'center', gap: 4
+                                          }}>
+                                            <span>★</span>
+                                            <span>{group.avgScore > 0 ? group.avgScore.toFixed(1) : '—'}</span>
+                                          </div>
+
+                                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
+                                            <Badge
+                                              variant="custom"
+                                              size="sm"
+                                              shape="rounded"
+                                              customColors={{ background: surveyMeta.bg, color: surveyMeta.color, border: surveyMeta.bg }}
+                                            >
+                                              {surveyMeta.label}
+                                            </Badge>
+                                          </div>
+
+                                          <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+                                            {newCount > 0 && <Badge variant="passed" size="sm" shape="rounded">{newCount} mới</Badge>}
+                                            {closedCount > 0 && <Badge variant="exempt" size="sm" shape="rounded">{closedCount} đã xử lý</Badge>}
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                </motion.div>
+                              )}
+                            </AnimatePresence>
+                          </>
+                        )}
+
+                        {/* Early/Late Surveys Section */}
+                        {earlyLateGroups.length > 0 && (
+                          <>
+                            <div 
+                              style={{ padding: '10px 16px', background: 'var(--bg-elevated)', fontSize: 11, fontWeight: 700, color: 'var(--status-warning)', borderBottom: '1px solid var(--border-primary)', marginTop: 12, display: 'flex', alignItems: 'center', gap: 8, letterSpacing: '0.02em', cursor: 'pointer', userSelect: 'none' }}
+                              onClick={() => setEarlyLateExpanded(!earlyLateExpanded)}
+                            >
+                               <motion.span animate={{ rotate: earlyLateExpanded ? 0 : -90 }} transition={{ duration: 0.2 }}>
+                                 <Icon.ChevronDown size={14} />
+                               </motion.span>
+                               <Icon.Clock size={13} />
+                               KHẢO SÁT SỚM / MUỘN (NGOÀI ĐỢT)
+                               <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 4, background: 'var(--status-warning)', color: 'white' }}>{earlyLateGroups.length}</span>
+                            </div>
+                            <AnimatePresence initial={false}>
+                              {earlyLateExpanded && (
+                                <motion.div
+                                  initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+                                  style={{ overflow: 'hidden' }}
+                                >
+                                  {sortClassGroups(earlyLateGroups)
+                                    .map((group) => {
+                                      const newCount = group.tickets.filter(t => t.status === 'NEW').length;
+                                      const closedCount = group.tickets.filter(t => t.status === 'CLOSED').length;
+                                      const surveyMeta = getSurveyBadgeMeta(group);
+                                      return (
+                                        <div
+                                          key={group.id}
+                                          style={{
+                                            display: 'grid',
+                                            gridTemplateColumns: 'minmax(0, 1.7fr) minmax(0, 0.6fr) minmax(0, 0.95fr) minmax(0, 0.7fr) minmax(0, 0.7fr) minmax(0, 1.15fr) minmax(0, 1fr)',
+                                            padding: '12px 16px',
+                                            borderBottom: '1px solid var(--border-primary)',
+                                            alignItems: 'center',
+                                            transition: 'background 0.1s ease',
+                                            cursor: 'pointer',
+                                            background: 'var(--bg-surface)',
+                                            minWidth: 900,
+                                            opacity: 0.85
+                                          }}
+                                          onClick={() => setSelectedClassForModal({ className: group.className, tickets: group.tickets as typeof filteredTickets, classData: group.classData })}
+                                          onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-elevated)'}
+                                          onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-surface)'}
+                                        >
+                                          <div style={{ fontSize: 13, fontWeight: 510, color: 'var(--text-primary)' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4, flexWrap: 'wrap' }}>
+                                              <span style={{ fontWeight: 600 }}>{group.className}</span>
+                                            </div>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-1)', marginTop: 4 }}>
+                                              <CourseCategoryBadge category={group.courseCategory} size="sm" />
+                                              <CentreBadge name={group.centreName} />
+                                            </div>
+                                          </div>
+
+                                          {/* Buổi */}
+                                          <div style={{ fontSize: 13, color: 'var(--text-quaternary)', fontStyle: 'italic' }}>
+                                            Sớm/Muộn
+                                          </div>
+
+                                          <div>
+                                            <div style={{ fontSize: 13, fontWeight: 590, color: 'var(--text-primary)' }}>
+                                              {group.uniqueStudentsDone} HV
+                                            </div>
+                                          </div>
+
+                                          <div style={{ fontSize: 15, fontWeight: 590, color: 'var(--text-secondary)' }}>
+                                            {group.count}
+                                          </div>
+
+                                          <div style={{ 
+                                            fontSize: 16, 
+                                            fontWeight: 600, 
+                                            color: group.avgScore > 0 ? surveyColor(group.avgScore) : 'var(--text-quaternary)',
+                                            display: 'flex', alignItems: 'center', gap: 4
+                                          }}>
+                                            <span>★</span>
+                                            <span>{group.avgScore > 0 ? group.avgScore.toFixed(1) : '—'}</span>
+                                          </div>
+
+                                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
+                                            <Badge
+                                              variant="custom"
+                                              size="sm"
+                                              shape="rounded"
+                                              customColors={{ background: surveyMeta.bg, color: surveyMeta.color, border: surveyMeta.bg }}
+                                            >
+                                              {surveyMeta.label}
+                                            </Badge>
+                                          </div>
+
+                                          <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+                                            {newCount > 0 && <Badge variant="passed" size="sm" shape="rounded">{newCount} mới</Badge>}
+                                            {closedCount > 0 && <Badge variant="exempt" size="sm" shape="rounded">{closedCount} đã xử lý</Badge>}
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                </motion.div>
+                              )}
+                            </AnimatePresence>
+                          </>
+                        )}
+
+                        {activeGroups.length === 0 && (
                           <div style={{ padding: '28px 16px', textAlign: 'center', color: 'var(--text-quaternary)', fontSize: 13 }}>
                             Không có dữ liệu để hiển thị.
+                          </div>
+                        )}
+
+                      </div>
+                    )}
+
+                    {/* PENDING SURVEYS VIEW */}
+                    {viewMode === 'pending' && (
+                      <div className={styles.tableScrollWrapper}>
+                        {/* Headers */}
+                        <div style={{
+                          display: 'grid',
+                          gridTemplateColumns: 'minmax(0,2fr) minmax(0,1.5fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr)',
+                          padding: '7px 16px', minWidth: 700,
+                          borderBottom: '1px solid var(--border-primary)',
+                          fontSize: 11, fontWeight: 590, color: 'var(--text-quaternary)',
+                          letterSpacing: '0.04em', textTransform: 'uppercase',
+                          background: 'var(--bg-elevated)',
+                        }}>
+                          <div>Lớp học</div>
+                          <div>Khoá học / Khối</div>
+                          <div>Cơ sở</div>
+                          <div>Sĩ số</div>
+                          <div>Ghi chú</div>
+                        </div>
+
+                        {/* Skeleton */}
+                        {pendingLoading && pendingClasses.length === 0 && Array.from({ length: 5 }).map((_, i) => (
+                           <div key={i} className={styles.skeletonRow} style={{ gridTemplateColumns: 'minmax(0,2fr) minmax(0,1.5fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr)', minWidth: 700 }}>
+                             <div className={styles.skeletonBlock} style={{ width: '80%' }} />
+                             <div className={styles.skeletonBlock} style={{ width: '60%' }} />
+                             <div className={styles.skeletonBlock} style={{ width: '40%' }} />
+                             <div className={styles.skeletonBlock} style={{ width: '30%' }} />
+                             <div className={styles.skeletonBlock} style={{ width: '50%' }} />
+                           </div>
+                        ))}
+
+                        {/* Rows */}
+                        <AnimatePresence initial={false}>
+                          {filteredPendingClasses.map((c, idx) => (
+                              <motion.div key={c.id}
+                                style={{
+                                  display: 'grid',
+                                  gridTemplateColumns: 'minmax(0,2fr) minmax(0,1.5fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr)',
+                                  padding: '12px 16px', minWidth: 700,
+                                  borderBottom: '1px solid var(--border-primary)',
+                                  alignItems: 'center',
+                                  background: 'var(--bg-surface)',
+                                }}
+                                initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+                                transition={{ duration: 0.18, delay: Math.min(idx * 0.012, 0.3) }}
+                                onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-elevated)'}
+                                onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-surface)'}>
+                                
+                                <div style={{ fontSize: 14, fontWeight: 590, color: 'var(--text-primary)' }}>
+                                  {c.name}
+                                </div>
+                                <div style={{ minWidth: 0 }}>
+                                  <div style={{ fontSize: 13, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {c.course?.name || '—'}
+                                  </div>
+                                  <div style={{ fontSize: 11, color: 'var(--text-quaternary)' }}>
+                                    {getCourseCategory(c)}
+                                  </div>
+                                </div>
+                                <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                                  {c.centre?.shortName || '—'}
+                                </div>
+                                <div style={{ fontSize: 14, fontWeight: 510 }}>
+                                  {c.students?.length || 0}
+                                </div>
+                                <div>
+                                  <Badge variant="custom" size="sm" customColors={{ background: 'var(--brand-indigo-muted)', color: 'var(--brand-indigo)', border: 'transparent' }}>
+                                    Buổi 4/8
+                                  </Badge>
+                                </div>
+                              </motion.div>
+                          ))}
+                        </AnimatePresence>
+
+                        {!pendingLoading && filteredPendingClasses.length === 0 && (
+                          <div style={{ padding: '40px 16px', textAlign: 'center' }}>
+                            <EmptyState
+                               title="Không có lớp nào cần khảo sát"
+                               subtitle="Trong khoảng thời gian này không tìm thấy lớp nào tới buổi 4 hoặc buổi 8."
+                            />
                           </div>
                         )}
                       </div>
                     )}
             </AdminTableSection>
+            )}
+
+            {viewMode === 'by-class' && inactiveGroups.length > 0 && (
+              <div className={styles.tableSection} style={{ opacity: 0.55, marginTop: 'var(--space-4)' }}>
+                <TableGroupHeader
+                  title="Lớp đã huỷ / tạm dừng"
+                  count={inactiveGroups.length}
+                  note="Không tính vào bảng phân tích lớp"
+                  isExpanded={inactiveExpanded}
+                  onToggle={() => setInactiveExpanded(p => !p)}
+                />
+                <AnimatePresence initial={false}>
+                  {inactiveExpanded && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      style={{ overflow: 'hidden' }}
+                    >
+                      <div className={styles.tableScrollWrapper} style={{ minWidth: 0 }}>
+                        {inactiveGroups
+                          .sort((a, b) => a.className.localeCompare(b.className))
+                          .map((group) => (
+                            <div
+                              key={group.id}
+                              className={styles.classItem}
+                              style={{
+                                gridTemplateColumns: 'minmax(0, 1.8fr) minmax(0, 0.8fr) minmax(0, 1fr) minmax(0, 0.8fr)',
+                                cursor: 'pointer',
+                              }}
+                              onClick={() => {
+                                setSelectedClassForModal({ className: group.className, tickets: group.tickets as typeof filteredTickets, classData: group.classData });
+                              }}
+                            >
+                              <div className={styles.className}>
+                                {group.className}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-1)', marginTop: 2 }}>
+                                  <CourseCategoryBadge category={group.courseCategory} size="sm" />
+                                  <CentreBadge name={group.centreName} />
+                                </div>
+                              </div>
+                              <div style={{ fontSize: 11, color: 'var(--text-quaternary)' }}>
+                                {group.classStatus || '—'}
+                              </div>
+                              <div style={{ fontSize: 11, color: 'var(--text-quaternary)' }}>
+                                {group.sessionsInRange.length > 0 ? `Buổi ${group.sessionsInRange.join(', ')}` : 'Ngoài đợt'}
+                              </div>
+                              <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+                                {group.count > 0 && <Badge variant="default" size="sm" shape="rounded">{group.count} phiếu</Badge>}
+                              </div>
+                            </div>
+                          ))}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
             )}
             </div>
           {!loading && tickets.length === 0 && (
@@ -1399,21 +1973,49 @@ export default function TicketsDashboard() {
       {/* ── CLASS STUDENTS MODAL (By Class View) ── */}
       <Modal open={!!selectedClassForModal} onClose={() => setSelectedClassForModal(null)}>
         {selectedClassForModal && (() => {
-          // Group tickets by student
-          const studentGroups = new Map<string, typeof selectedClassForModal.tickets>();
+          // Construct unified list combining classData valid students and actual tickets
+          const classStudents = selectedClassForModal.classData?.students || [];
+          const validStudents = classStudents.filter((st: any) => !isExemptStudent(st, selectedClassForModal.classData?.slots));
+          
+          // Group existing tickets by student
+          const ticketGroups = new Map<string, typeof selectedClassForModal.tickets>();
           selectedClassForModal.tickets.forEach(t => {
-            const studentKey = t.ticketSource?.studentId || t.ticketSource?.studentName || 'unknown';
-            if (!studentGroups.has(studentKey)) {
-              studentGroups.set(studentKey, []);
+            const key = t.ticketSource?.studentId || 'unknown';
+            if (!ticketGroups.has(key)) ticketGroups.set(key, []);
+            ticketGroups.get(key)!.push(t);
+          });
+
+          // Assemble consistent list
+          const rowList: Array<{ name: string; tickets: any[]; studentId?: string; }> = [];
+          const processedIds = new Set<string>();
+
+          validStudents.forEach((st: any) => {
+            const id = st.student?.id;
+            const name = st.student?.fullName || 'Học viên';
+            const tkts = id ? (ticketGroups.get(id) || []) : [];
+            rowList.push({ name, tickets: tkts, studentId: id });
+            if (id) processedIds.add(id);
+          });
+
+          // Add residual ticket-only students (in case some students have tickets but aren't on current class list)
+          ticketGroups.forEach((tkts, id) => {
+            if (id !== 'unknown' && !processedIds.has(id)) {
+              const name = tkts[0]?.ticketSource?.studentName || 'Học viên';
+              rowList.push({ name, tickets: tkts, studentId: id });
             }
-            studentGroups.get(studentKey)!.push(t);
           });
           
+          if (ticketGroups.has('unknown')) {
+             rowList.push({ name: 'Học viên không rõ ID', tickets: ticketGroups.get('unknown')! });
+          }
+
+          rowList.sort((a, b) => a.name.localeCompare(b.name));
+
           return (
             <>
               <ModalHeader
                 title={`${selectedClassForModal.className}`}
-                subtitle={`${studentGroups.size} học viên • ${selectedClassForModal.tickets.length} phiếu đánh giá`}
+                subtitle={`${rowList.length} học viên • ${selectedClassForModal.tickets.length} phiếu đánh giá`}
                 onClose={() => setSelectedClassForModal(null)}
               />
               <div className={styles.modalBody} style={{ padding: '16px 20px 20px' }}>
@@ -1431,9 +2033,21 @@ export default function TicketsDashboard() {
                     </tr>
                   </thead>
                   <tbody>
-                    {Array.from(studentGroups.entries()).map(([studentKey, tickets]) => {
-                      const studentName = tickets[0].ticketSource?.studentName || 'Học viên';
-                      
+                    {rowList.map(({ name, tickets, studentId }) => {
+                      if (tickets.length === 0) {
+                        return (
+                          <tr key={`empty-${studentId || name}`}>
+                            <td style={{ fontWeight: 510 }}>{name}</td>
+                            <td style={{ textAlign: 'center', fontSize: 12, color: 'var(--text-quaternary)' }}>—</td>
+                            <td style={{ fontSize: 12, whiteSpace: 'nowrap', color: 'var(--text-quaternary)' }}>—</td>
+                            <td><Badge variant="failed" size="sm">Chưa làm</Badge></td>
+                            <td style={{ fontSize: 12, color: 'var(--text-quaternary)' }}>—</td>
+                            <td style={{ textAlign: 'center', color: 'var(--text-quaternary)' }}>—</td>
+                            <td style={{ color: 'var(--text-quaternary)', fontSize: 12 }}>Chưa khảo sát</td>
+                          </tr>
+                        );
+                      }
+
                       return tickets.map((t, idx) => {
                         const teacherScore = (t as any)._groupScores?.find((gs: any) => {
                           const gName = gs.group.toUpperCase();
@@ -1447,7 +2061,7 @@ export default function TicketsDashboard() {
                             style={{ cursor: 'pointer' }}>
                             {idx === 0 && (
                               <td rowSpan={tickets.length} style={{ fontWeight: 510 }}>
-                                {studentName}
+                                {name}
                                 {tickets.length > 1 && (
                                   <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4 }}>
                                     {tickets.length} đợt

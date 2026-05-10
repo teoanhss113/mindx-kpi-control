@@ -35,6 +35,17 @@ export interface Class {
   teachers: TeacherSlot[];
   students: StudentSlot[];
   slots: Session[];
+  surveySessions?: ClassSurveySessionStatus[];
+}
+
+export interface ClassSurveySessionStatus {
+  sessionNumber: number;
+  sessionId: string;
+  classSurveyId?: string;
+  surveyId: string;
+  status?: string;
+  responseCount: number;
+  opened: boolean;
 }
 
 export interface TeacherSlot {
