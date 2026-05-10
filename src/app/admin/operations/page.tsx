@@ -3062,8 +3062,8 @@ export default function TeacherSchedulePage() {
       schedule.slots.forEach((slot: any) => {
         const start = new Date(slot.startTime);
         if (start < weekStart || start > weekEnd) return;
-        const startStr = slot.startTime.includes('T') ? slot.startTime.split('T')[1].substring(0, 5) : '00:00';
-        const endStr = slot.endTime.includes('T') ? slot.endTime.split('T')[1].substring(0, 5) : '00:00';
+        const startStr = FORMAT.time(new Date(slot.startTime));
+        const endStr = FORMAT.time(new Date(slot.endTime));
         timeRangeSet.add(`${startStr} - ${endStr}`);
       });
     });
@@ -3135,8 +3135,8 @@ export default function TeacherSchedulePage() {
         
         const slotEndMs = new Date(slot.endTime).getTime();
         const slotDate = slot.startTime.split('T')[0];
-        const startStr = slot.startTime.includes('T') ? slot.startTime.split('T')[1].substring(0, 5) : '00:00';
-        const endStr = slot.endTime.includes('T') ? slot.endTime.split('T')[1].substring(0, 5) : '00:00';
+        const startStr = FORMAT.time(new Date(slot.startTime));
+        const endStr = FORMAT.time(new Date(slot.endTime));
         const durationMs = slotEndMs - slotStartMs;
         
         const dedupeKey = slot.type === 'class'

@@ -389,7 +389,7 @@ export const COURSE_CATEGORY_ORDER: Record<Course, number> = {
 /**
  * CLASS STATUSES — Shared filtering rules for class-like LMS records
  */
-export const CLASS_INACTIVE_STATUSES = new Set(['ABANDONED', 'REJECTED', 'CANCELLED']);
+export const CLASS_INACTIVE_STATUSES = new Set(['ABANDONED', 'REJECTED', 'CANCELLED', 'SUSPENDED', 'PREPARING']);
 
 /**
  * LINEAR DESIGN SYSTEM COLORS — Chart colors with Linear Indigo as primary

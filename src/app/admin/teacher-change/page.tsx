@@ -477,7 +477,7 @@ export default function TeacherChangePage() {
     return Array.from(seen.entries()).map(([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label));
   }, [activeClasses]);
 
-  const filteredClasses = useMemo(() => {
+  const baseFilteredClasses = useMemo(() => {
     let list = activeClasses;
     if (search.trim()) {
       const q = search.toLowerCase();
@@ -495,6 +495,11 @@ export default function TeacherChangePage() {
         return pct >= rateRange[0] && pct <= rateRange[1];
       });
     }
+    return list;
+  }, [activeClasses, search, selectedCourseLines, selectedStatuses, selectedCentreIds, selectedLevels, selectedOperations, rateRange]);
+
+  const filteredClasses = useMemo(() => {
+    let list = baseFilteredClasses;
     if (quickFilter === 'changedLEC') list = list.filter(a => a.changedSlots > 0);
     if (quickFilter === 'multiTeachers') list = list.filter(a => a.uniqueTeacherCount >= 3);
     
@@ -512,16 +517,16 @@ export default function TeacherChangePage() {
       }
       return 0;
     });
-  }, [activeClasses, search, selectedCourseLines, selectedStatuses, selectedCentreIds, selectedLevels, selectedOperations, rateRange, sortKey, sortDir]);
+  }, [baseFilteredClasses, sortKey, sortDir, quickFilter]);
 
   const changedLECCount = useMemo(
-    () => filteredClasses.filter(c => c.changedSlots > 0).length,
-    [filteredClasses]
+    () => baseFilteredClasses.filter(c => c.changedSlots > 0).length,
+    [baseFilteredClasses]
   );
 
   const multiTeacherCount = useMemo(
-    () => filteredClasses.filter(c => c.uniqueTeacherCount >= 3).length,
-    [filteredClasses]
+    () => baseFilteredClasses.filter(c => c.uniqueTeacherCount >= 3).length,
+    [baseFilteredClasses]
   );
 
   // CSV Export handler

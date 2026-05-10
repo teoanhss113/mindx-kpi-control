@@ -35,7 +35,7 @@ import {
 import { useTableSort } from '@/hooks/useTableSort';
 import { useQuickFilterChips } from '@/hooks/useUserPreferences';
 import { useCSVExportPreferences } from '@/hooks/useCSVExportPreferences';
-import { CACHE_KEYS, LABELS, MESSAGES, ENTITIES, FORMAT } from '@/constants';
+import { CACHE_KEYS, LABELS, MESSAGES, ENTITIES, FORMAT, CLASS_INACTIVE_STATUSES } from '@/constants';
 import { useSharedDateRange, useSharedCentres } from '@/hooks/useSharedFilterState';
 import { exportToCSV, CSVColumn, CSVFormatters } from '@/lib/csvExport';
 import styles from '../../dashboard.module.css';
@@ -311,7 +311,7 @@ export default function DashboardPage() {
     let demoCount = 0;
 
     classes.forEach(cls => {
-      const isCancelled = cls.status === 'ABANDONED' || cls.status === 'REJECTED' || cls.status === 'PREPARING';
+      const isCancelled = CLASS_INACTIVE_STATUSES.has(cls.status?.toUpperCase?.() || '');
       const cKey = getCourseCategory(cls);
       const courseKey = getCourseKey(cls);
       const isExcludedByCourse = courseKey ? exemptedCourses[courseKey] === true : false;
