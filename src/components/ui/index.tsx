@@ -104,8 +104,10 @@ export {
   getOfficeHourStatusMeta,
   getOfficeHourTypeLabel,
   getPriorityMeta,
+  getRawStatusVariant,
   getTicketStatusMeta,
   normalizeStatusValue,
+  RawStatusBadge,
 } from './StatusMeta'
 export type {
   AttendanceAlertKind,

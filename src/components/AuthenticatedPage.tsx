@@ -20,7 +20,8 @@ export function AuthenticatedPage({ children }: AuthenticatedPageProps) {
   useEffect(() => {
     // Only redirect if not loading and no session
     if (!isLoading && !session) {
-      router.replace('/login');
+      const callbackUrl = encodeURIComponent(window.location.pathname + window.location.search);
+      router.replace(`/login?callbackUrl=${callbackUrl}`);
     }
   }, [session, isLoading, router]);
 

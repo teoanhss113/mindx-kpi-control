@@ -68,6 +68,38 @@ export function getTicketStatusMeta(status: string | null | undefined): TicketSt
   return { kind: 'other', label: status || '—', variant: 'default', color: 'var(--text-secondary)' };
 }
 
+export function getRawStatusVariant(status: string | null | undefined): BadgeVariant {
+  const normalized = normalizeStatusValue(status);
+  if (['APPROVED', 'PASS', 'PASSED', 'CONFIRMED', 'COMPLETED', 'ACTIVE', 'OPEN', 'NEW'].includes(normalized)) {
+    return 'passed';
+  }
+  if (['REJECTED', 'DENIED', 'FAIL', 'FAILED', 'ABANDONED', 'CANCELED', 'CANCELLED', 'INACTIVE', 'CLOSED'].includes(normalized)) {
+    return 'failed';
+  }
+  if (['PENDING', 'WAITING', 'IN_PROGRESS', 'PROCESSING'].includes(normalized)) {
+    return 'warning';
+  }
+  return 'exempt';
+}
+
+export function RawStatusBadge({
+  status,
+  variant,
+  size = 'sm',
+  shape = 'rounded',
+}: {
+  status: string | null | undefined;
+  variant?: BadgeVariant;
+  size?: BadgeSize;
+  shape?: BadgeShape;
+}) {
+  return (
+    <Badge variant={variant ?? getRawStatusVariant(status)} size={size} shape={shape}>
+      {status || '—'}
+    </Badge>
+  );
+}
+
 export function TicketStatusBadge({
   status,
   size = 'sm',

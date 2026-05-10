@@ -25,6 +25,7 @@ import { analyzeClassQuality, DEFAULT_EXEMPTED_SESSIONS } from '@/lib/classQuali
 import { computeTBCK, determineRank } from '@/lib/courseGrading';
 import { PageLayout } from '@/components/PageLayout';
 import { ClassQualityUnifiedTable } from '@/components/ClassQualityUnifiedTable';
+import { ProtectedPage } from '@/components/ProtectedPage';
 
 import {
   Icon,
@@ -3221,8 +3222,9 @@ export default function TeacherSchedulePage() {
   const userName = _displayName || _email.split('@')[0];
 
   return (
-    <>
-      <ToastContainer toasts={toasts} onRemove={removeToast} />
+    <ProtectedPage pageKey="teacher-schedule">
+      <>
+        <ToastContainer toasts={toasts} onRemove={removeToast} />
       <PageLayout
         title={TEACHER_SCHEDULE_LABELS.PAGE_TITLE}
         activePage="operations"
@@ -4731,6 +4733,7 @@ export default function TeacherSchedulePage() {
         </Modal>
       </PageLayout>
     </>
+    </ProtectedPage>
   );
 }
 

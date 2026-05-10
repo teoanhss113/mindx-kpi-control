@@ -34,6 +34,7 @@ export interface BadgeProps {
   className?: string;
   style?: React.CSSProperties;
   onClick?: () => void;
+  title?: string;
   // Custom colors for 'custom' variant
   customColors?: {
     background: string;
@@ -120,6 +121,7 @@ export function Badge({
   className = '',
   style = {},
   onClick,
+  title,
   customColors
 }: BadgeProps) {
   // Get colors based on variant
@@ -159,6 +161,7 @@ export function Badge({
       className={cssClasses}
       style={inlineStyles}
       onClick={onClick}
+      title={title}
     >
       {children}
     </span>

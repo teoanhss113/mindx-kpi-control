@@ -8,8 +8,13 @@ import { isAuthenticated, loadSession } from '@/services/authService';
 import { useAuth } from '@/lib/AuthContext';
 import styles from './login.module.css';
 
-export default function LoginPage() {
+import { useSearchParams } from 'next/navigation';
+import { Suspense } from 'react';
+
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const callbackUrl = searchParams.get('callbackUrl');
   const { updateSession } = useAuth();
   const [emailOrUsername, setEmailOrUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -17,12 +22,12 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
 
-  // If already authenticated, redirect to dashboard
+  // If already authenticated, redirect to dashboard or callbackUrl
   useEffect(() => {
     if (isAuthenticated()) {
-      router.replace('/');
+      router.replace(callbackUrl || '/');
     }
-  }, [router]);
+  }, [router, callbackUrl]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -79,11 +84,11 @@ export default function LoginPage() {
       await new Promise((r) => setTimeout(r, 400));
 
       if (profile?.role_id && profile.is_active) {
-        console.log('[Login] Redirecting to /admin');
-        router.replace('/admin');
+        console.log('[Login] Redirecting to:', callbackUrl || '/admin');
+        router.replace(callbackUrl || '/admin');
       } else {
-        console.log('[Login] Redirecting to /');
-        router.replace('/');
+        console.log('[Login] Redirecting to:', callbackUrl || '/');
+        router.replace(callbackUrl || '/');
       }
     } catch (err) {
       console.error('[Login] Login error:', err);
@@ -222,6 +227,18 @@ export default function LoginPage() {
         </p>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', background: 'var(--bg-marketing)' }}>
+        <div className={styles.spinner} />
+      </div>
+    }>
+      <LoginForm />
+    </Suspense>
   );
 }
 

@@ -31,6 +31,7 @@ import { getCache, setCache, clearCache } from '@/lib/idb';
 import { useQuickFilterChips } from '@/hooks/useUserPreferences';
 import { useSharedCentres } from '@/hooks/useSharedFilterState';
 import { getCourseLineCategory } from '@/lib/courseCategories';
+import { ProtectedPage } from '@/components/ProtectedPage';
 import type { Teacher } from '@/types/teacher';
 import styles from '../../dashboard.module.css';
 
@@ -94,13 +95,7 @@ export default function TeachersPage() {
     })();
   }, [addToast]);
 
-  // Auth check
-  useEffect(() => {
-    if (authLoading) return;
-    if (!session) {
-      router.replace('/login');
-    }
-  }, [session, authLoading, router]);
+
 
   // ESC key handler for modal
   useEffect(() => {
@@ -374,19 +369,22 @@ export default function TeachersPage() {
 
   if (authLoading) {
     return (
-      <PageLayout title="Quản lý Giáo viên" activePage="teachers" sidebarOpen={sidebarOpen} onSidebarToggle={setSidebarOpen}>
-        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '50vh' }}>
-          <div style={{ textAlign: 'center' }}>
-            <div className={styles.spinner} style={{ margin: '0 auto var(--space-3)' }} />
-            <p style={{ color: 'var(--text-tertiary)' }}>Đang tải...</p>
+      <ProtectedPage pageKey="teachers">
+        <PageLayout title="Quản lý Giáo viên" activePage="teachers" sidebarOpen={sidebarOpen} onSidebarToggle={setSidebarOpen}>
+          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '50vh' }}>
+            <div style={{ textAlign: 'center' }}>
+              <div className={styles.spinner} style={{ margin: '0 auto var(--space-3)' }} />
+              <p style={{ color: 'var(--text-tertiary)' }}>Đang tải...</p>
+            </div>
           </div>
-        </div>
-      </PageLayout>
+        </PageLayout>
+      </ProtectedPage>
     );
   }
 
   return (
-    <PageLayout title="Quản lý Giáo viên" activePage="teachers" sidebarOpen={sidebarOpen} onSidebarToggle={setSidebarOpen}>
+    <ProtectedPage pageKey="teachers">
+      <PageLayout title="Quản lý Giáo viên" activePage="teachers" sidebarOpen={sidebarOpen} onSidebarToggle={setSidebarOpen}>
       {/* Toolbar */}
       <Toolbar
         centres={centres}
@@ -848,5 +846,6 @@ export default function TeachersPage() {
       {/* Toast Notifications */}
       <ToastContainer toasts={toasts} onRemove={removeToast} />
     </PageLayout>
+    </ProtectedPage>
   );
 }

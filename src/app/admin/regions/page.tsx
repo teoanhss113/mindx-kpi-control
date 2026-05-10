@@ -7,7 +7,7 @@ import { getRegions, createRegion, updateRegion, deleteRegion } from '@/lib/admi
 import { getAuthToken } from '@/lib/auth/clientAuth';
 import { AdminPageWrapper } from '@/components/AdminPageWrapper';
 import { useTableSort } from '@/hooks/useTableSort';
-import { ActiveStatusBadge, SortableHeader, AdminToolbar, AdminTableSection, Icon, Spinner, EmptyState, CentreSelect, TableActionButton, TableActionGroup } from '@/components/ui';
+import { ActiveStatusBadge, SortableHeader, AdminToolbar, AdminTableSection, Icon, Spinner, EmptyState, CentreSelect, TableActionButton, TableActionGroup, Badge } from '@/components/ui';
 import { fetchAllCentres, type Centre } from '@/services/centresService';
 import { getCache, setCache } from '@/lib/idb';
 import { LABELS, MESSAGES, ENTITIES, CACHE_KEYS } from '@/constants';
@@ -298,9 +298,9 @@ export default function RegionsPage() {
                           {region.region_centres.length > 0 ? (
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-1)' }}>
                               {region.region_centres.slice(0, 3).map((rc) => (
-                                <span key={rc.id} className={styles.reasonTag} style={{ fontSize: 11, textTransform: 'capitalize' }}>
+                                <Badge key={rc.id} variant="default" size="sm" shape="rounded">
                                   {rc.centre_short_name || rc.centre_id}
-                                </span>
+                                </Badge>
                               ))}
                               {region.region_centres.length > 3 && (
                                 <span style={{ fontSize: 11, color: 'var(--text-quaternary)' }}>

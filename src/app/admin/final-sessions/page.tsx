@@ -20,6 +20,7 @@ import type { Class, Session, StudentAttendance, TeacherSlot } from '@/types/cla
 import type { StudentCheckpointScore, StudentDemoScore } from '@/types/classQuality';
 import type { Centre } from '@/services/centresService';
 import { motion, AnimatePresence } from 'framer-motion';
+import { ProtectedPage } from '@/components/ProtectedPage';
 import styles from '@/app/dashboard.module.css';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -449,8 +450,9 @@ export default function FinalSessionsAdminPage() {
   // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
-    <PageLayout title="Giám khảo Cuối khoá" activePage="final-sessions">
-      <ToastContainer toasts={toasts} onRemove={removeToast} />
+    <ProtectedPage pageKey="final-sessions">
+      <PageLayout title="Giám khảo Cuối khoá" activePage="final-sessions">
+        <ToastContainer toasts={toasts} onRemove={removeToast} />
 
       {/* Toolbar */}
       <Toolbar
@@ -1214,6 +1216,7 @@ export default function FinalSessionsAdminPage() {
           );
         })()}
       </Modal>
-    </PageLayout>
+      </PageLayout>
+    </ProtectedPage>
   );
 }

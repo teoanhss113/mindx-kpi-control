@@ -16,7 +16,7 @@ import { getCache, setCache, clearCache } from '@/lib/idb';
 import { getOfficeHourCategory } from '@/lib/courseCategories';
 import { sendNotification, NotificationTemplates } from '@/lib/sendNotification';
 import { OfficeHour, OFFICE_HOUR_STATUS, OFFICE_HOUR_TYPE } from '@/types/officeHours';
-import { useToast, ToastContainer, initials, EmptyState, Toolbar, SelectOption, TableGroupHeader, AdminTableSection, Modal, ModalHeader, MultiSelect, TableToolbar, ChartSectionHeader, StandardXAxis, StandardYAxisCategory, StandardYAxisNumber, ChartLegend, ComposedChartConfig, CustomTooltip, UserSearchInput, type UserSearchResult, ModalFooter, CentreSelect, QuickFilterChips, ShiftRequestSuggestions, type ShiftRequest, OfficeHourTypeBadge, getOfficeHourTypeLabel, KPIThresholdSuggestions, Icon, ViewModeToggle, DetailGrid, DetailField, DetailText, Badge, type BadgeVariant } from '@/components/ui';
+import { useToast, ToastContainer, initials, EmptyState, Toolbar, SelectOption, TableGroupHeader, AdminTableSection, Modal, ModalHeader, MultiSelect, TableToolbar, ChartSectionHeader, StandardXAxis, StandardYAxisCategory, StandardYAxisNumber, ChartLegend, ComposedChartConfig, CustomTooltip, UserSearchInput, type UserSearchResult, ModalFooter, CentreSelect, QuickFilterChips, ShiftRequestSuggestions, type ShiftRequest, OfficeHourTypeBadge, getOfficeHourTypeLabel, KPIThresholdSuggestions, Icon, ViewModeToggle, DetailGrid, DetailField, DetailText, Badge, RawStatusBadge, getRawStatusVariant } from '@/components/ui';
 import { useQuickFilterChips } from '@/hooks/useUserPreferences';
 import { PageLayout } from '@/components/PageLayout';
 import { getNavItemsWithRouter } from '@/lib/navigation';
@@ -25,6 +25,7 @@ import { useFilterOptions } from '@/hooks/useFilterOptions';
 import { CACHE_KEYS, MESSAGES, ENTITIES, LABELS, CHART_COLORS } from '@/constants';
 import { useSharedDateRange, useSharedCentres } from '@/hooks/useSharedFilterState';
 import { conversionColor, KPI_COLORS, CONVERSION_LEGEND } from '@/lib/kpiScoring';
+import { ProtectedPage } from '@/components/ProtectedPage';
 import styles from '../../dashboard.module.css';
 
 // Helper function to parse teacher note from custom field
@@ -52,36 +53,6 @@ const DEFAULT_EXEMPT_APPOINTMENT_STATUSES = ['CANCELED'];
 const OFFICE_HOUR_LIST_GRID = 'minmax(0, 1.2fr) minmax(0, 0.8fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 0.7fr) minmax(0, 0.6fr) minmax(0, 0.9fr) minmax(0, 0.8fr) minmax(0, 0.9fr) minmax(0, 1fr) minmax(0, 1fr)';
 const TEACHER_OFFICE_HOUR_GRID = 'minmax(0, 1.2fr) minmax(0, 0.8fr) minmax(0, 1fr) minmax(0, 0.7fr) minmax(0, 0.6fr) minmax(0, 0.9fr) minmax(0, 0.8fr) minmax(0, 0.9fr) minmax(0, 1fr) minmax(0, 1fr)';
 
-function getOfficeHourStatusVariant(status: string | null | undefined): BadgeVariant {
-  const normalized = (status || '').trim().toUpperCase();
-  if (normalized === 'APPROVED') return 'passed';
-  if (normalized === 'REJECTED' || normalized === 'ABANDONED') return 'failed';
-  if (normalized === 'PENDING') return 'warning';
-  return 'exempt';
-}
-
-function getEvaluationStatusVariant(status: string | null | undefined): BadgeVariant {
-  const normalized = (status || '').trim().toUpperCase();
-  if (['PASS', 'PASSED', 'CONFIRMED', 'APPROVED'].includes(normalized)) return 'passed';
-  if (['FAIL', 'FAILED', 'DENIED', 'REJECTED', 'CANCELED', 'CANCELLED'].includes(normalized)) return 'failed';
-  if (['WAITING', 'PENDING'].includes(normalized)) return 'warning';
-  return 'exempt';
-}
-
-function RawStatusBadge({
-  status,
-  variant,
-}: {
-  status: string | null | undefined;
-  variant: BadgeVariant;
-}) {
-  return (
-    <Badge variant={variant} size="sm" shape="rounded">
-      {status || '—'}
-    </Badge>
-  );
-}
-
 function getEvaluationStatusCounts(appointments?: OfficeHour['appointments']) {
   const counts: Record<string, number> = {};
   appointments?.forEach(apt => {
@@ -106,7 +77,7 @@ function EvaluationStatusSummary({ appointments }: { appointments?: OfficeHour['
       {counts.slice(0, 3).map(([status, count]) => (
         <Badge
           key={status}
-          variant={getEvaluationStatusVariant(status)}
+          variant={getRawStatusVariant(status)}
           size="sm"
           shape="rounded"
           style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-1)' }}
@@ -1597,9 +1568,9 @@ function OfficeHoursPageInner() {
 
                       <div className={styles.reasonsPreview}>
                         {oh.courses?.map(course => (
-                          <span key={course.id} className={styles.reasonTag}>
+                          <Badge key={course.id} variant="default" size="sm" shape="rounded">
                             {course.shortName}
-                          </span>
+                          </Badge>
                         ))}
                       </div>
 
@@ -1612,7 +1583,7 @@ function OfficeHoursPageInner() {
                       <div className={styles.sizeCol}>{totalAppointments}</div>
 
                       <div className={styles.sizeCol}>
-                        <RawStatusBadge status={oh.status} variant={getOfficeHourStatusVariant(oh.status)} />
+                        <RawStatusBadge status={oh.status} />
                       </div>
 
                       <EvaluationStatusSummary appointments={oh.appointments} />
@@ -2233,7 +2204,7 @@ function OfficeHoursPageInner() {
                   </DetailField>
 
                   <DetailField label="Trạng thái">
-                    <RawStatusBadge status={selectedEntry.status} variant={getOfficeHourStatusVariant(selectedEntry.status)} />
+                    <RawStatusBadge status={selectedEntry.status} />
                   </DetailField>
 
                   <DetailField label="Loại ca">
@@ -2499,7 +2470,7 @@ function OfficeHoursPageInner() {
 
                             {/* Trạng thái */}
                             <div>
-                              <RawStatusBadge status={apt.status} variant={getEvaluationStatusVariant(apt.status)} />
+                              <RawStatusBadge status={apt.status} />
                             </div>
 
                             {/* Khoá học */}
@@ -2507,9 +2478,9 @@ function OfficeHoursPageInner() {
                               {apt.courses && apt.courses.length > 0 ? (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
                                   {apt.courses.map(c => (
-                                    <span key={c.id} className={styles.reasonTag} style={{ fontSize: 11, padding: 'var(--space-1) var(--space-2)' }}>
+                                    <Badge key={c.id} variant="default" size="sm" shape="rounded">
                                       {c.shortName}
-                                    </span>
+                                    </Badge>
                                   ))}
                                 </div>
                               ) : (
@@ -2664,9 +2635,7 @@ function OfficeHoursPageInner() {
                               {uts.student?.fullName}
                             </div>
                             {uts.status && (
-                              <span className={`${styles.statusPill} ${styles.exempt}`} style={{ fontSize: 11 }}>
-                                {uts.status}
-                              </span>
+                              <RawStatusBadge status={uts.status} />
                             )}
                           </div>
 
@@ -2828,9 +2797,9 @@ function OfficeHoursPageInner() {
 
                         <div className={styles.reasonsPreview}>
                           {oh.courses?.map(course => (
-                            <span key={course.id} className={styles.reasonTag}>
+                            <Badge key={course.id} variant="default" size="sm" shape="rounded">
                               {course.shortName}
-                            </span>
+                            </Badge>
                           ))}
                         </div>
 
@@ -2839,7 +2808,7 @@ function OfficeHoursPageInner() {
                         <div className={styles.sizeCol}>{totalAppointments}</div>
 
                         <div className={styles.sizeCol}>
-                          <RawStatusBadge status={oh.status} variant={getOfficeHourStatusVariant(oh.status)} />
+                          <RawStatusBadge status={oh.status} />
                         </div>
 
                         <EvaluationStatusSummary appointments={oh.appointments} />
@@ -2942,8 +2911,10 @@ function OfficeHoursPageInner() {
 
 export default function OfficeHoursPage() {
   return (
-    <Suspense fallback={<div>Đang tải...</div>}>
-      <OfficeHoursPageInner />
-    </Suspense>
+    <ProtectedPage pageKey="office-hours">
+      <Suspense fallback={<div>Đang tải...</div>}>
+        <OfficeHoursPageInner />
+      </Suspense>
+    </ProtectedPage>
   );
 }

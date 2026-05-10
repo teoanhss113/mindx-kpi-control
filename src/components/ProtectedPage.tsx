@@ -28,7 +28,8 @@ export function ProtectedPage({ children, pageKey, requireEdit = false }: Protec
   useEffect(() => {
     if (authLoading) return;
     if (!session) {
-      router.replace('/login');
+      const callbackUrl = encodeURIComponent(window.location.pathname + window.location.search);
+      router.replace(`/login?callbackUrl=${callbackUrl}`);
     }
   }, [session, authLoading, router]);
 

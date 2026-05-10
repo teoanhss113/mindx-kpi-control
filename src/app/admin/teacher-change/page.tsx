@@ -42,6 +42,7 @@ import { useCSVExportPreferences } from '@/hooks/useCSVExportPreferences';
 import { CACHE_KEYS, LABELS, MESSAGES, ENTITIES, FORMAT, CLASS_INACTIVE_STATUSES } from '@/constants';
 import { useSharedDateRange, useSharedCentres } from '@/hooks/useSharedFilterState';
 import { exportToCSV, CSVColumn, CSVFormatters } from '@/lib/csvExport';
+import { ProtectedPage } from '@/components/ProtectedPage';
 import styles from '@/app/dashboard.module.css';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -265,9 +266,7 @@ export default function TeacherChangePage() {
 
   const { toasts, addToast, removeToast } = useToast();
 
-  useEffect(() => {
-    if (!authLoading && !isAuthenticated()) router.replace('/login');
-  }, [authLoading, router]);
+
 
   const _session   = session ?? loadSession();
   const _name      = _session?.displayName?.trim() || '';
@@ -636,10 +635,10 @@ export default function TeacherChangePage() {
 
   if (authLoading) return null;
 
-  // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <>
-      <ToastContainer toasts={toasts} onRemove={removeToast} />
+    <ProtectedPage pageKey="teacher-change">
+      <>
+        <ToastContainer toasts={toasts} onRemove={removeToast} />
       <PageLayout
         title="Thay đổi Giáo viên"
         activePage="teacher-change"
@@ -1217,6 +1216,7 @@ export default function TeacherChangePage() {
         title="Cài đặt xuất CSV - Tỷ lệ thay đổi Giáo viên"
       />
     </>
+    </ProtectedPage>
   );
 }
 

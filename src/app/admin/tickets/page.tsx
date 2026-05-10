@@ -27,7 +27,7 @@ import {
   useToast,
   StandardXAxis, StandardYAxisCategory, ChartLegend, VerticalBarChartConfig, CustomTooltip,
   SortableHeader, TopicBadge, UserSearchInput, type UserSearchResult, ModalFooter,
-  CentreSelect, CourseCategoryBadge, QuickFilterChips, TicketStatusBadge, FilterChip, KPIThresholdSuggestions, getPriorityMeta, getTicketStatusMeta,
+  CentreSelect, CourseCategoryBadge, QuickFilterChips, TicketStatusBadge, FilterChip, KPIThresholdSuggestions, getPriorityMeta, getTicketStatusMeta, Badge,
 } from '@/components/ui';
 import { useTableSort } from '@/hooks/useTableSort';
 import { useFilterOptions } from '@/hooks/useFilterOptions';
@@ -35,6 +35,7 @@ import { useQuickFilterChips } from '@/hooks/useUserPreferences';
 import { PageLayout } from '@/components/PageLayout';
 import { CACHE_KEYS, LABELS, MESSAGES, ENTITIES, FORMAT, CHART_COLORS, TICKET_LABELS } from '@/constants';
 import { useSharedDateRange, useSharedCentres } from '@/hooks/useSharedFilterState';
+import { ProtectedPage } from '@/components/ProtectedPage';
 import styles from '@/app/dashboard.module.css';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -796,8 +797,9 @@ export default function TicketsDashboard() {
   });
 
   return (
-    <>
-      <ToastContainer toasts={toasts} onRemove={removeToast} />
+    <ProtectedPage pageKey="tickets">
+      <>
+        <ToastContainer toasts={toasts} onRemove={removeToast} />
       <PageLayout
         title={TICKET_LABELS.PAGE_TITLE}
         activePage="tickets"
@@ -1157,9 +1159,16 @@ export default function TicketsDashboard() {
                                     const bg = color.startsWith('var(') ? 'rgba(0,0,0,0.05)' : `${color}15`;
 
                                     return (
-                                      <span key={gs.group} title={gs.group} style={{ color, background: bg, padding: '2px 6px', borderRadius: "var(--radius-comfortable)", fontSize: 11, fontWeight: 600 }}>
+                                      <Badge
+                                        key={gs.group}
+                                        title={gs.group}
+                                        variant="custom"
+                                        size="sm"
+                                        shape="rounded"
+                                        customColors={{ background: bg, color, border: bg }}
+                                      >
                                         {gs.group}: ★ {gs.avg}
-                                      </span>
+                                      </Badge>
                                     );
                                   })
                                 ) : <span style={{ fontSize: 13, color: 'var(--text-quaternary)' }}>—</span>}
@@ -1352,30 +1361,14 @@ export default function TicketsDashboard() {
                               {/* Trạng thái */}
                               <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
                                 {newCount > 0 && (
-                                  <span style={{
-                                    fontSize: 11,
-                                    fontWeight: 600,
-                                    color: 'var(--status-emerald)',
-                                    background: 'rgba(16, 185, 129, 0.15)',
-                                    padding: '2px 8px',
-                                    borderRadius: "var(--radius-standard)",
-                                    border: '1px solid rgba(16, 185, 129, 0.4)'
-                                  }}>
+                                  <Badge variant="passed" size="sm" shape="rounded">
                                     {newCount} mới
-                                  </span>
+                                  </Badge>
                                 )}
                                 {closedCount > 0 && (
-                                  <span style={{
-                                    fontSize: 11,
-                                    fontWeight: 600,
-                                    color: 'var(--text-tertiary)',
-                                    background: 'rgba(0, 0, 0, 0.04)',
-                                    padding: '2px 8px',
-                                    borderRadius: "var(--radius-standard)",
-                                    border: '1px solid var(--border-secondary)'
-                                  }}>
+                                  <Badge variant="exempt" size="sm" shape="rounded">
                                     {closedCount} đã xử lý
-                                  </span>
+                                  </Badge>
                                 )}
                               </div>
                             </div>
@@ -1401,6 +1394,7 @@ export default function TicketsDashboard() {
               subtitle={'Chọn khoảng thời gian và nhấn "Tải dữ liệu"'}
             />
           )}
+      </PageLayout>
 
       {/* ── CLASS STUDENTS MODAL (By Class View) ── */}
       <Modal open={!!selectedClassForModal} onClose={() => setSelectedClassForModal(null)}>
@@ -1496,17 +1490,15 @@ export default function TicketsDashboard() {
                                     const bg = color.startsWith('var(') ? 'rgba(0,0,0,0.05)' : `${color}15`;
                                     
                                     return (
-                                      <span key={gs.group} style={{ 
-                                        color, 
-                                        background: bg, 
-                                        padding: '2px 6px', 
-                                        borderRadius: "var(--radius-standard)", 
-                                        fontSize: 10, 
-                                        fontWeight: 600,
-                                        whiteSpace: 'nowrap'
-                                      }}>
+                                      <Badge
+                                        key={gs.group}
+                                        variant="custom"
+                                        size="sm"
+                                        shape="rounded"
+                                        customColors={{ background: bg, color, border: bg }}
+                                      >
                                         {gs.group}: ★{gs.avg}
-                                      </span>
+                                      </Badge>
                                     );
                                   })}
                                 </div>
@@ -1789,8 +1781,7 @@ export default function TicketsDashboard() {
           }}
         />
       </Modal>
-
-      </PageLayout>
-    </>
+      </>
+    </ProtectedPage>
   );
 }

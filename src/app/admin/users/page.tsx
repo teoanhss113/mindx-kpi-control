@@ -8,7 +8,7 @@ import { findUser, createDebouncedUserLookup, type LMSUser } from '@/services/us
 import { searchUsers } from '@/services/ticketService';
 import { AdminPageWrapper } from '@/components/AdminPageWrapper';
 import { useTableSort } from '@/hooks/useTableSort';
-import { SortableHeader, AdminToolbar, AdminTableSection, Icon, Spinner, MultiSelect, EmptyState, UserSearchInput, type UserSearchResult, ModalFooter, Modal, ModalHeader, ConfirmDialog, useToast, ToastContainer, ActiveStatusBadge, CompactSelect, TableActionButton, TableActionGroup } from '@/components/ui';
+import { SortableHeader, AdminToolbar, AdminTableSection, Icon, Spinner, MultiSelect, EmptyState, UserSearchInput, type UserSearchResult, ModalFooter, Modal, ModalHeader, ConfirmDialog, useToast, ToastContainer, ActiveStatusBadge, CompactSelect, TableActionButton, TableActionGroup, Badge } from '@/components/ui';
 import { COURSES, LABELS, MESSAGES, ENTITIES } from '@/constants';
 import styles from '@/app/dashboard.module.css';
 import type { Role } from '@/lib/supabase/types';
@@ -461,9 +461,9 @@ export default function UsersPage() {
                     <td style={{ textTransform: 'capitalize' }}>{user.full_name || '—'}</td>
                     <td style={{ color: 'var(--text-tertiary)' }}>{user.username || '—'}</td>
                     <td>
-                      <span className={styles.statusPill}>
+                      <Badge variant="default" size="sm" shape="rounded">
                         {user.roles?.name || (user.role === 'admin' ? 'Admin' : user.role === 'manager' ? 'Manager' : 'Viewer')}
-                      </span>
+                      </Badge>
                     </td>
                     <td>
                       <ActiveStatusBadge active={user.is_active} />

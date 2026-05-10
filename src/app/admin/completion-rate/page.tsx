@@ -30,6 +30,7 @@ import {
   KPIThresholdSuggestions,
   CSVExportSettings, FilterChip, type CSVColumnConfig,
   COMPLETION_STATUS_LABELS, CompletionStatusBadge, type CompletionStatusKind,
+  Badge,
 } from '@/components/ui';
 import { useTableSort } from '@/hooks/useTableSort';
 import { useQuickFilterChips } from '@/hooks/useUserPreferences';
@@ -201,7 +202,6 @@ export default function DashboardPage() {
     return () => document.removeEventListener('keydown', handleEscape);
   }, [selectedClassId]);
 
-  useEffect(() => { if (!authLoading && !isAuthenticated()) router.replace('/login'); }, [authLoading, router]);
 
   // Load centres
   useEffect(() => {
@@ -860,13 +860,13 @@ export default function DashboardPage() {
                                 <div className={styles.reasonsPreview}>
                                   {Object.keys(cls.reasonsSummary).length > 0
                                     ? Object.entries(cls.reasonsSummary).map(([res, count], i) => (
-                                      <span key={i} className={`${styles.reasonTag} ${res === DEMO_REASON_KEY ? styles.demoTag : ''}`}
+                                      <Badge key={i} variant={res === DEMO_REASON_KEY ? 'demo' : 'default'} size="sm" shape="rounded"
                                         style={{ opacity: exemptedReasons[res] === true ? 0.35 : 1 }}>
                                         {REASON_LABELS[res] || res}: {count as number}
-                                      </span>
+                                      </Badge>
                                     ))
                                     : <span style={{ color: 'var(--text-quaternary)' }}>—</span>}
-                                  {cls.clsExempt > 0 && <span className={`${styles.reasonTag} ${styles.exemptTag}`}>Miễn trừ: {cls.clsExempt}</span>}
+                                  {cls.clsExempt > 0 && <Badge variant="exempt" size="sm" shape="rounded">Miễn trừ: {cls.clsExempt}</Badge>}
                                 </div>
                               </motion.div>
                             ))}
@@ -1122,7 +1122,7 @@ export default function DashboardPage() {
         onSave={saveColumns}
         title="Cài đặt xuất CSV - Tỷ lệ hoàn thành"
       />
-      </>
+    </>
     </ProtectedPage>
   );
 }
