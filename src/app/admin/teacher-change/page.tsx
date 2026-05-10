@@ -9,7 +9,7 @@ import {
 } from 'recharts';
 import { useAuth } from '@/lib/AuthContext';
 import { isAuthenticated, loadSession } from '@/services/authService';
-import { fetchAllClasses, haveSlotInToUtcRange } from '@/services/classesService';
+import { fetchAllClasses, haveSlotInToUtcRange, GET_CLASSES_LIGHT_QUERY } from '@/services/classesService';
 import { fetchAllCentres, Centre } from '@/services/centresService';
 import { getCache, setCache, clearCache } from '@/lib/idb';
 import { getCourseCategory } from '@/lib/courseCategories';
@@ -323,7 +323,8 @@ export default function TeacherChangePage() {
           accumulated = [...accumulated, ...chunk];
           setClasses([...accumulated]);
         },
-        controller.signal
+        controller.signal,
+        GET_CLASSES_LIGHT_QUERY
       );
       await setCache(CACHE_KEYS.TEACHER_CHANGE, { classes: result, timestamp: Date.now() });
       removeToast(tid);

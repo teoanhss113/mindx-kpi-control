@@ -143,8 +143,6 @@ export default function TeachersPage() {
     try {
       // Build API variables
       const baseVariables: any = {
-        pageIndex: 0,
-        itemsPerPage: 100, // API limit per page
         orderBy: 'createdAt_desc',
       };
 
@@ -169,36 +167,13 @@ export default function TeachersPage() {
         baseVariables.isActive = selectedStatuses[0] === 'active';
       }
 
-      // Fetch first page to get total count
-      const firstPage = await getTeachers(baseVariables, controller.signal);
-      const total = firstPage.total;
-      let allTeachers = [...firstPage.data];
-
-      // Update progress
-      setLoadingProgress({ loaded: allTeachers.length, total });
-
-      // If there are more pages, fetch them
-      if (total > 100) {
-        const totalPages = Math.ceil(total / 100);
-        const remainingPages = [];
-        
-        for (let page = 1; page < totalPages; page++) {
-          remainingPages.push(
-            getTeachers({
-              ...baseVariables,
-              pageIndex: page,
-            }, controller.signal)
-          );
-        }
-
-        // Fetch all remaining pages in parallel
-        const results = await Promise.all(remainingPages);
-        results.forEach(result => {
-          allTeachers = [...allTeachers, ...result.data];
-          // Update progress after each batch
-          setLoadingProgress({ loaded: allTeachers.length, total });
-        });
-      }
+      // Fetch teachers automatically handling pagination and incremental progress natively!
+      const result = await getTeachers(
+        baseVariables, 
+        controller.signal, 
+        (loaded, total) => setLoadingProgress({ loaded, total })
+      );
+      const allTeachers = result.data;
 
       setTeachers(allTeachers);
       setLoadingProgress(undefined);

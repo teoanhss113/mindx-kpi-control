@@ -19,7 +19,7 @@ import {
   kpiColor,
   KPI_COLORS
 } from '@/lib/kpiScoring';
-import { fetchAllClasses, dateRangeToUtcRange } from '@/services/classesService';
+import { fetchAllClasses, dateRangeToUtcRange, GET_CLASSES_LIGHT_QUERY } from '@/services/classesService';
 import { fetchAllCentres, Centre } from '@/services/centresService';
 import { fetchTickets } from '@/services/ticketService';
 import { fetchOfficeHours } from '@/services/officeHoursService';
@@ -167,103 +167,89 @@ export default function DashboardPage() {
 
       // Step 1: Fetch teacher schedules (includes classes data)
       const teacherSchedulesToastId = addToast('Đang tải lịch giáo viên...', 'loading');
-      setProgress({ loaded: 0, total: 0 }); // Initialize progress immediately
+      const classesToastId = addToast(MESSAGES.LOADING.LOADING_CLASSES, 'loading');
+      const ticketsToastId = addToast(MESSAGES.LOADING.LOADING_TICKETS, 'loading');
+      const teachersToastId = addToast('Đang tải dữ liệu giáo viên...', 'loading');
       
       const dateFrom = new Date(fromDate);
       const dateTo = new Date(toDate);
       dateFrom.setHours(0, 0, 0, 0);
       dateTo.setHours(23, 59, 59, 999);
       
-      const { 
-        schedules: teacherSchedulesResult, 
-        rawClasses: activeClassesResult, 
-        rawOfficeHours: officeHoursResultData 
-      } = await fetchTeacherSchedules(
-        dateFrom,
-        dateTo,
-        centreIds,
-        undefined, // selectedTeachers - load all teachers
-        (loaded, total) => {
-          setProgress({ loaded, total: total || Math.max(loaded, 1) });
-        },
-        teacherSchedulesController.signal
-      );
-      
-      removeToast(teacherSchedulesToastId);
+      // 🚀 CONCURRENT FUSION: Fire ALL four massive data streams in parallel for ultimate speed!
+      let schLoaded = 0, schTotal = 0;
+      let clsLoaded = 0, clsTotal = 0;
+      let ticLoaded = 0, ticTotal = 0;
+      let teaLoaded = 0, teaTotal = 0;
 
-      // Step 2: Fetch classes separately for KPI calculations
-      const classesToastId = addToast(MESSAGES.LOADING.LOADING_CLASSES, 'loading');
-      setProgress({ loaded: 0, total: 0 }); // Initialize progress immediately
-      const classesResult = await fetchAllClasses(
-        {
-          centres: centreIds,
-          endDateFrom,
-          endDateTo,
-        },
-        (loaded, total) => {
-          setProgress({ loaded, total });
-        },
-        classesController.signal
-      );
-      removeToast(classesToastId);
-
-      // Step 2: Fetch tickets
-      const ticketsToastId = addToast(MESSAGES.LOADING.LOADING_TICKETS, 'loading');
-      setProgress({ loaded: 0, total: 0 }); // Initialize progress immediately
-      const ticketsResult = await fetchTickets(
-        {
-          centreId_in: centreIds,
-          createdAt_gte: new Date(fromDate).toISOString(),
-          createdAt_lte: new Date(toDate).toISOString(),
-        },
-        (loaded, total) => {
-          setProgress({ loaded, total });
-        },
-        ticketsController.signal
-      );
-      removeToast(ticketsToastId);
-
-      // Step 3: Office hours data is already merged from teacherSchedulesResult optimize loop
-
-      // Step 4: Fetch teachers
-      const teachersToastId = addToast('Đang tải dữ liệu giáo viên...', 'loading');
-      setProgress({ loaded: 0, total: 0 }); // Initialize progress immediately
-      
-      // Fetch teachers with pagination (same logic as teachers page)
-      const teachersVariables: any = {
-        pageIndex: 0,
-        itemsPerPage: 100,
-        orderBy: 'createdAt_desc',
-        centers: centreIds,
+      const refreshAggProgress = () => {
+        const finalLoaded = schLoaded + clsLoaded + ticLoaded + teaLoaded;
+        const finalTotal = Math.max((schTotal || 0) + (clsTotal || 0) + (ticTotal || 0) + (teaTotal || 0), 1);
+        setProgress({ loaded: finalLoaded, total: finalTotal });
       };
-      
-      const firstTeachersPage = await getTeachers(teachersVariables, teachersController.signal);
-      const teachersTotal = firstTeachersPage.total;
-      let allTeachers = [...firstTeachersPage.data];
-      setProgress({ loaded: allTeachers.length, total: teachersTotal });
-      
-      // Fetch remaining pages if needed
-      if (teachersTotal > 100) {
-        const totalPages = Math.ceil(teachersTotal / 100);
-        const remainingPages = [];
-        
-        for (let page = 1; page < totalPages; page++) {
-          remainingPages.push(
-            getTeachers({
-              ...teachersVariables,
-              pageIndex: page,
-            }, teachersController.signal)
-          );
-        }
-        
-        const teachersResults = await Promise.all(remainingPages);
-        teachersResults.forEach(result => {
-          allTeachers = [...allTeachers, ...result.data];
-          setProgress({ loaded: allTeachers.length, total: teachersTotal });
-        });
-      }
-      
-      removeToast(teachersToastId);
+
+      const [
+        scheduleData,
+        classesResult,
+        ticketsResult,
+        teachersResult
+      ] = await Promise.all([
+        // 1. Teacher Schedules
+        fetchTeacherSchedules(
+          dateFrom,
+          dateTo,
+          centreIds,
+          undefined,
+          (loaded, total) => {
+            schLoaded = loaded;
+            schTotal = total || 0;
+            refreshAggProgress();
+          },
+          teacherSchedulesController.signal
+        ).then(res => { removeToast(teacherSchedulesToastId); return res; }),
+
+        // 2. All Classes (KPIs)
+        fetchAllClasses(
+          { centres: centreIds, endDateFrom, endDateTo },
+          (loaded, total) => {
+            clsLoaded = loaded;
+            clsTotal = total || 0;
+            refreshAggProgress();
+          },
+          classesController.signal,
+          GET_CLASSES_LIGHT_QUERY
+        ).then(res => { removeToast(classesToastId); return res; }),
+
+        // 3. Tickets
+        fetchTickets(
+          {
+            centreId_in: centreIds,
+            createdAt_gte: new Date(fromDate).toISOString(),
+            createdAt_lte: new Date(toDate).toISOString(),
+          },
+          (loaded, total) => {
+            ticLoaded = loaded;
+            ticTotal = total || 0;
+            refreshAggProgress();
+          },
+          ticketsController.signal
+        ).then(res => { removeToast(ticketsToastId); return res; }),
+
+        // 4. Teachers (Internal paging handles concurrency flawlessly now!)
+        getTeachers(
+          { centers: centreIds, orderBy: 'createdAt_desc' },
+          teachersController.signal,
+          (loaded, total) => {
+            teaLoaded = loaded;
+            teaTotal = total || 0;
+            refreshAggProgress();
+          }
+        ).then(res => { removeToast(teachersToastId); return res; }),
+      ]);
+
+      // Extract result data correctly
+      const { schedules: teacherSchedulesResult, rawClasses: activeClassesResult, rawOfficeHours: officeHoursResultData } = scheduleData;
+      const allTeachers = teachersResult.data;
 
       // Process and cache data for each KPI
       const completionCache = { classes: classesResult, timestamp: Date.now() };

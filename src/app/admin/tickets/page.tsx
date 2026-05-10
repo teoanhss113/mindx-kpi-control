@@ -265,6 +265,13 @@ export default function TicketsDashboard() {
         }
       }
 
+      let tLoaded = 0, tTotal = 0, cLoaded = 0, cTotal = 0;
+      const refreshProgress = () => {
+        const finalLoaded = tLoaded + cLoaded;
+        const finalTotal = Math.max((tTotal || 0) + (cTotal || 0), 1);
+        setProgress({ loaded: finalLoaded, total: finalTotal });
+      };
+
       // Fetch tickets, pending classes, and Google Sheets data in parallel
       const [ticketsRes, pendingRes, sheetsRes] = await Promise.all([
         fetchTickets({
@@ -272,7 +279,10 @@ export default function TicketsDashboard() {
           createdAt_lte: dEnd.toISOString(),
           centreId_in: selectedCentres.length > 0 ? selectedCentres : [],
         }, (loaded, total, chunk) => {
-          setProgress({ loaded, total: total || Math.max(loaded, 1) });
+          tLoaded = loaded;
+          tTotal = total || 0;
+          refreshProgress();
+          
           curTickets = [...curTickets, ...chunk];
           setTickets([...curTickets]);
         }, signal),
@@ -280,9 +290,10 @@ export default function TicketsDashboard() {
           dStart,
           dEnd,
           selectedCentres,
-          () => {
-            // Toast only once per phase to avoid spam, query is fast
-            // No action needed here, we trigger phase below
+          (loaded, total) => {
+            cLoaded = loaded;
+            cTotal = total || 0;
+            refreshProgress();
           },
           signal
         ).then(res => {

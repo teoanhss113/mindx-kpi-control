@@ -667,50 +667,75 @@ export async function fetchOfficeHours(
   let total = 0;
   let hasMore = true;
 
-  while (hasMore) {
-    if (abortSignal?.aborted) {
-      break;
+  // Step 1: Fetch Page 1 to discover count
+  const initialVariables = {
+    payload: {
+      pageIndex: params.pageIndex || 0,
+      itemsPerPage: params.itemsPerPage || PAGE_SIZE,
+      orderBy: 'createdAt_desc',
+      centreIn: params.centreIn || [],
+      courseIn: params.courseIn || [],
+      courseLineIn: params.courseLineIn || [],
+      courseTopicIn: params.courseTopicIn || [],
+      timeFrom: params.timeFrom || '',
+      timeTo: params.timeTo || '',
+      paginationType: 'OFFSET',
+      searchString_wordSearch: params.searchString || '',
+      ...(params.teacher && { teacher: params.teacher }),
+      ...(params.id_in && { id_in: params.id_in }),
+    }
+  };
+
+  if (abortSignal?.aborted) throw new Error('Aborted');
+
+  const firstResult = await lmsQuery<GetOfficeHoursResponse>({ query, variables: initialVariables });
+  const firstPage = firstResult.data.officeHours;
+  
+  allOfficeHours = [...firstPage.data];
+  total = firstPage.pagination.total;
+  
+  if (onProgress) {
+    onProgress(allOfficeHours.length, total, firstPage.data);
+  }
+
+  // Edge condition: user specifically requested standard single page return
+  if (params.itemsPerPage !== undefined) {
+    return { data: allOfficeHours, pagination: firstPage.pagination };
+  }
+
+  // Step 2: Fire all remaining pages parallelly
+  if (total > PAGE_SIZE) {
+    const totalPages = Math.ceil(total / PAGE_SIZE);
+    const remainingPromises: Array<Promise<GetOfficeHoursResponse>> = [];
+    let accumulatedLoaded = allOfficeHours.length;
+
+    for (let i = 1; i < totalPages; i++) {
+      const pageVariables = {
+        payload: {
+          ...initialVariables.payload,
+          pageIndex: i
+        }
+      };
+      remainingPromises.push(
+        lmsQuery<GetOfficeHoursResponse>({ query, variables: pageVariables })
+          .then(res => {
+            const chunkData = res.data.officeHours.data;
+            accumulatedLoaded += chunkData.length;
+            if (onProgress) {
+              onProgress(accumulatedLoaded, total, chunkData);
+            }
+            return res;
+          })
+      );
     }
 
-    const variables = {
-      payload: {
-        pageIndex,
-        itemsPerPage: params.itemsPerPage || PAGE_SIZE,
-        orderBy: 'createdAt_desc',
-        centreIn: params.centreIn || [],
-        courseIn: params.courseIn || [],
-        courseLineIn: params.courseLineIn || [],
-        courseTopicIn: params.courseTopicIn || [],
-        timeFrom: params.timeFrom || '',
-        timeTo: params.timeTo || '',
-        paginationType: 'OFFSET',
-        searchString_wordSearch: params.searchString || '',
-        ...(params.teacher && { teacher: params.teacher }),
-        ...(params.id_in && { id_in: params.id_in }),
-      }
-    };
-
-    const result = await lmsQuery<GetOfficeHoursResponse>({ query, variables });
-    const { data, pagination } = result.data.officeHours;
+    // Parallel execution!
+    const responses = await Promise.all(remainingPromises);
     
-    if (pageIndex === 0) {
-      total = pagination.total;
-    }
-
-    allOfficeHours = [...allOfficeHours, ...data];
-    if (onProgress) {
-      onProgress(allOfficeHours.length, total, data);
-    }
-
-    // Stop if we asked for a specific page, OR if we fetched everything
-    if (params.itemsPerPage !== undefined) {
-      return { data: allOfficeHours, pagination };
-    }
-
-    if (allOfficeHours.length >= total || data.length < PAGE_SIZE) {
-      hasMore = false;
-    } else {
-      pageIndex++;
+    // Combine final array
+    for (const res of responses) {
+      const pageData = res.data.officeHours.data;
+      allOfficeHours = [...allOfficeHours, ...pageData];
     }
   }
 

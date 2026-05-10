@@ -98,50 +98,74 @@ export async function fetchTickets(
   let total = 0;
   let hasMore = true;
 
-  while (hasMore) {
-    if (abortSignal?.aborted) {
-      break;
+  // Step 1: Fetch Page 1 to discover the total count
+  const initialVariables = {
+    payload: {
+      pageIndex: params.pageIndex || 0,
+      itemsPerPage: params.itemsPerPage || PAGE_SIZE,
+      assignee_in: [],
+      centreId_in: params.centreId_in || [],
+      feedbackTopic_in: [],
+      status_in: [],
+      channel_in: [],
+      filter_textSearch: "",
+      deadline_gte: "",
+      deadline_lte: "",
+      createdAt_gte: params.createdAt_gte || "",
+      createdAt_lte: params.createdAt_lte || "",
+    }
+  };
+
+  if (abortSignal?.aborted) throw new Error('Aborted');
+  
+  const firstResult = await lmsQuery<FindTicketPaginateResponse>({ query, variables: initialVariables });
+  const firstPage = firstResult.data.findTicketPaginate;
+  
+  allTickets = [...firstPage.data];
+  total = firstPage.pagination.total;
+  
+  if (onProgress) {
+    onProgress(allTickets.length, total, firstPage.data);
+  }
+
+  // Edge Case: User requested EXACTLY one specific page only? 
+  if (params.itemsPerPage !== undefined) {
+    return { data: allTickets, pagination: firstPage.pagination };
+  }
+
+  // Step 2: Fire remaining pages in parallel
+  if (total > PAGE_SIZE) {
+    const totalPages = Math.ceil(total / PAGE_SIZE);
+    const remainingPromises: Array<Promise<FindTicketPaginateResponse>> = [];
+    let accumulatedLoaded = allTickets.length;
+
+    for (let i = 1; i < totalPages; i++) {
+      const pageVariables = {
+        payload: {
+          ...initialVariables.payload,
+          pageIndex: i
+        }
+      };
+      remainingPromises.push(
+        lmsQuery<FindTicketPaginateResponse>({ query, variables: pageVariables })
+          .then(res => {
+            const chunkData = res.data.findTicketPaginate.data;
+            accumulatedLoaded += chunkData.length;
+            if (onProgress) {
+              onProgress(accumulatedLoaded, total, chunkData);
+            }
+            return res;
+          })
+      );
     }
 
-    const variables = {
-      payload: {
-        pageIndex,
-        itemsPerPage: params.itemsPerPage || PAGE_SIZE,
-        assignee_in: [],
-        centreId_in: params.centreId_in || [],
-        feedbackTopic_in: [],
-        status_in: [],
-        channel_in: [],
-        filter_textSearch: "",
-        deadline_gte: "",
-        deadline_lte: "",
-        createdAt_gte: params.createdAt_gte || "",
-        createdAt_lte: params.createdAt_lte || "",
-      }
-    };
-
-    const result = await lmsQuery<FindTicketPaginateResponse>({ query, variables });
-    const { data, pagination } = result.data.findTicketPaginate;
+    // Fire simultaneously!
+    const responses = await Promise.all(remainingPromises);
     
-    // First chunk sets total
-    if (pageIndex === 0) {
-      total = pagination.total;
-    }
-
-    allTickets = [...allTickets, ...data];
-    if (onProgress) {
-      onProgress(allTickets.length, total, data);
-    }
-
-    // Stop if we asked for a specific page, OR if we fetched everything
-    if (params.itemsPerPage !== undefined) {
-      return { data: allTickets, pagination };
-    }
-
-    if (allTickets.length >= total || data.length < PAGE_SIZE) {
-      hasMore = false;
-    } else {
-      pageIndex++;
+    // Reconstruct and notify
+    for (const res of responses) {
+      const pageData = res.data.findTicketPaginate.data;
+      allTickets = [...allTickets, ...pageData];
     }
   }
 

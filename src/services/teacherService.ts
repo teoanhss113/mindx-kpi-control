@@ -89,18 +89,18 @@ const GET_TEACHERS_QUERY = /* graphql */ `
   }
 `;
 
-/**
- * Fetch teachers from LMS API
- */
 export async function getTeachers(
   variables: Partial<GetTeachersVariables> = {},
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  onProgress?: (loaded: number, total: number, chunk: Teacher[]) => void
 ): Promise<{ data: Teacher[]; total: number }> {
-  const defaultVariables: GetTeachersVariables = {
+  const ITEMS_PER_PAGE = variables.itemsPerPage || 100;
+  
+  const baseVariables: GetTeachersVariables = {
     type: 'OFFSET',
     search: '',
-    pageIndex: 0,
-    itemsPerPage: 1000, // Load all teachers
+    pageIndex: variables.pageIndex || 0,
+    itemsPerPage: ITEMS_PER_PAGE,
     orderBy: 'createdAt_desc',
     centers: [],
     teacherPointRange: [null, null],
@@ -108,15 +108,61 @@ export async function getTeachers(
     ...variables,
   };
 
+  // Step 1: Fetch initial page to get count
   const response = await lmsQuery<GetTeachersResponse>({
     query: GET_TEACHERS_QUERY,
-    variables: defaultVariables as unknown as Record<string, unknown>,
+    variables: baseVariables as unknown as Record<string, unknown>,
     operationName: 'GetTeachers',
     signal,
   });
 
+  const firstPageData = response.data.teachers.data;
+  const total = response.data.teachers.pagination.total;
+  
+  let allTeachers = [...firstPageData];
+  
+  // Report initial progress
+  onProgress?.(allTeachers.length, total, firstPageData);
+
+  // If caller asked for ONE specific page only, return now.
+  if (variables.pageIndex !== undefined) {
+    return { data: firstPageData, total };
+  }
+
+  // Step 2: Parallel fetch remaining pages
+  if (total > ITEMS_PER_PAGE) {
+    const totalPages = Math.ceil(total / ITEMS_PER_PAGE);
+    const remainingPromises: Array<Promise<GetTeachersResponse>> = [];
+    let accumulatedLoaded = allTeachers.length;
+
+    for (let i = 1; i < totalPages; i++) {
+      const pageVariables = { ...baseVariables, pageIndex: i };
+      remainingPromises.push(
+        lmsQuery<GetTeachersResponse>({
+          query: GET_TEACHERS_QUERY,
+          variables: pageVariables as unknown as Record<string, unknown>,
+          operationName: 'GetTeachers',
+          signal,
+        }).then(res => {
+          const chunkData = res.data.teachers.data;
+          accumulatedLoaded += chunkData.length;
+          onProgress?.(accumulatedLoaded, total, chunkData);
+          return res;
+        })
+      );
+    }
+
+    // Await all remaining parallel promises concurrently
+    const responses = await Promise.all(remainingPromises);
+    
+    // Combine final set
+    for (const res of responses) {
+      allTeachers.push(...res.data.teachers.data);
+    }
+  }
+
   return {
-    data: response.data.teachers.data,
-    total: response.data.teachers.pagination.total,
+    data: allTeachers,
+    total,
   };
 }

@@ -9,7 +9,7 @@ import {
 } from 'recharts';
 import { useAuth } from '@/lib/AuthContext';
 import { isAuthenticated, loadSession } from '@/services/authService';
-import { fetchAllClasses, dateRangeToUtcRange } from '@/services/classesService';
+import { fetchAllClasses, dateRangeToUtcRange, GET_CLASSES_LIGHT_QUERY } from '@/services/classesService';
 import { fetchAllCentres, Centre } from '@/services/centresService';
 import { getCache, setCache, clearCache } from '@/lib/idb';
 import { KPI_COLORS, completionScore, completionColor, COMPLETION_LEGEND } from '@/lib/kpiScoring';
@@ -266,7 +266,7 @@ export default function DashboardPage() {
         });
         setExemptedReasons({ ...curReasons });
         setExemptedCourses({ ...curExcluded });
-      }, controller.signal);
+      }, controller.signal, GET_CLASSES_LIGHT_QUERY);
       await setCache(CACHE_KEYS.COMPLETION, { classes: result, exemptedReasons: curReasons, exemptedCourses: curExcluded, timestamp: Date.now() });
       removeToast(tid);
       addToast(MESSAGES.LOADING.SUCCESS(result.length, ENTITIES.CLASSES), 'success');

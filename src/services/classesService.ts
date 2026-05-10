@@ -111,7 +111,7 @@ const GET_CLASSES_QUERY = /* graphql */ `
   }
 `;
 
-const GET_CLASSES_LIGHT_QUERY = /* graphql */ `
+export const GET_CLASSES_LIGHT_QUERY = /* graphql */ `
   query GetClassesLight(
     $search: String, $centre: String, $operationMethodId: [String],
     $openStatus: [String], $centres: [String], $courses: [String],
@@ -149,6 +149,11 @@ const GET_CLASSES_LIGHT_QUERY = /* graphql */ `
         endDate
         course { id name shortName courseLine { id name } }
         centre { id name shortName }
+        teachers {
+          isActive
+          teacher { id fullName }
+          role { shortName }
+        }
         students {
           _id
           activeInClass
@@ -161,6 +166,11 @@ const GET_CLASSES_LIGHT_QUERY = /* graphql */ `
         slots {
           _id
           date
+          teachers {
+            isActive
+            teacher { id fullName }
+            role { shortName }
+          }
           studentAttendance {
             student { id }
           }
@@ -242,7 +252,6 @@ export async function fetchAllClasses(
   queryOverride?: string
 ): Promise<Class[]> {
   const allClasses: Class[] = [];
-  let pageIndex = 0;
   let total = Infinity;
 
   const base: Omit<GetClassesVariables, 'pageIndex'> = {
@@ -263,26 +272,53 @@ export async function fetchAllClasses(
     ...overrides,
   };
 
-  while (allClasses.length < total) {
-    if (signal?.aborted) throw new Error('Aborted');
+  // Step 1: Fetch Page 1 to discover the total count
+  const initialVariables: GetClassesVariables = { ...base, pageIndex: 0 };
+  const firstResponse = await lmsQuery<ClassesResponse>({
+    query: queryOverride || GET_CLASSES_QUERY,
+    variables: initialVariables as unknown as Record<string, unknown>,
+    operationName: queryOverride ? 'GetClassesLight' : 'GetClasses',
+    signal,
+  });
 
-    const variables: GetClassesVariables = { ...base, pageIndex };
+  const firstPage = firstResponse.data.classes;
+  total = firstPage.pagination.total;
+  allClasses.push(...firstPage.data);
+  
+  // Report initial progress
+  onProgress?.(allClasses.length, total, firstPage.data);
 
-    const response = await lmsQuery<ClassesResponse>({
-      query: queryOverride || GET_CLASSES_QUERY,
-      variables: variables as unknown as Record<string, unknown>,
-      operationName: queryOverride ? 'GetClassesLight' : 'GetClasses',
-      signal,
-    });
+  // Step 2: Parallel fetch remaining pages if necessary
+  if (total > ITEMS_PER_PAGE) {
+    const totalPages = Math.ceil(total / ITEMS_PER_PAGE);
+    const remainingPromises: Array<Promise<ClassesResponse>> = [];
+    let accumulatedLoaded = allClasses.length;
 
-    const page = response.data.classes;
-    total = page.pagination.total;
-    allClasses.push(...page.data);
+    for (let i = 1; i < totalPages; i++) {
+      const pageVariables = { ...base, pageIndex: i };
+      remainingPromises.push(
+        lmsQuery<ClassesResponse>({
+          query: queryOverride || GET_CLASSES_QUERY,
+          variables: pageVariables as unknown as Record<string, unknown>,
+          operationName: queryOverride ? 'GetClassesLight' : 'GetClasses',
+          signal,
+        }).then(response => {
+          // Update live progress AS EACH PROMISE RESOLVES individually!
+          const incomingCount = response.data.classes.data.length;
+          accumulatedLoaded += incomingCount;
+          onProgress?.(accumulatedLoaded, total, response.data.classes.data);
+          return response;
+        })
+      );
+    }
 
-    onProgress?.(allClasses.length, total, page.data);
-
-    if (page.data.length < ITEMS_PER_PAGE) break;
-    pageIndex++;
+    // Fire all remaining requests simultaneously!
+    const responses = await Promise.all(remainingPromises);
+    
+    // Combine results in memory for return
+    for (const res of responses) {
+      allClasses.push(...res.data.classes.data);
+    }
   }
 
   return allClasses;

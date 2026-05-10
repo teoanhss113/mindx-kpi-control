@@ -12,6 +12,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { loadSession } from '@/services/authService';
 import { fetchAllClasses, haveSlotInToUtcRange } from '@/services/classesService';
 import { fetchAllCentres, Centre } from '@/services/centresService';
+import { fetchOfficeHours } from '@/services/officeHoursService';
 import { getCache, setCache, clearCache } from '@/lib/idb';
 import { getCourseLineCategory } from '@/lib/courseCategories';
 import { getNavItemsWithRouter } from '@/lib/navigation';
@@ -2437,29 +2438,62 @@ export default function TeacherSchedulePage() {
       monthDateTo.setHours(23, 59, 59, 999);
       const monthHaveSlotIn = haveSlotInToUtcRange(monthDateFrom, monthDateTo);
 
-      const scopedClasses = await fetchAllClasses(
+      const weekDateFrom = new Date(start);
+      const weekDateTo = new Date(end);
+      weekDateTo.setHours(23, 59, 59, 999);
+      const weekHaveSlotIn = haveSlotInToUtcRange(weekDateFrom, weekDateTo);
+
+      let clsLoaded = 0, clsTotal = 0, ohLoaded = 0, ohTotal = 0;
+      const refreshProgress = () => {
+        const finalTotal = Math.max((clsTotal || 0) + (ohTotal || 0), 1);
+        setProgress({ loaded: clsLoaded + ohLoaded, total: finalTotal });
+      };
+
+      // Start BOTH fetch streams simultaneously (FULL CONCURRENCY)
+      const classesPromise = fetchAllClasses(
         {
           haveSlotIn: { from: monthHaveSlotIn.from, to: monthHaveSlotIn.to },
           statusIn: ['RUNNING', 'FINISHED'],
           ...(centreIds && centreIds.length > 0 ? { centres: centreIds } : {}),
         },
-        (loaded, total) => setProgress({ loaded, total: total || Math.max(loaded, 1) }),
+        (loaded, total) => {
+          clsLoaded = loaded;
+          clsTotal = total || 0;
+          refreshProgress();
+        },
         signal
       );
 
-      // But we ONLY fetch and display teacher schedules for the SPECIFIC WEEK the user is viewing
-      const weekDateFrom = new Date(start);
-      const weekDateTo = new Date(end);
-      weekDateTo.setHours(23, 59, 59, 999);
+      const officeHoursPromise = fetchOfficeHours(
+        {
+          timeFrom: weekHaveSlotIn.from,
+          timeTo: weekHaveSlotIn.to,
+          ...(centreIds && centreIds.length > 0 ? { centreIn: centreIds } : {}),
+        },
+        (loaded, total) => {
+          ohLoaded = loaded;
+          ohTotal = total || 0;
+          refreshProgress();
+        },
+        signal
+      );
 
+      // Fire them in parallel!
+      const [scopedClasses, officeHoursResult] = await Promise.all([
+        classesPromise,
+        officeHoursPromise
+      ]);
+
+      // Combine all pre-fetched data instantly to generate schedule models
       const { schedules: result, rawClasses: classes } = await fetchTeacherSchedules(
         weekDateFrom,
         weekDateTo,
         centreIds,
         teacherIds,
-        (loaded, total) => setProgress({ loaded, total: total || Math.max(loaded, 1) }),
+        undefined, // CPU computation only, no network required
         signal,
-        scopedClasses
+        scopedClasses, // preFetchedClasses
+        officeHoursResult.data // preFetchedOfficeHours
       );
 
       console.log(`[TeacherSchedule] Loaded ${scopedClasses.length} scoped classes and ${classes.length} filtered classes for week ${start} to ${end}`);

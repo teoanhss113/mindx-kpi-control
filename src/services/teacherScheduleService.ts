@@ -239,7 +239,8 @@ export async function fetchTeacherSchedules(
   teacherIds?: string[],
   onProgress?: (loaded: number, total: number) => void,
   signal?: AbortSignal,
-  preFetchedClasses?: Class[]
+  preFetchedClasses?: Class[],
+  preFetchedOfficeHours?: OfficeHour[]
 ): Promise<{ schedules: TeacherSchedule[], rawClasses: Class[], rawOfficeHours: OfficeHour[] }> {
   // Fetch classes with slots in the date range
   const haveSlotIn = haveSlotInToUtcRange(dateFrom, dateTo);
@@ -253,8 +254,8 @@ export async function fetchTeacherSchedules(
     signal
   );
   
-  // Fetch office hours in the date range
-  const officeHours = await fetchOfficeHours(
+  // Fetch office hours in the date range OR use pre-fetched ones
+  const officeHoursData = preFetchedOfficeHours || (await fetchOfficeHours(
     {
       timeFrom: haveSlotIn.from,
       timeTo: haveSlotIn.to,
@@ -262,7 +263,7 @@ export async function fetchTeacherSchedules(
     },
     undefined,
     signal
-  );
+  )).data;
   
   // Build teacher schedule map
   const teacherMap = new Map<string, TeacherSchedule>();
@@ -292,7 +293,7 @@ export async function fetchTeacherSchedules(
   });
   
   // Process office hours
-  officeHours.data.forEach(oh => {
+  officeHoursData.forEach(oh => {
     if (!oh.teacher) return;
     
     // Filter office hours to only include those within the requested date range
@@ -336,7 +337,7 @@ export async function fetchTeacherSchedules(
     );
   });
   
-  return { schedules, rawClasses: classes, rawOfficeHours: officeHours.data };
+  return { schedules, rawClasses: classes, rawOfficeHours: officeHoursData };
 }
 
 export async function fetchClassTeacherSchedules(classId: string): Promise<TeacherSchedule[]> {
