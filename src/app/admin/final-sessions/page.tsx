@@ -41,6 +41,7 @@ interface Dot {  // "đợt"
   week_to: string;
   notes: string | null;
   is_active: boolean;
+  is_public: boolean;
   session_count: number;
   request_count: number;
 }
@@ -176,7 +177,7 @@ export default function FinalSessionsAdminPage() {
 
   // Create đợt modal
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({ title: '', slug: '', weekFrom: '', weekTo: '', notes: '' });
+  const [form, setForm] = useState({ title: '', slug: '', weekFrom: '', weekTo: '', notes: '', isPublic: false });
   const [saving, setSaving] = useState(false);
 
   // Load centres
@@ -355,6 +356,7 @@ export default function FinalSessionsAdminPage() {
       weekFrom: dateFrom,
       weekTo: dateTo,
       notes: '',
+      isPublic: false,
     });
     setShowCreate(true);
   }
@@ -378,6 +380,7 @@ export default function FinalSessionsAdminPage() {
           week_from: form.weekFrom,
           week_to: form.weekTo,
           notes: form.notes.trim() || null,
+          is_public: form.isPublic,
         }),
       });
       if (bRes.status === 409) { addToast('Đường dẫn đã tồn tại, hãy đổi sang giá trị khác', 'error'); return; }
@@ -431,6 +434,17 @@ export default function FinalSessionsAdminPage() {
       });
       setDots(prev => prev.map(d => d.id === dot.id ? { ...d, is_active: !d.is_active } : d));
     } catch { addToast('Không thể cập nhật trạng thái', 'error'); }
+  }
+
+  async function togglePublic(dot: Dot) {
+    try {
+      await authFetch(`/api/admin/judge-batches/${dot.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_public: !dot.is_public }),
+      });
+      setDots(prev => prev.map(d => d.id === dot.id ? { ...d, is_public: !d.is_public } : d));
+    } catch { addToast('Không thể cập nhật trạng thái công khai', 'error'); }
   }
 
   async function deleteDot(dot: Dot) {
@@ -639,12 +653,13 @@ export default function FinalSessionsAdminPage() {
           {showDots && (
             <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} style={{ overflow: 'hidden' }}>
               <div className={styles.tableScrollWrapper}>
-                <div className={styles.classItemHeader} style={{ gridTemplateColumns: 'minmax(0,2fr) minmax(0,1.2fr) 60px 60px minmax(0,0.8fr) 140px', minWidth: 640 }}>
+                <div className={styles.classItemHeader} style={{ gridTemplateColumns: 'minmax(0,2fr) minmax(0,1.2fr) 60px 60px minmax(0,0.7fr) minmax(0,0.7fr) 140px', minWidth: 680 }}>
                   <div>Tiêu đề</div>
                   <div>Thời gian</div>
                   <div style={{ textAlign: 'center' }}>Buổi</div>
                   <div style={{ textAlign: 'center' }}>Yêu cầu</div>
                   <div>Trạng thái</div>
+                  <div>Công khai</div>
                   <div></div>
                 </div>
                 <AnimatePresence initial={false}>
@@ -652,7 +667,7 @@ export default function FinalSessionsAdminPage() {
                     <motion.div
                       key={dot.id}
                       className={styles.classItem}
-                      style={{ gridTemplateColumns: 'minmax(0,2fr) minmax(0,1.2fr) 60px 60px minmax(0,0.8fr) 140px', minWidth: 640, opacity: dot.is_active ? 1 : 0.55 }}
+                      style={{ gridTemplateColumns: 'minmax(0,2fr) minmax(0,1.2fr) 60px 60px minmax(0,0.7fr) minmax(0,0.7fr) 140px', minWidth: 680, opacity: dot.is_active ? 1 : 0.55 }}
                       initial={{ opacity: 0, y: 8 }}
                       animate={{ opacity: dot.is_active ? 1 : 0.55, y: 0 }}
                       transition={{ duration: 0.18, delay: Math.min(idx * 0.015, 0.3) }}
@@ -669,10 +684,16 @@ export default function FinalSessionsAdminPage() {
 	                      <div>
 	                        <BatchStatusBadge active={dot.is_active} />
 	                      </div>
+                      <div>
+                        <Badge variant={dot.is_public ? 'info' : 'default'} size="sm" shape="rounded">
+                          {dot.is_public ? 'Công khai' : 'Riêng tư'}
+                        </Badge>
+                      </div>
                       <TableActionGroup>
                         <TableActionButton label="Xem chi tiết" icon={<Icon.Eye />} onClick={() => router.push(`/admin/final-sessions/${dot.id}`)} />
                         <TableActionButton label="Sao chép link chia sẻ" icon={<Icon.Copy />} onClick={() => copyLink(dot.slug)} />
                         <TableActionButton label={dot.is_active ? 'Đóng đợt' : 'Mở lại đợt'} icon={dot.is_active ? <Icon.XCircle /> : <Icon.CheckCircle />} onClick={() => toggleActive(dot)} />
+                        <TableActionButton label={dot.is_public ? 'Chuyển sang riêng tư' : 'Công khai đợt'} icon={dot.is_public ? <Icon.Lock /> : <Icon.Globe />} onClick={() => togglePublic(dot)} />
                         <TableActionButton label="Xoá" icon={<Icon.Trash />} onClick={() => deleteDot(dot)} variant="danger" />
                       </TableActionGroup>
                     </motion.div>
@@ -761,6 +782,21 @@ export default function FinalSessionsAdminPage() {
                 onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
               />
             </div>
+
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-3)', padding: '12px 14px', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)', border: `1px solid ${form.isPublic ? 'rgba(94,106,210,0.35)' : 'var(--border)'}`, cursor: 'pointer', transition: 'border-color 0.15s' }}>
+              <input
+                type="checkbox"
+                checked={form.isPublic}
+                onChange={e => setForm(f => ({ ...f, isPublic: e.target.checked }))}
+                style={{ width: 16, height: 16, marginTop: 1, cursor: 'pointer', accentColor: 'var(--brand-indigo)', flexShrink: 0 }}
+              />
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 510, color: 'var(--text-primary)' }}>Công khai</div>
+                <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>
+                  Đợt sẽ hiển thị trên trang đăng ký — giáo viên không cần link mới thấy được
+                </div>
+              </div>
+            </label>
 
           </div>
         </div>

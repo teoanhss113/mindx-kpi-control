@@ -40,7 +40,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     await requireAdmin(request);
     const { id } = await params;
     const body = await request.json();
-    const allowed = ['title', 'slug', 'week_from', 'week_to', 'notes', 'is_active'];
+    const allowed = ['title', 'slug', 'week_from', 'week_to', 'notes', 'is_active', 'is_public'];
     const updates: Record<string, unknown> = {};
     for (const key of allowed) {
       if (key in body) updates[key] = body[key];

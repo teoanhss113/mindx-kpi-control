@@ -79,7 +79,7 @@ export async function POST(request: NextRequest) {
   try {
     const user = await requireAdmin(request);
     const body = await request.json();
-    const { slug, title, week_from, week_to, notes } = body;
+    const { slug, title, week_from, week_to, notes, is_public } = body;
 
     if (!slug || !title || !week_from || !week_to) {
       return NextResponse.json({ error: 'slug, title, week_from, week_to are required' }, { status: 400 });
@@ -105,7 +105,7 @@ export async function POST(request: NextRequest) {
 
     const { data, error } = await supabaseAdmin
       .from('judge_batches')
-      .insert({ slug, title, week_from, week_to, notes: notes || null, created_by: user.email })
+      .insert({ slug, title, week_from, week_to, notes: notes || null, is_public: is_public === true, created_by: user.email })
       .select()
       .single();
 

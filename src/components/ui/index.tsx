@@ -22,12 +22,15 @@ import {
   Pencil, Plus as _Plus, Repeat2, UsersRound,
   Bell as _Bell, BellOff as _BellOff,
   TrendingDown as _TrendingDown, TrendingUp as _TrendingUp,
-  Clock as _Clock, Check as _Check, Eye as _Eye,
+  Clock as _Clock, Check as _Check, Eye as _Eye, EyeOff as _EyeOff,
   Download as _Download, Settings as _Settings, Info as _Info,
   GripVertical as _GripVertical,
   FileText as _FileText, Calendar as _Calendar, CalendarDays as _CalendarDays,
   ClipboardCheck as _ClipboardCheck, Target as _Target, BookOpen as _BookOpen,
-  Copy as _Copy
+  Copy as _Copy,
+  Globe as _Globe,
+  Lock as _Lock,
+  Unlock as _Unlock,
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import styles from '@/app/dashboard.module.css'
@@ -167,6 +170,10 @@ export const Icon = {
   Check:          (p?: P) => <_Check           size={p?.size ?? 14} color={p?.color} />,
   X:              (p?: P) => <_X               size={p?.size ?? 12} color={p?.color} />,
   Eye:            (p?: P) => <_Eye             size={p?.size ?? 14} color={p?.color} />,
+  EyeOff:         (p?: P) => <_EyeOff         size={p?.size ?? 14} color={p?.color} />,
+  Globe:          (p?: P) => <_Globe          size={p?.size ?? 14} color={p?.color} />,
+  Lock:           (p?: P) => <_Lock           size={p?.size ?? 14} color={p?.color} />,
+  Unlock:         (p?: P) => <_Unlock         size={p?.size ?? 14} color={p?.color} />,
   Download:       (p?: P) => <_Download        size={p?.size ?? 14} color={p?.color} />,
   Settings:       (p?: P) => <_Settings        size={p?.size ?? 14} color={p?.color} />,
   Info:           (p?: P) => <_Info            size={p?.size ?? 14} color={p?.color} />,
@@ -201,16 +208,20 @@ export function TableActionButton({
   disabled?: boolean
 }) {
   return (
-    <button
-      type="button"
-      className={`${styles.tableActionBtn} ${variant === 'danger' ? styles.tableActionBtnDanger : ''}`}
-      onClick={onClick}
-      title={label}
-      aria-label={label}
-      disabled={disabled}
-    >
-      {icon}
-    </button>
+    <div className={styles.tooltipWrap}>
+      <button
+        type="button"
+        className={`${styles.tableActionBtn} ${variant === 'danger' ? styles.tableActionBtnDanger : ''}`}
+        onClick={onClick}
+        aria-label={label}
+        disabled={disabled}
+      >
+        {icon}
+      </button>
+      <span className={styles.tooltipBox} style={{ fontFamily: 'inherit', fontSize: 11 }}>
+        {label}
+      </span>
+    </div>
   )
 }
 
