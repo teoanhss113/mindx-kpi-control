@@ -183,6 +183,7 @@ function OfficeHoursPageInner() {
           if (cached.selectedCentres) setSelectedCentres(cached.selectedCentres);
           if (cached.exemptTypes) setExemptTypes(cached.exemptTypes);
           if (cached.exemptStatuses) setExemptStatuses(cached.exemptStatuses);
+          if (cached.exemptAppointmentStatuses) setExemptAppointmentStatuses(cached.exemptAppointmentStatuses);
           return; // Use cached dates
         }
       } catch (e) {
@@ -369,6 +370,7 @@ function OfficeHoursPageInner() {
         selectedCentres,
         exemptTypes,
         exemptStatuses,
+        exemptAppointmentStatuses,
         timestamp: Date.now(),
       });
       

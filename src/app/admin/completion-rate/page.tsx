@@ -38,13 +38,12 @@ import { useCSVExportPreferences } from '@/hooks/useCSVExportPreferences';
 import { CACHE_KEYS, LABELS, MESSAGES, ENTITIES, FORMAT, CLASS_INACTIVE_STATUSES } from '@/constants';
 import { useSharedDateRange, useSharedCentres } from '@/hooks/useSharedFilterState';
 import { exportToCSV, CSVColumn, CSVFormatters } from '@/lib/csvExport';
+import { isExemptStudent, DEFAULT_EXEMPTED_REASONS } from '@/lib/kpiCalculations';
 import styles from '../../dashboard.module.css';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 // Reasons that are EXEMPTED by default (checked = exempt = excluded from formula)
-const DEFAULT_EXEMPTED_REASONS = [
-  'CHANGE_CLASS_SCHEDULE_CHANGE', 'TRANSFER_COURSE_LINE', 'WRONG_ENROLL'
-];
+// Imported from shared kpiCalculations to keep in sync with dashboard
 const DEMO_REASON_KEY = 'DEMO_NOT_ARRANGED';
 const COMPLETION_TARGETS = [100, 95, 90];
 
@@ -81,33 +80,7 @@ function normalizeCompletionReasonMap(map: Record<string, boolean>): Record<stri
   }, {} as Record<string, boolean>);
 }
 
-/**
- * Check if a student should be exempt from completion rate calculation.
- * A student is exempt if:
- * 1. They have status WAITING and no attendance records (original logic)
- * 2. They are deactivated (activeInClass = false) and have no attendance records
- * 
- * This ensures deactivated students who never attended don't count against completion rate.
- */
-function isExemptStudent(st: StudentSlot, classSlots: Class['slots']): boolean {
-  const info = st.completionInfo;
-  const hasAttendance = classSlots?.some(slot => 
-    slot.studentAttendance?.some(a => a.student.id === st.student.id)
-  );
-  
-  // Original logic: WAITING status with no attendance
-  if (info && (info as any).status === 'WAITING' && !hasAttendance) {
-    return true;
-  }
-  
-  // New logic: Deactivated student with no attendance
-  // If student is not active in class and has no attendance records, they should be exempt
-  if (!st.activeInClass && !hasAttendance) {
-    return true;
-  }
-  
-  return false;
-}
+// isExemptStudent is imported from @/lib/kpiCalculations (shared with dashboard)
 
 // ─── Multi-Select Dropdown ───────────────────────────────────────────────────
 

@@ -10,10 +10,16 @@ import { getCache, setCache, clearCache } from '@/lib/idb';
 import { CACHE_KEYS, LABELS, FORMAT, ANIMATION, DATE_UTILS, MESSAGES, CLASS_INACTIVE_STATUSES, ENTITIES, TEACHER_SCHEDULE_CACHE_VERSION } from '@/constants';
 import { useSharedFilterState } from '@/hooks/useSharedFilterState';
 import { analyzeComments, analyzeAttendance } from '@/lib/classQualityAnalysis';
-import { 
-  completionColor, 
-  teacherChangeColor, 
-  surveyColor, 
+import {
+  calcCompletionRate,
+  calcTeacherChangeRate,
+  calcSurveyScore,
+  calcConversionRate,
+} from '@/lib/kpiCalculations';
+import {
+  completionColor,
+  teacherChangeColor,
+  surveyColor,
   conversionColor,
   multiTeacherScore,
   kpiColor,
@@ -344,39 +350,17 @@ export default function DashboardPage() {
     }
   }
 
-  // KPI Calculations
+  // KPI Calculations — all use shared functions from kpiCalculations.ts so numbers
+  // match the individual pages (default exemptions applied consistently).
   const completionRate = useMemo(() => {
     if (!completionData?.classes) return null;
     try {
-      let totalPass = 0;
-      let totalBase = 0;
-      
-      completionData.classes.forEach((cls: any) => {
-        const isCancelled = cls.status === 'ABANDONED' || cls.status === 'REJECTED';
-        if (isCancelled) return;
-        
-        let clsPass = 0;
-        let clsBase = 0;
-        
-        (cls.students || []).forEach((st: any) => {
-          const info = st.completionInfo;
-          // Skip exempt students (students with no attendance)
-          const isExempt = info?.status === 'WAITING' && !(cls.slots || []).some((slot: any) => 
-            (slot.studentAttendance || []).some((a: any) => a.student.id === st.student.id)
-          );
-          if (isExempt) return;
-          
-          clsBase++;
-          if (info?.status === 'PASSED' || info?.status === 'COMPLETED' || info?.status === 'FINISHED') {
-            clsPass++;
-          }
-        });
-        
-        totalPass += clsPass;
-        totalBase += clsBase;
-      });
-      
-      return totalBase > 0 ? (totalPass / totalBase) * 100 : null;
+      const { rate } = calcCompletionRate(
+        completionData.classes,
+        completionData.exemptedReasons,   // use saved user preferences if present
+        completionData.exemptedCourses
+      );
+      return rate;
     } catch (err) {
       console.error('Error calculating completion rate:', err);
       return null;
@@ -387,113 +371,30 @@ export default function DashboardPage() {
   const activeClassesCount = useMemo(() => {
     if (!completionData?.classes) return 0;
     return completionData.classes.filter((cls: any) => {
-      const status = cls.status?.toUpperCase();
-      return status !== 'ABANDONED' && status !== 'REJECTED';
+      const s = cls.status?.toUpperCase();
+      return s !== 'ABANDONED' && s !== 'REJECTED';
     }).length;
   }, [completionData]);
 
-  const teacherChangeRate = useMemo(() => {
-    if (!teacherChangeData?.classes) return null;
+  const { teacherChangeRate, multiTeacherRate, activeTeacherChangeClassesCount } = useMemo(() => {
+    if (!teacherChangeData?.classes) return { teacherChangeRate: null, multiTeacherRate: null, activeTeacherChangeClassesCount: 0 };
     try {
-      const activeClasses = teacherChangeData.classes.filter((cls: any) => 
-        !CLASS_INACTIVE_STATUSES.has(cls.status?.toUpperCase?.())
-      );
-      
-      // Use EXACT logic from teacher-change page
-      const classesWithChange = activeClasses.filter((cls: any) => {
-        const slots = (cls.slots ?? [])
-          .filter((s: any) => s.date)
-          .sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
-        
-        // Primary LEC: from first slot's LEC (most authoritative)
-        let primaryLEC: any = null;
-        for (const slot of slots) {
-          const lec = (slot.teachers ?? []).find((t: any) => {
-            const role = typeof t.role === 'string' ? t.role : (t.role?.shortName ?? t.role?.name ?? '');
-            return role.toUpperCase() === 'LEC';
-          });
-          if (lec) { primaryLEC = lec; break; }
-        }
-        if (!primaryLEC) {
-          primaryLEC = (cls.teachers ?? []).find((t: any) => {
-            const role = typeof t.role === 'string' ? t.role : (t.role?.shortName ?? t.role?.name ?? '');
-            return role.toUpperCase() === 'LEC';
-          }) ?? null;
-        }
-        
-        // Check if any slot has different LEC
-        let hasChange = false;
-        for (const slot of slots) {
-          const slotLEC = (slot.teachers ?? []).find((t: any) => {
-            const role = typeof t.role === 'string' ? t.role : (t.role?.shortName ?? t.role?.name ?? '');
-            return role.toUpperCase() === 'LEC';
-          }) ?? null;
-          
-          if (primaryLEC && slotLEC && slotLEC.teacher.id !== primaryLEC.teacher.id) {
-            hasChange = true;
-            break;
-          }
-        }
-        
-        return hasChange;
-      }).length;
-      
-      const totalClasses = activeClasses.length;
-      return totalClasses > 0 ? (classesWithChange / totalClasses) * 100 : null;
+      const result = calcTeacherChangeRate(teacherChangeData.classes);
+      return {
+        teacherChangeRate: result.changeRate,
+        multiTeacherRate: result.multiTeacherRate,
+        activeTeacherChangeClassesCount: result.totalClasses,
+      };
     } catch (err) {
       console.error('Error calculating teacher change rate:', err);
-      return null;
+      return { teacherChangeRate: null, multiTeacherRate: null, activeTeacherChangeClassesCount: 0 };
     }
-  }, [teacherChangeData]);
-
-  // Count active classes for teacher change (excluding ABANDONED/REJECTED/CANCELLED)
-  const activeTeacherChangeClassesCount = useMemo(() => {
-    if (!teacherChangeData?.classes) return 0;
-    return teacherChangeData.classes.filter((cls: any) => 
-      !CLASS_INACTIVE_STATUSES.has(cls.status?.toUpperCase?.())
-    ).length;
   }, [teacherChangeData]);
 
   const surveyScore = useMemo(() => {
     if (!ticketsData?.tickets) return null;
     try {
-      // Use EXACT logic from tickets page - extract teacher score from _groupScores
-      let totalScore = 0;
-      let scoredTicketsCount = 0;
-      
-      ticketsData.tickets.forEach((t: any) => {
-        // Process each ticket to extract group scores (same as tickets page)
-        const groupScores: Record<string, { total: number; count: number }> = {};
-        
-        if (t.ticketSource?.answers?.length) {
-          t.ticketSource.answers.forEach((ans: any) => {
-            const question = t.ticketSource?.questions?.find((q: any) => q.id === ans.questionId);
-            if (!question) return;
-
-            const val = parseFloat(ans.value);
-            if (!isNaN(val) && val > 0 && val <= 5) {
-              const g = question.group || 'Khác';
-              if (!groupScores[g]) groupScores[g] = { total: 0, count: 0 };
-              groupScores[g].total += val;
-              groupScores[g].count++;
-            }
-          });
-        }
-        
-        // Find teacher score group
-        const teacherScoreEntry = Object.entries(groupScores).find(([group]) => {
-          const gName = group.toUpperCase();
-          return gName.includes('TEACHER') || gName.includes('GIÁO VIÊN') || gName === 'GV';
-        });
-        
-        if (teacherScoreEntry) {
-          const [, data] = teacherScoreEntry;
-          totalScore += (data.total / data.count);
-          scoredTicketsCount++;
-        }
-      });
-      
-      return scoredTicketsCount > 0 ? parseFloat((totalScore / scoredTicketsCount).toFixed(1)) : null;
+      return calcSurveyScore(ticketsData.tickets);
     } catch (err) {
       console.error('Error calculating survey score:', err);
       return null;
@@ -503,77 +404,18 @@ export default function DashboardPage() {
   const conversionRate = useMemo(() => {
     if (!officeHoursData?.officeHours) return null;
     try {
-      // Use EXACT logic from office-hours page
-      // Conversion = học viên có Order HOẶC có Payment
-      let totalAppointments = 0;
-      let convertedAppointments = 0;
-      
-      officeHoursData.officeHours.forEach((oh: any) => {
-        if (oh.appointments && oh.appointments.length > 0) {
-          oh.appointments.forEach((apt: any) => {
-            // Skip canceled appointments (same exemption logic as office-hours page)
-            if (apt.status === 'CANCELED') return;
-            
-            totalAppointments++;
-            
-            // Converted = có Order HOẶC có Payment
-            if (apt.resultAfterTrial?.isHasOrder || apt.resultAfterTrial?.isHasPayment) {
-              convertedAppointments++;
-            }
-          });
-        }
-      });
-      
-      return totalAppointments > 0 ? (convertedAppointments / totalAppointments) * 100 : null;
+      const { rate } = calcConversionRate(
+        officeHoursData.officeHours,
+        officeHoursData.exemptTypes,
+        officeHoursData.exemptStatuses,
+        officeHoursData.exemptAppointmentStatuses
+      );
+      return rate;
     } catch (err) {
       console.error('Error calculating conversion rate:', err);
       return null;
     }
   }, [officeHoursData]);
-
-  // Multi-teacher rate calculation
-  const multiTeacherRate = useMemo(() => {
-    if (!teacherChangeData?.classes) return null;
-    try {
-      const activeClasses = teacherChangeData.classes.filter((cls: any) => 
-        !CLASS_INACTIVE_STATUSES.has(cls.status?.toUpperCase?.())
-      );
-      
-      // Use EXACT logic from teacher-change page
-      const classesWithMultiTeachers = activeClasses.filter((cls: any) => {
-        // Gather all unique LEC + SUPPLY teachers (same logic as teacher-change page)
-        const teacherMap = new Map<string, any>();
-        
-        // From cls.teachers
-        (cls.teachers ?? []).forEach((t: any) => {
-          const role = typeof t.role === 'string' ? t.role : (t.role?.shortName ?? t.role?.name ?? '');
-          const roleUpper = role.toUpperCase();
-          if (roleUpper === 'LEC' || roleUpper === 'SUPPLY') {
-            teacherMap.set(t.teacher.id, t);
-          }
-        });
-        
-        // From slots
-        (cls.slots ?? []).forEach((slot: any) => {
-          (slot.teachers ?? []).forEach((t: any) => {
-            const role = typeof t.role === 'string' ? t.role : (t.role?.shortName ?? t.role?.name ?? '');
-            const roleUpper = role.toUpperCase();
-            if ((roleUpper === 'LEC' || roleUpper === 'SUPPLY') && !teacherMap.has(t.teacher.id)) {
-              teacherMap.set(t.teacher.id, t);
-            }
-          });
-        });
-        
-        return teacherMap.size >= 3;
-      }).length;
-      
-      const totalClasses = activeClasses.length;
-      return totalClasses > 0 ? (classesWithMultiTeachers / totalClasses) * 100 : null;
-    } catch (err) {
-      console.error('Error calculating multi-teacher rate:', err);
-      return null;
-    }
-  }, [teacherChangeData]);
 
   // Count-based color helper
   const getCountColor = (count: number, thresholds: [number, number, number, number]): string => {
