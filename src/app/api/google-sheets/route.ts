@@ -1,9 +1,11 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { sheets } from '@/lib/googleSheets';
 import { normalizeCenterHint } from '@/lib/googleSheetsMatching';
+import { requireUser, authErrorResponse } from '@/lib/auth/serverAuth';
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   try {
+    await requireUser(request);
     const { searchParams } = new URL(request.url);
     const spreadsheetId = searchParams.get('spreadsheetId') || process.env.GOOGLE_SPREADSHEET_ID;
     const sheetName = searchParams.get('sheetName') || 'Form Responses 1';
@@ -158,10 +160,6 @@ export async function GET(request: Request) {
     });
 
   } catch (error: any) {
-    console.error('Google Sheets Intelligent Range error:', error);
-    return NextResponse.json({ 
-      error: 'Failed to fetch filtered data',
-      details: error.message 
-    }, { status: 500 });
+    return authErrorResponse(error);
   }
 }

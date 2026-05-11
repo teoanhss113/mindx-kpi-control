@@ -16,10 +16,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 
-const FIREBASE_API_KEY = process.env.NEXT_PUBLIC_FIREBASE_API_KEY
-  || 'AIzaSyAh2Au-mk5ci-hN83RUBqj1fsAmCMdvJx4';
-const FIREBASE_LOOKUP_URL =
-  `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${FIREBASE_API_KEY}`;
+function getFirebaseLookupUrl(): string {
+  const key = process.env.NEXT_PUBLIC_FIREBASE_API_KEY;
+  if (!key) throw new Error('NEXT_PUBLIC_FIREBASE_API_KEY is not configured');
+  return `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${key}`;
+}
 
 export class AuthError extends Error {
   status: number;
@@ -53,7 +54,7 @@ export function extractBearer(request: NextRequest): string {
 export async function verifyFirebaseIdToken(idToken: string): Promise<{ uid: string; email: string }> {
   if (!idToken || idToken.length < 20) throw new AuthError('Invalid token');
 
-  const res = await fetch(FIREBASE_LOOKUP_URL, {
+  const res = await fetch(getFirebaseLookupUrl(), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ idToken }),
@@ -135,5 +136,5 @@ export function authErrorResponse(error: unknown): NextResponse {
     return NextResponse.json({ error: error.message }, { status: error.status });
   }
   console.error('[authErrorResponse] Unexpected error:', error);
-  return NextResponse.json({ error: 'Internal Server Error', details: String(error) }, { status: 500 });
+  return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
 }

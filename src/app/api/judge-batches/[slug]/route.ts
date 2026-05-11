@@ -5,7 +5,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
-import { extractBearer, verifyFirebaseIdToken, authErrorResponse } from '@/lib/auth/serverAuth';
+import { extractBearer, verifyFirebaseIdToken, authErrorResponse, AuthError } from '@/lib/auth/serverAuth';
 
 interface JudgeRequestRow {
   final_session_id: string;
@@ -20,11 +20,20 @@ export async function GET(
   { params }: { params: Promise<{ slug: string }> },
 ) {
   try {
-    // Only verify the Firebase token — no Supabase profile lookup needed.
-    // This page is link-based: any authenticated Firebase user (teacher) can access it.
     const idToken = extractBearer(request);
-    const { email } = await verifyFirebaseIdToken(idToken);
+    const { uid, email } = await verifyFirebaseIdToken(idToken);
     const { slug } = await params;
+
+    // Verify the user is a registered member of the organisation
+    const { data: profile } = await supabaseAdmin
+      .from('profiles')
+      .select('id, is_active')
+      .or(`id.eq.${uid},email.eq.${email}`)
+      .maybeSingle();
+
+    if (!profile || !profile.is_active) {
+      throw new AuthError('Access denied', 403);
+    }
 
     const { data: batch, error: bErr } = await supabaseAdmin
       .from('judge_batches')

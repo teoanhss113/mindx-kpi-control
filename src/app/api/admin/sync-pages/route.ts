@@ -1,8 +1,9 @@
 // API Route: Sync Pages
 // Automatically creates all required pages in database
 
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { requireAdmin, authErrorResponse } from '@/lib/auth/serverAuth';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -115,8 +116,9 @@ const REQUIRED_PAGES = [
   },
 ];
 
-export async function POST() {
+export async function POST(request: NextRequest) {
   try {
+    await requireAdmin(request);
     const results = {
       created: [] as string[],
       updated: [] as string[],
@@ -200,19 +202,13 @@ export async function POST() {
       details: results,
     });
   } catch (error: any) {
-    console.error('[Sync Pages] Error:', error);
-    return NextResponse.json(
-      {
-        success: false,
-        error: error.message || 'Failed to sync pages',
-      },
-      { status: 500 }
-    );
+    return authErrorResponse(error);
   }
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    await requireAdmin(request);
     // Get all pages
     const { data: pages, error } = await supabase
       .from('pages')
@@ -236,13 +232,6 @@ export async function GET() {
       needsSync: missingKeys.length > 0,
     });
   } catch (error: any) {
-    console.error('[Get Pages] Error:', error);
-    return NextResponse.json(
-      {
-        success: false,
-        error: error.message || 'Failed to get pages',
-      },
-      { status: 500 }
-    );
+    return authErrorResponse(error);
   }
 }

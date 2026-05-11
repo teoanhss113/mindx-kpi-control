@@ -9,6 +9,10 @@ import { join } from 'path';
 import { requireAdmin, authErrorResponse, AuthError } from '@/lib/auth/serverAuth';
 
 export async function GET(request: NextRequest) {
+  if (process.env.NODE_ENV !== 'development') {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  }
+
   try {
     await requireAdmin(request);
 

@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { AuthSession } from '@/types/auth';
-import { loadSession, clearSession, isAuthenticated } from '@/services/authService';
+import { loadSession, logout as authLogout, isAuthenticated } from '@/services/authService';
 import { useRouter } from 'next/navigation';
 
 interface AuthContextValue {
@@ -27,31 +27,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const stored = loadSession();
 
     if (!stored) {
+      // No localStorage metadata — try to restore entirely from httpOnly cookie
+      const restored = await tryRestoreFromCookie();
+      setSession(restored);
       setIsLoading(false);
       return;
     }
 
-    // Check if token is still valid
     if (!isAuthenticated()) {
-      console.log('[AuthProvider] Session expired, clearing...');
-      clearSession();
-      setSession(null);
+      // Metadata says token is expired — try cookie-based refresh before giving up
+      const restored = await tryRestoreFromCookie();
+      if (!restored) {
+        // Cookie is also gone/expired — clear stale localStorage and show login
+        const { clearSession } = await import('@/services/authService');
+        clearSession();
+      }
+      setSession(restored);
       setIsLoading(false);
       return;
     }
 
-    // Check if token needs refresh (within 5 minutes of expiry)
-    const now = Date.now();
-    const bufferTime = 5 * 60 * 1000; // 5 minutes
-
-    if (now >= stored.expiresAt - bufferTime) {
-      console.log('[AuthProvider] Token expiring soon, refreshing...');
+    // Token still valid — check if close to expiry and refresh proactively
+    const bufferMs = 5 * 60 * 1000;
+    if (Date.now() >= stored.expiresAt - bufferMs) {
       try {
         const { refreshSession } = await import('@/services/authService');
         const refreshed = await refreshSession(stored);
         setSession(refreshed);
-      } catch (error) {
-        console.error('[AuthProvider] Token refresh failed:', error);
+      } catch {
+        const { clearSession } = await import('@/services/authService');
         clearSession();
         setSession(null);
       }
@@ -62,23 +66,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(false);
   }
 
-  // Proactive token refresh: schedule a refresh 5 minutes before the token expires.
-  // This keeps AuthContext.session always fresh and prevents the brief window where
-  // multiple page-mounts all race to refresh simultaneously.
+  async function tryRestoreFromCookie(): Promise<AuthSession | null> {
+    try {
+      const { tryRestoreFromCookie: restore } = await import('@/services/authService');
+      return await restore();
+    } catch {
+      return null;
+    }
+  }
+
+  // Proactive refresh: schedule a refresh 5 minutes before expiry
   useEffect(() => {
     if (!session?.expiresAt) return;
 
     const msUntilRefresh = session.expiresAt - Date.now() - 5 * 60 * 1000;
-    if (msUntilRefresh <= 0) return; // already within buffer, getValidToken handles it
+    if (msUntilRefresh <= 0) return;
 
     const timer = setTimeout(async () => {
       try {
         const { refreshSession } = await import('@/services/authService');
         const newSession = await refreshSession(session);
         setSession(newSession);
-        console.log('[AuthProvider] Proactive token refresh succeeded');
-      } catch (error) {
-        console.error('[AuthProvider] Proactive token refresh failed:', error);
+      } catch {
         // Don't force logout here — let the next API call surface the error gracefully
       }
     }, msUntilRefresh);
@@ -87,7 +96,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [session?.expiresAt]);
 
   const logout = useCallback(() => {
-    clearSession();
+    authLogout(); // clears memory + localStorage + httpOnly cookie
     setSession(null);
     router.push('/login');
   }, [router]);
@@ -108,8 +117,3 @@ export function useAuth(): AuthContextValue {
   if (!ctx) throw new Error('useAuth must be used inside AuthProvider');
   return ctx;
 }
-// Improved auth state management
-
-// Improved auth state management
-
-// Improved auth state

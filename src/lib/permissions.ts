@@ -149,27 +149,39 @@ export function checkPagePermissions(
   };
 }
 
-/**
- * Mock function to get current user permissions
- * TODO: Replace with actual implementation that fetches from Supabase
- * @param userId - User ID
- * @returns User permissions
- */
 export async function getUserPermissions(
   userId: string
 ): Promise<UserPermissions | null> {
-  // TODO: Implement actual fetch from Supabase
-  // This is a placeholder that should be replaced with:
-  // 1. Get user's role_id from profiles table
-  // 2. Get role_permissions for that role
-  // 3. Join with pages table to get page details
-  
-  console.warn('getUserPermissions not implemented - using mock data');
-  return null;
+  const { supabaseAdmin } = await import('./supabase/admin');
+
+  // 1. Get the user's role_id from their profile
+  const { data: profile, error: profileError } = await supabaseAdmin
+    .from('profiles')
+    .select('role_id, is_active')
+    .eq('id', userId)
+    .maybeSingle();
+
+  if (profileError || !profile || !profile.is_active) return null;
+  if (!profile.role_id) return { rolePermissions: [] };
+
+  // 2. Get all permissions for the role, joined with page details
+  const { data: permissions, error: permError } = await supabaseAdmin
+    .from('role_permissions')
+    .select(`
+      id,
+      role_id,
+      page_id,
+      can_view,
+      can_edit,
+      created_at,
+      pages ( id, page_name, key, description )
+    `)
+    .eq('role_id', profile.role_id)
+    .eq('can_view', true);
+
+  if (permError) return null;
+
+  return {
+    rolePermissions: (permissions ?? []) as unknown as Array<RolePermission & { pages: Page }>,
+  };
 }
-
-// Fixed permission logic
-// Fixed permission logic
-// Fixed permission check logic
-
-// Fixed permission logic

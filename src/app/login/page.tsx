@@ -66,16 +66,9 @@ function LoginForm() {
     setError(null);
 
     try {
-      console.log('[Login] Starting login with:', emailOrUsername.includes('@') ? 'email' : 'username');
-      
       const session = await signIn(emailOrUsername.trim(), password);
-      console.log('[Login] Sign in successful, session:', {
-        uid: session.uid,
-        email: session.email,
-        hasToken: !!session.idToken,
-      });
-      
-      persistSession(session);
+
+      await persistSession(session);
       
       // Critical: Set flag BEFORE updating state so next page sees it even if React unmounts this form
       sessionStorage.setItem('mindx_just_logged_in', 'true');
@@ -85,7 +78,6 @@ function LoginForm() {
       // Sync profile (creates if missing) and learn the user's role.
       let profile: { role_id?: string | null; is_active?: boolean } | null = null;
       try {
-        console.log('[Login] Syncing profile...');
         const syncRes = await fetch('/api/auth/sync-profile', {
           method: 'POST',
           headers: {
@@ -102,15 +94,8 @@ function LoginForm() {
         if (syncRes.ok) {
           const json = await syncRes.json();
           profile = json?.profile || null;
-          console.log('[Login] Profile synced:', {
-            role_id: profile?.role_id,
-            is_active: profile?.is_active,
-          });
-        } else {
-          console.error('[Login] Profile sync failed:', syncRes.status);
         }
-      } catch (syncError) {
-        console.error('[Login] Profile sync error:', syncError);
+      } catch {
         // Sync failure → fall through to user view.
       }
 
@@ -121,7 +106,6 @@ function LoginForm() {
       // splitting traffic correctly based on real-time hydrate permissions flawlessly.
       router.replace(callbackUrl || '/');
     } catch (err) {
-      console.error('[Login] Login error:', err);
       const msg = err instanceof Error ? err.message : 'Đăng nhập thất bại';
       // Map Firebase error codes to user-friendly messages
       setError(
@@ -272,8 +256,3 @@ export default function LoginPage() {
   );
 }
 
-// Fixed form validation
-// Fixed form validation
-// Fixed form validation logic
-
-// Fixed form validation

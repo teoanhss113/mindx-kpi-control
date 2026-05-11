@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import webpush from 'web-push';
+import { requireAdmin, authErrorResponse } from '@/lib/auth/serverAuth';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -35,6 +36,7 @@ interface NotificationPayload {
 
 export async function POST(request: NextRequest) {
   try {
+    await requireAdmin(request);
     const body = await request.json();
     const { userId, userIds, payload } = body as {
       userId?: string;
@@ -123,10 +125,6 @@ export async function POST(request: NextRequest) {
       total: results.length
     });
   } catch (error) {
-    console.error('[Send] Error:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    return authErrorResponse(error);
   }
 }

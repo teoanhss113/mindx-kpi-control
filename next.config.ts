@@ -1,9 +1,12 @@
 import type { NextConfig } from "next";
 
+const allowedDevOrigins =
+  process.env.NODE_ENV === 'development' && process.env.NGROK_URL
+    ? [process.env.NGROK_URL]
+    : [];
+
 const nextConfig: NextConfig = {
-  // allowedDevOrigins là top-level key (không phải experimental)
-  // Wildcard *.ngrok-free.app được hỗ trợ theo docs chính thức Next.js 16
-  allowedDevOrigins: ['*.ngrok-free.dev'],
+  allowedDevOrigins,
   turbopack: {},
 };
 

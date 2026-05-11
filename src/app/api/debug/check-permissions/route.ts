@@ -7,6 +7,10 @@ import { requireUser, authErrorResponse, AuthError } from '@/lib/auth/serverAuth
  * Admins may query other users by passing ?userId=<uid>.
  */
 export async function GET(request: NextRequest) {
+  if (process.env.NODE_ENV !== 'development') {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  }
+
   try {
     const caller = await requireUser(request);
 

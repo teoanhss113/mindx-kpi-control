@@ -85,6 +85,24 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'slug, title, week_from, week_to are required' }, { status: 400 });
     }
 
+    if (!/^[a-z0-9-]+$/.test(slug) || slug.length > 80) {
+      return NextResponse.json({ error: 'Slug chỉ được chứa chữ thường, số, dấu gạch ngang, tối đa 80 ký tự' }, { status: 400 });
+    }
+    if (typeof title !== 'string' || title.length > 200) {
+      return NextResponse.json({ error: 'Title tối đa 200 ký tự' }, { status: 400 });
+    }
+    if (notes !== undefined && notes !== null && (typeof notes !== 'string' || notes.length > 2000)) {
+      return NextResponse.json({ error: 'Notes tối đa 2000 ký tự' }, { status: 400 });
+    }
+    const weekFromDate = new Date(week_from);
+    const weekToDate = new Date(week_to);
+    if (isNaN(weekFromDate.getTime()) || isNaN(weekToDate.getTime())) {
+      return NextResponse.json({ error: 'week_from và week_to phải là ngày hợp lệ' }, { status: 400 });
+    }
+    if (weekFromDate > weekToDate) {
+      return NextResponse.json({ error: 'week_from phải trước week_to' }, { status: 400 });
+    }
+
     const { data, error } = await supabaseAdmin
       .from('judge_batches')
       .insert({ slug, title, week_from, week_to, notes: notes || null, created_by: user.email })
