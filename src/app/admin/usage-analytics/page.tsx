@@ -42,6 +42,8 @@ import styles from '@/app/dashboard.module.css';
 type UsageAnalytics = NonNullable<Awaited<ReturnType<typeof getUsageAnalytics>>['data']>;
 
 type TrendMetric = 'daily' | 'weekly' | 'hourly';
+type EnvironmentMetric = 'devices' | 'browsers' | 'operatingSystems';
+type EnvironmentUserDetail = UsageAnalytics['environmentUserDetails'][EnvironmentMetric][number];
 
 function formatNumber(value: number) {
   return new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 1 }).format(value);
@@ -186,13 +188,15 @@ function EnvironmentChartPanel({
   items,
   value,
   onChange,
+  onSelectGroup,
 }: {
   items: Array<{ name: string; count: number }>;
-  value: 'devices' | 'browsers' | 'operatingSystems';
-  onChange: (value: 'devices' | 'browsers' | 'operatingSystems') => void;
+  value: EnvironmentMetric;
+  onChange: (value: EnvironmentMetric) => void;
+  onSelectGroup: (name: string) => void;
 }) {
   const compactItems = compactDistributionItems(items);
-  const total = compactItems.reduce((sum, item) => sum + item.count, 0);
+  const total = items.reduce((sum, item) => sum + item.count, 0);
 
   return (
     <ChartCard title="Môi trường sử dụng">
@@ -248,8 +252,8 @@ function EnvironmentChartPanel({
               </tr>
             </thead>
             <tbody>
-              {compactItems.map((item, index) => (
-                <tr key={item.name}>
+              {items.map((item, index) => (
+                <tr key={item.name} style={{ cursor: 'pointer' }} onClick={() => onSelectGroup(item.name)}>
                   <td style={{ fontWeight: 510 }}>
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-2)' }}>
                       <span style={{ width: 8, height: 8, borderRadius: 99, background: PIE_COLORS[index % PIE_COLORS.length], flexShrink: 0 }} />
@@ -328,8 +332,9 @@ export default function UsageAnalyticsPage() {
     userPages: true,
   });
   const [selectedUserEmail, setSelectedUserEmail] = useState<string | null>(null);
+  const [selectedEnvironmentGroup, setSelectedEnvironmentGroup] = useState<string | null>(null);
   const [trendMetric, setTrendMetric] = useState<TrendMetric>('hourly');
-  const [environmentMetric, setEnvironmentMetric] = useState<'devices' | 'browsers' | 'operatingSystems'>('devices');
+  const [environmentMetric, setEnvironmentMetric] = useState<EnvironmentMetric>('devices');
 
   const loadData = useCallback(async () => {
     if (!fromDate || !toDate) {
@@ -470,6 +475,17 @@ export default function UsageAnalyticsPage() {
     return data.operatingSystems;
   }, [data, environmentMetric]);
 
+  const environmentLabel = environmentMetric === 'devices'
+    ? 'Thiết bị'
+    : environmentMetric === 'browsers'
+      ? 'Trình duyệt'
+      : 'Hệ điều hành';
+
+  const selectedEnvironmentUsers: EnvironmentUserDetail[] = useMemo(() => {
+    if (!data || !selectedEnvironmentGroup) return [];
+    return data.environmentUserDetails[environmentMetric].filter(row => row.name === selectedEnvironmentGroup);
+  }, [data, environmentMetric, selectedEnvironmentGroup]);
+
   return (
     <ProtectedPage pageKey="admin-users">
       <AdminPageWrapper title="Phân tích sử dụng" activePage="admin-usage-analytics">
@@ -535,7 +551,6 @@ export default function UsageAnalyticsPage() {
                       <th>Trang dùng nhiều nhất</th>
                       <th style={{ width: 180 }}>Hoạt động lần cuối</th>
                       <th style={{ width: 120 }}>Mức độ</th>
-                      <th style={{ width: 90 }}></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -552,19 +567,6 @@ export default function UsageAnalyticsPage() {
                             {user.totalPageViews >= data.summary.avgPageViewsPerUser ? 'Cao' : 'Ổn định'}
                           </Badge>
                         </td>
-                        <td>
-                          <button
-                            type="button"
-                            className={styles.clearCacheBtn}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              setSelectedUserEmail(user.email);
-                            }}
-                            style={{ padding: 'var(--space-1) var(--space-2)', fontSize: 12 }}
-                          >
-                            Chi tiết
-                          </button>
-                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -577,7 +579,11 @@ export default function UsageAnalyticsPage() {
             <EnvironmentChartPanel
               items={environmentItems}
               value={environmentMetric}
-              onChange={setEnvironmentMetric}
+              onChange={(value) => {
+                setEnvironmentMetric(value);
+                setSelectedEnvironmentGroup(null);
+              }}
+              onSelectGroup={setSelectedEnvironmentGroup}
             />
             </>
           ) : (
@@ -634,6 +640,46 @@ export default function UsageAnalyticsPage() {
                             />
                           </div>
                         </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </Modal>
+        )}
+
+        {selectedEnvironmentGroup && (
+          <Modal open={true} onClose={() => setSelectedEnvironmentGroup(null)} maxWidth="min(860px, calc(100vw - 40px))">
+            <ModalHeader
+              title={`Người dùng theo ${environmentLabel}`}
+              subtitle={selectedEnvironmentGroup}
+              onClose={() => setSelectedEnvironmentGroup(null)}
+            />
+            <div style={{ padding: 'var(--space-5)', maxHeight: 'calc(90vh - 96px)', overflowY: 'auto' }}>
+              <div className={styles.tableScrollWrapper}>
+                <table className={styles.studentTable}>
+                  <thead>
+                    <tr>
+                      <th>Email</th>
+                      <th style={{ width: 140 }}>Lượt xem</th>
+                      <th style={{ width: 160 }}>Tổng hoạt động</th>
+                      <th style={{ width: 180 }}>Hoạt động lần cuối</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedEnvironmentUsers.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} style={{ color: 'var(--text-tertiary)', textAlign: 'center' }}>
+                          Chưa có người dùng trong nhóm này
+                        </td>
+                      </tr>
+                    ) : selectedEnvironmentUsers.map(user => (
+                      <tr key={`${selectedEnvironmentGroup}-${user.email}`} style={{ cursor: 'pointer' }} onClick={() => setSelectedUserEmail(user.email)}>
+                        <td style={{ fontWeight: 510 }}>{user.email}</td>
+                        <td>{formatNumber(user.pageViews)}</td>
+                        <td>{formatNumber(user.totalEvents)}</td>
+                        <td>{formatDateTime(user.lastActivityAt)}</td>
                       </tr>
                     ))}
                   </tbody>

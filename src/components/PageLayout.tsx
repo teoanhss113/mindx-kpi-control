@@ -6,6 +6,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { usePermissionsContext } from '@/lib/PermissionsContext';
 import { initials, Icon } from '@/components/ui';
 import { NotificationBell } from '@/components/NotificationBell';
+import { NotificationPrompt } from '@/components/NotificationPrompt';
 import styles from '@/app/dashboard.module.css';
 
 interface PageLayoutProps {
@@ -48,6 +49,7 @@ export function PageLayout({ children, title, activePage, sidebarOpen = false, o
 
   return (
     <div className={styles.page}>
+      <NotificationPrompt />
       {/* Sidebar overlay for mobile */}
       {effectiveSidebarOpen && (
         <div className={styles.sidebarOverlay} onClick={() => handleSidebarToggle(false)} aria-hidden />

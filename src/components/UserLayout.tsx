@@ -6,6 +6,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { usePermissionsContext } from '@/lib/PermissionsContext';
 import { initials, Icon } from '@/components/ui';
 import { NotificationBell } from '@/components/NotificationBell';
+import { NotificationPrompt } from '@/components/NotificationPrompt';
 import styles from '@/app/dashboard.module.css';
 
 interface UserLayoutProps {
@@ -44,6 +45,7 @@ export function UserLayout({
 
   return (
     <div className={styles.page}>
+      <NotificationPrompt />
       {/* Sidebar overlay for mobile */}
       {isSidebarOpen && (
         <div 

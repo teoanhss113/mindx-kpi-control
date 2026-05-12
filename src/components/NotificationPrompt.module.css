@@ -2,53 +2,12 @@
   position: fixed;
   top: var(--space-4);
   right: var(--space-4);
-  z-index: 9999;
-  max-width: 420px;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius-card);
-  box-shadow: var(--shadow-elevated);
-  overflow: hidden;
+  z-index: 1000;
+  width: min(420px, calc(100vw - 32px));
 }
 
-.content {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-4);
-}
-
-.icon {
-  flex-shrink: 0;
-  width: 40px;
-  height: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(135deg, #5e6ad2 0%, #7170ff 100%);
-  color: white;
-  border-radius: var(--radius-comfortable);
-}
-
-.text {
-  flex: 1;
-  min-width: 0;
-}
-
-.text h4 {
-  margin: 0 0 var(--space-1) 0;
-  font-size: 14px;
-  font-weight: 590;
+.message {
   color: var(--text-primary);
-  letter-spacing: -0.13px;
-}
-
-.text p {
-  margin: 0;
-  font-size: 13px;
-  color: var(--text-tertiary);
-  letter-spacing: -0.08px;
-  line-height: 1.4;
 }
 
 .actions {
@@ -58,52 +17,6 @@
   flex-shrink: 0;
 }
 
-.enableButton {
-  padding: var(--space-2) var(--space-4);
-  background: var(--brand-indigo);
-  color: white;
-  border: none;
-  border-radius: var(--radius-comfortable);
-  font-size: 13px;
-  font-weight: 510;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  white-space: nowrap;
-}
-
-.enableButton:hover:not(:disabled) {
-  background: var(--accent-hover);
-  transform: translateY(-1px);
-}
-
-.enableButton:active:not(:disabled) {
-  transform: translateY(0);
-}
-
-.enableButton:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.dismissButton {
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: none;
-  border-radius: var(--radius-standard);
-  color: var(--text-tertiary);
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.dismissButton:hover {
-  background: var(--bg-panel);
-  color: var(--text-primary);
-}
-
 /* Mobile responsive */
 @media (max-width: 640px) {
   .prompt {
@@ -111,22 +24,5 @@
     right: var(--space-3);
     left: var(--space-3);
     max-width: none;
-  }
-
-  .content {
-    padding: var(--space-3);
-  }
-
-  .text h4 {
-    font-size: 13px;
-  }
-
-  .text p {
-    font-size: 12px;
-  }
-
-  .enableButton {
-    padding: var(--space-2) var(--space-3);
-    font-size: 12px;
   }
 }

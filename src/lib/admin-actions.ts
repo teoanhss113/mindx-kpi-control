@@ -831,6 +831,9 @@ export async function getUsageAnalytics(idToken: string, range: UsageAnalyticsRa
     const deviceCounts = new Map<string, number>();
     const browserCounts = new Map<string, number>();
     const osCounts = new Map<string, number>();
+    const deviceUserCounts = new Map<string, Map<string, number>>();
+    const browserUserCounts = new Map<string, Map<string, number>>();
+    const osUserCounts = new Map<string, Map<string, number>>();
     const dayCounts = new Map<string, number>();
     const weekCounts = new Map<string, number>();
     const hourCounts = new Map<string, number>();
@@ -865,9 +868,18 @@ export async function getUsageAnalytics(idToken: string, range: UsageAnalyticsRa
       if (event.event_type !== 'page_view') return;
 
       const label = pageLabel(event);
-      incrementMap(deviceCounts, event.device_type || 'Không rõ');
-      incrementMap(browserCounts, event.browser_name || 'Không rõ');
-      incrementMap(osCounts, event.os_name || 'Không rõ');
+      const deviceName = event.device_type || 'Không rõ';
+      const browserName = event.browser_name || 'Không rõ';
+      const osName = event.os_name || 'Không rõ';
+      incrementMap(deviceCounts, deviceName);
+      incrementMap(browserCounts, browserName);
+      incrementMap(osCounts, osName);
+      if (!deviceUserCounts.has(deviceName)) deviceUserCounts.set(deviceName, new Map());
+      if (!browserUserCounts.has(browserName)) browserUserCounts.set(browserName, new Map());
+      if (!osUserCounts.has(osName)) osUserCounts.set(osName, new Map());
+      incrementMap(deviceUserCounts.get(deviceName)!, event.user_email);
+      incrementMap(browserUserCounts.get(browserName)!, event.user_email);
+      incrementMap(osUserCounts.get(osName)!, event.user_email);
       incrementMap(dayCounts, dayKey);
       incrementMap(weekCounts, weekKey);
       incrementMap(hourCounts, hourKey);
@@ -927,6 +939,16 @@ export async function getUsageAnalytics(idToken: string, range: UsageAnalyticsRa
       .map(([hour, count]) => ({ hour, count }))
       .sort((a, b) => a.hour.localeCompare(b.hour));
 
+    const environmentUserDetails = (groups: Map<string, Map<string, number>>) => Array.from(groups.entries())
+      .flatMap(([name, users]) => Array.from(users.entries()).map(([email, pageViews]) => ({
+        name,
+        email,
+        pageViews,
+        totalEvents: userEvents.get(email) || 0,
+        lastActivityAt: userLastActivity.get(email) || null,
+      })))
+      .sort((a, b) => a.name.localeCompare(b.name, 'vi-VN') || b.pageViews - a.pageViews || a.email.localeCompare(b.email, 'vi-VN'));
+
     const busiestHour = hourlyDistribution.reduce(
       (best, current) => current.count > best.count ? current : best,
       { hour: '—', count: 0 },
@@ -976,6 +998,11 @@ export async function getUsageAnalytics(idToken: string, range: UsageAnalyticsRa
         devices: topEntries(deviceCounts, 10),
         browsers: topEntries(browserCounts, 10),
         operatingSystems: topEntries(osCounts, 10),
+        environmentUserDetails: {
+          devices: environmentUserDetails(deviceUserCounts),
+          browsers: environmentUserDetails(browserUserCounts),
+          operatingSystems: environmentUserDetails(osUserCounts),
+        },
         userSummaries,
         userPageDetails,
         dailyTrend,

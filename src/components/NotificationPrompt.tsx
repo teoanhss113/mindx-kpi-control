@@ -3,90 +3,75 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Icon } from '@/components/ui';
 import { useNotifications } from '@/hooks/useNotifications';
-import styles from './NotificationPrompt.module.css';
+import styles from '@/app/dashboard.module.css';
+import promptStyles from './NotificationPrompt.module.css';
 
-const DISMISSED_KEY = 'notification-prompt-dismissed';
-const DISMISS_DURATION = 7 * 24 * 60 * 60 * 1000; // 7 days
+const AUTO_REQUEST_KEY = 'notification-auto-requested';
+const AUTO_DISMISS_KEY = 'notification-prompt-dismissed-session';
 
 export function NotificationPrompt() {
-  const [visible, setVisible] = useState(false);
+  const [dismissed, setDismissed] = useState(
+    () => typeof window !== 'undefined' && sessionStorage.getItem(AUTO_DISMISS_KEY) === 'true'
+  );
+  const [showBlockedHelp, setShowBlockedHelp] = useState(false);
   const { supported, permission, subscribe, loading } = useNotifications();
-
-  useEffect(() => {
-    // Check if should show prompt
-    if (!supported || permission !== 'default') {
-      return;
-    }
-
-    const dismissed = localStorage.getItem(DISMISSED_KEY);
-    if (dismissed) {
-      const dismissedTime = parseInt(dismissed, 10);
-      if (Date.now() - dismissedTime < DISMISS_DURATION) {
-        return;
-      }
-    }
-
-    // Show after 3 seconds
-    const timer = setTimeout(() => {
-      setVisible(true);
-    }, 3000);
-
-    return () => clearTimeout(timer);
-  }, [supported, permission]);
+  const shouldShowPrompt = supported && permission !== 'granted' && !dismissed;
 
   const handleEnable = async () => {
+    sessionStorage.setItem(AUTO_REQUEST_KEY, 'true');
     const success = await subscribe();
-    if (success) {
-      setVisible(false);
+
+    if (!success) {
+      setShowBlockedHelp(true);
     }
   };
 
   const handleDismiss = () => {
-    localStorage.setItem(DISMISSED_KEY, Date.now().toString());
-    setVisible(false);
+    sessionStorage.setItem(AUTO_DISMISS_KEY, 'true');
+    setDismissed(true);
   };
 
   return (
-    <AnimatePresence>
-      {visible && (
-        <motion.div
-          className={styles.prompt}
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -20 }}
-          transition={{ duration: 0.3 }}
-        >
-          <div className={styles.content}>
-            <div className={styles.icon}>
-              <Icon.Bell size={20} />
-            </div>
-            <div className={styles.text}>
-              <h4>Bật thông báo</h4>
-              <p>Nhận thông báo khi có yêu cầu xác nhận hoặc cập nhật quan trọng</p>
-            </div>
-            <div className={styles.actions}>
+    <>
+      <AnimatePresence>
+        {shouldShowPrompt && (
+          <motion.div
+            className={`${styles.toast} ${styles.info} ${promptStyles.prompt}`}
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            transition={{ duration: 0.3 }}
+          >
+            <div className={styles.toastContent}>
+              <div className={`${styles.toastMessage} ${promptStyles.message}`}>
+                {showBlockedHelp || permission === 'denied'
+                  ? 'Trình duyệt đang chặn thông báo. Mở cài đặt trang trên thanh địa chỉ → Notifications → Allow.'
+                  : 'Bật thông báo để không bỏ lỡ cập nhật quan trọng.'}
+              </div>
+              {!showBlockedHelp && permission !== 'denied' && (
+                <button
+                  onClick={handleEnable}
+                  disabled={loading}
+                  className={styles.primaryBtn}
+                >
+                  {loading ? 'Đang bật...' : 'Bật ngay'}
+                </button>
+              )}
               <button
-                onClick={handleEnable}
-                disabled={loading}
-                className={styles.enableButton}
-              >
-                {loading ? 'Đang bật...' : 'Bật ngay'}
-              </button>
-              <button
+                type="button"
                 onClick={handleDismiss}
-                className={styles.dismissButton}
-                aria-label="Đóng"
+                className={styles.toastCloseButton}
+                aria-label="Tắt nhắc bật thông báo"
               >
-                <Icon.X size={18} />
+                ×
               </button>
             </div>
-          </div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </>
   );
 }
