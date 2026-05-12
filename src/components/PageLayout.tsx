@@ -11,7 +11,7 @@ import styles from '@/app/dashboard.module.css';
 interface PageLayoutProps {
   children: ReactNode;
   title: string;
-  activePage?: 'dashboard' | 'operations' | 'completion' | 'teacher-change' | 'tickets' | 'office-hours' | 'teachers' | 'final-sessions' | 'admin' | 'admin-users' | 'admin-regions' | 'admin-roles';
+  activePage?: 'dashboard' | 'operations' | 'completion' | 'teacher-change' | 'tickets' | 'office-hours' | 'teachers' | 'final-sessions' | 'admin' | 'admin-users' | 'admin-regions' | 'admin-roles' | 'admin-usage-analytics';
   sidebarOpen?: boolean;
   onSidebarToggle?: (open: boolean) => void;
 }
@@ -21,7 +21,7 @@ export function PageLayout({ children, title, activePage, sidebarOpen = false, o
   const { canView, loading: permissionsLoading } = usePermissionsContext();
   const router = useRouter();
   const [adminSubmenuOpen, setAdminSubmenuOpen] = useState(
-    activePage === 'admin' || activePage === 'admin-users' || activePage === 'admin-regions' || activePage === 'admin-roles'
+    activePage === 'admin' || activePage === 'admin-users' || activePage === 'admin-regions' || activePage === 'admin-roles' || activePage === 'admin-usage-analytics'
   );
   // Internal sidebar state — used when no external controller is wired up (e.g. dashboard)
   const [internalSidebarOpen, setInternalSidebarOpen] = useState(false);
@@ -41,10 +41,10 @@ export function PageLayout({ children, title, activePage, sidebarOpen = false, o
   const userEmail = _email;
 
   // Check if any admin page is active
-  const isAdminActive = activePage === 'admin' || activePage === 'admin-users' || activePage === 'admin-regions' || activePage === 'admin-roles';
+  const isAdminActive = activePage === 'admin' || activePage === 'admin-users' || activePage === 'admin-regions' || activePage === 'admin-roles' || activePage === 'admin-usage-analytics';
 
   // Check if user has access to any admin page
-  const hasAdminAccess = canView('admin-users') || canView('admin-regions') || canView('admin-roles');
+  const hasAdminAccess = canView('admin-users') || canView('admin-regions') || canView('admin-roles') || canView('admin-usage-analytics');
 
   return (
     <div className={styles.page}>
@@ -268,6 +268,15 @@ export function PageLayout({ children, title, activePage, sidebarOpen = false, o
                         <path d="M8 1l2 4h4l-3 3 1 4-4-2-4 2 1-4-3-3h4l2-4z" strokeLinecap="round" strokeLinejoin="round"/>
                       </svg>
                       Vai trò
+                    </div>
+                  )}
+                  {(canView('admin-usage-analytics') || canView('admin-users')) && (
+                    <div
+                      className={`${styles.sidebarSubmenuLink} ${activePage === 'admin-usage-analytics' ? styles.active : ''}`}
+                      onClick={() => { router.push('/admin/usage-analytics'); handleSidebarToggle(false); }}
+                    >
+                      <Icon.BarChart size={13} />
+                      Phân tích sử dụng
                     </div>
                   )}
                 </div>

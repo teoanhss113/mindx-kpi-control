@@ -16,15 +16,15 @@ import { getCache, setCache, clearCache } from '@/lib/idb';
 import { getOfficeHourCategory } from '@/lib/courseCategories';
 import { sendNotification, NotificationTemplates } from '@/lib/sendNotification';
 import { OfficeHour, OFFICE_HOUR_STATUS, OFFICE_HOUR_TYPE } from '@/types/officeHours';
-import { useToast, ToastContainer, initials, EmptyState, Toolbar, SelectOption, TableGroupHeader, AdminTableSection, Modal, ModalHeader, MultiSelect, TableToolbar, ChartSectionHeader, StandardXAxis, StandardYAxisCategory, StandardYAxisNumber, ChartLegend, ComposedChartConfig, CustomTooltip, UserSearchInput, type UserSearchResult, ModalFooter, CentreSelect, QuickFilterChips, ShiftRequestSuggestions, type ShiftRequest, OfficeHourTypeBadge, getOfficeHourTypeLabel, KPIThresholdSuggestions, Icon, ViewModeToggle, DetailGrid, DetailField, DetailText, Badge, CentreBadge, RawStatusBadge, getRawStatusVariant } from '@/components/ui';
+import { useToast, ToastContainer, initials, EmptyState, Toolbar, SelectOption, TableGroupHeader, AdminTableSection, Modal, ModalHeader, MultiSelect, TableToolbar, ChartSectionHeader, StandardXAxis, StandardYAxisCategory, StandardYAxisNumber, ChartLegend, ComposedChartConfig, CustomTooltip, UserSearchInput, type UserSearchResult, ModalFooter, CentreSelect, QuickFilterChips, ShiftRequestSuggestions, type ShiftRequest, OfficeHourTypeBadge, getOfficeHourTypeLabel, KPIThresholdSuggestions, KPIStatCard, Icon, ViewModeToggle, DetailGrid, DetailField, DetailText, Badge, CentreBadge, RawStatusBadge, getRawStatusVariant } from '@/components/ui';
 import { useQuickFilterChips } from '@/hooks/useUserPreferences';
 import { PageLayout } from '@/components/PageLayout';
 import { getNavItemsWithRouter } from '@/lib/navigation';
 import { useAllowedPages } from '@/hooks/useAllowedPages';
 import { useFilterOptions } from '@/hooks/useFilterOptions';
-import { CACHE_KEYS, MESSAGES, ENTITIES, LABELS, CHART_COLORS } from '@/constants';
+import { CACHE_KEYS, MESSAGES, ENTITIES, LABELS, CHART_COLORS, KPI_LABELS } from '@/constants';
 import { useSharedDateRange, useSharedCentres } from '@/hooks/useSharedFilterState';
-import { conversionColor, KPI_COLORS, CONVERSION_LEGEND } from '@/lib/kpiScoring';
+import { conversionColor, conversionScore, KPI_COLORS, CONVERSION_LEGEND } from '@/lib/kpiScoring';
 import { ProtectedPage } from '@/components/ProtectedPage';
 import styles from '../../dashboard.module.css';
 
@@ -1089,58 +1089,27 @@ function OfficeHoursPageInner() {
               {/* KPI Cards */}
               {kpis && (
                 <div className={styles.statsGrid}>
-                  <div className={styles.statCard}>
-                    <div className={styles.statLabel}>TỶ LỆ CHUYỂN ĐỔI</div>
-                    <div className={styles.statValue} style={{ color: conversionColor(kpis.conversionRate) }}>
-                      {kpis.conversionRate.toFixed(1)}%
-                    </div>
-                    <div className={styles.statDesc}>
-                      {kpis.convertedAppointments}/{kpis.totalAppointments} học viên có đơn hàng
-                    </div>
-                  </div>
-
-                  <div className={styles.statCard}>
-                    <div className={styles.statLabel}>TỔNG SỐ CA</div>
-                    <div className={styles.statValue}>{kpis.total}</div>
-                    <div className={styles.statDesc}>
-                      {kpis.trialSessions} ca trực tuyến · {kpis.officeSessions} ca tại cơ sở
-                    </div>
-                  </div>
-
-                  <div className={styles.statCard}>
-                    <div className={styles.statLabel}>TỔNG HỌC VIÊN</div>
-                    <div className={styles.statValue}>{kpis.totalAppointments}</div>
-                    <div className={styles.statDesc}>
-                      {kpis.trialedAppointments} đã học thử · {kpis.hasOrderAppointments} có đơn
-                    </div>
-                  </div>
-
-                  <div className={styles.statCard}>
-                    <div className={styles.statLabel}>TỶ LỆ ĐIỀU PHỐI GV</div>
-                    <div className={styles.statValue}>{kpis.teacherAssignmentRate.toFixed(1)}%</div>
-                    <div className={styles.statDesc}>
-                      {filteredOfficeHours.filter(oh => oh.teacher).length}/{kpis.total} ca có giáo viên
-                    </div>
-                  </div>
-
-                  <div className={styles.statCard}>
-                    <div className={styles.statLabel}>TỶ LỆ XÁC NHẬN</div>
-                    <div className={styles.statValue}>{kpis.approvalRate.toFixed(1)}%</div>
-                    <div className={styles.statDesc}>
-                      {filteredOfficeHours.filter(oh => oh.status === OFFICE_HOUR_STATUS.APPROVED).length} ca đã xác nhận
-                    </div>
-                  </div>
-
-                  <div className={styles.statCard}>
-                    <div className={styles.statLabel}>TỶ LỆ HỦY/TỪ CHỐI</div>
-                    <div className={styles.statValue}>{kpis.cancellationRate.toFixed(1)}%</div>
-                    <div className={styles.statDesc}>
-                      {filteredOfficeHours.filter(oh => 
-                        oh.status === OFFICE_HOUR_STATUS.REJECTED || 
-                        oh.status === OFFICE_HOUR_STATUS.ABANDONED
-                      ).length} ca bị huỷ
-                    </div>
-                  </div>
+                  <KPIStatCard
+                    label={KPI_LABELS.CONVERSION_RATE}
+                    value={`${kpis.conversionRate.toFixed(1)}%`}
+                    desc={`${kpis.convertedAppointments}/${kpis.totalAppointments} học viên có đơn hàng`}
+                    valueColor={conversionColor(kpis.conversionRate)}
+                    score={conversionScore(kpis.conversionRate)}
+                    icon={<Icon.TrendingUp size={18} />}
+                    delay={0}
+                  />
+                  <KPIStatCard
+                    label={KPI_LABELS.TRIAL_STUDENTS}
+                    value={String(kpis.totalAppointments)}
+                    desc={`${kpis.trialedAppointments} đã học thử · ${kpis.hasOrderAppointments} có đơn`}
+                    delay={0.07}
+                  />
+                  <KPIStatCard
+                    label={KPI_LABELS.DATA_SCOPE}
+                    value={String(kpis.total)}
+                    desc={`${kpis.trialSessions} ca trực tuyến · ${kpis.officeSessions} ca tại cơ sở`}
+                    delay={0.14}
+                  />
                 </div>
               )}
 

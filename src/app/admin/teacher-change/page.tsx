@@ -25,7 +25,7 @@ import { Class, Session, TeacherSlot } from '@/types/classes';
 import {
   Icon, SortIcon, useToast, ToastContainer,
   MultiSelect, SelectOption,
-  Toolbar, StatCard, ChartSectionHeader,
+  Toolbar, KPIStatCard, ChartSectionHeader,
   TableToolbar, TableGroupHeader, AdminTableSection,
   Modal, ModalHeader, EmptyState,
   initials,
@@ -39,7 +39,7 @@ import { useTableSort } from '@/hooks/useTableSort';
 import { useFilterOptions } from '@/hooks/useFilterOptions';
 import { useQuickFilterChips } from '@/hooks/useUserPreferences';
 import { useCSVExportPreferences } from '@/hooks/useCSVExportPreferences';
-import { CACHE_KEYS, LABELS, MESSAGES, ENTITIES, FORMAT, CLASS_INACTIVE_STATUSES } from '@/constants';
+import { CACHE_KEYS, LABELS, MESSAGES, ENTITIES, FORMAT, CLASS_INACTIVE_STATUSES, KPI_LABELS } from '@/constants';
 import { useSharedDateRange, useSharedCentres } from '@/hooks/useSharedFilterState';
 import { exportToCSV, CSVColumn, CSVFormatters } from '@/lib/csvExport';
 import { ProtectedPage } from '@/components/ProtectedPage';
@@ -685,38 +685,32 @@ export default function TeacherChangePage() {
               initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
 
               {/* KPI 1 — MAIN: % of classes with LEC change */}
-              <StatCard
-                label="TỶ LỆ THAY GV CHÍNH (LEC)"
+              <KPIStatCard
+                label={KPI_LABELS.TEACHER_CHANGE_RATE}
                 value={stats.totalClasses > 0 ? `${stats.lecChangeRate.toFixed(1)}%` : '—'}
                 desc={`${stats.classesWithLECChange}/${stats.totalClasses} lớp thay GV chính`}
                 valueColor={kpiColor(stats.kpi1Score)}
+                score={stats.kpi1Score}
+                icon={<Icon.Repeat size={18} />}
                 delay={0}
               />
 
               {/* KPI 2 — MAIN: % of classes with 3+ teachers */}
-              <StatCard
-                label="TỶ LỆ LỚP CÓ 3+ GV"
+              <KPIStatCard
+                label={KPI_LABELS.MULTI_TEACHER_RATE}
                 value={stats.totalClasses > 0 ? `${stats.multiTeacherRate.toFixed(1)}%` : '—'}
                 desc={`${stats.classesMultipleTeachers}/${stats.totalClasses} lớp (LEC + SUPPLY)`}
                 valueColor={kpiColor(stats.kpi2Score)}
+                score={stats.kpi2Score}
+                icon={<Icon.Users size={18} />}
                 delay={0.07}
               />
 
-              {/* Context: total classes */}
-              <StatCard
-                label="TỔNG SỐ LỚP"
+              <KPIStatCard
+                label={KPI_LABELS.DATA_SCOPE}
                 value={String(stats.totalClasses)}
-                desc="lớp có buổi học trong kỳ"
+                desc={`${stats.classesWithLECChange} lớp thay LEC · ${stats.classesMultipleTeachers} lớp có 3+ GV`}
                 delay={0.14}
-              />
-
-              {/* Context: classes with LEC change count */}
-              <StatCard
-                label="SỐ LỚP THAY GV CH­ÍNH"
-                value={String(stats.classesWithLECChange)}
-                desc={`${stats.classesMultipleTeachers} lớp có 3+ GV (LEC+SUPPLY)`}
-                valueColor={stats.classesWithLECChange > 0 ? kpiColor(stats.kpi1Score) : 'var(--status-success)'}
-                delay={0.21}
               />
             </motion.div>
           )}

@@ -424,6 +424,51 @@
   row-gap: var(--space-2);
 }
 
+.usageAnalyticsGrid {
+  display: flex;
+  gap: var(--space-4);
+  align-items: stretch;
+  flex-wrap: wrap;
+}
+
+.usageOnlinePanel {
+  flex: 1 1 560px;
+  min-width: 0;
+}
+
+.usageEnvironmentPanel {
+  flex: 0 1 360px;
+  min-width: 320px;
+}
+
+.usageEnvironmentBody {
+  padding: var(--space-4);
+  display: grid;
+  grid-template-columns: minmax(240px, 360px) minmax(0, 1fr);
+  gap: var(--space-4);
+  align-items: center;
+}
+
+.usageEnvironmentChart {
+  display: grid;
+  grid-template-columns: 128px minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: center;
+}
+
+@media (max-width: 760px) {
+  .usageOnlinePanel,
+  .usageEnvironmentPanel {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+
+  .usageEnvironmentBody,
+  .usageEnvironmentChart {
+    grid-template-columns: 1fr;
+  }
+}
+
 .dateControls {
   display: flex;
   align-items: center;
@@ -642,6 +687,23 @@
   box-shadow: var(--shadow-card);
 }
 
+.statCardClickable {
+  cursor: pointer;
+  transition: background 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.statCardClickable:hover,
+.statCardClickable:focus-visible {
+  background: rgba(0, 0, 0, 0.03);
+  box-shadow: var(--shadow-elevated);
+  transform: translateY(-1px);
+}
+
+.statCardClickable:focus-visible {
+  outline: 2px solid var(--brand-indigo);
+  outline-offset: 2px;
+}
+
 @media (max-width: 480px) {
   .statCard { padding: var(--space-3) var(--space-4); }
 }
@@ -653,6 +715,38 @@
   margin-bottom: var(--space-1);
   letter-spacing: 0.04em; text-transform: uppercase;
   font-feature-settings: 'cv01','ss03';
+}
+
+.statHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.statHeader .statLabel {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.statIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-quaternary);
+  flex-shrink: 0;
+}
+
+.statScoreBadge {
+  margin-left: auto;
+  flex-shrink: 0;
+  border: 1px solid;
+  border-radius: var(--radius-comfortable);
+  padding: 2px 6px;
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.2;
+  background: var(--bg-surface);
 }
 
 /* Heading 1 scale: 28px weight 510 -0.704px */

@@ -3,11 +3,10 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { PageLayout } from '@/components/PageLayout';
 import { ProtectedPage } from '@/components/ProtectedPage';
-import { Icon, ToastContainer, useToast, EmptyState, Toolbar, StatCard } from '@/components/ui';
-import { KPICard } from '@/components/dashboard/KPICard';
+import { Icon, ToastContainer, useToast, Toolbar, KPIStatCard } from '@/components/ui';
 import { ActionableInsight } from '@/components/dashboard/ActionableInsight';
 import { getCache, setCache, clearCache } from '@/lib/idb';
-import { CACHE_KEYS, LABELS, FORMAT, ANIMATION, DATE_UTILS, MESSAGES, CLASS_INACTIVE_STATUSES, ENTITIES, TEACHER_SCHEDULE_CACHE_VERSION } from '@/constants';
+import { CACHE_KEYS, FORMAT, ANIMATION, DATE_UTILS, MESSAGES, CLASS_INACTIVE_STATUSES, ENTITIES, TEACHER_SCHEDULE_CACHE_VERSION, KPI_LABELS } from '@/constants';
 import { useSharedFilterState } from '@/hooks/useSharedFilterState';
 import { analyzeComments, analyzeAttendance } from '@/lib/classQualityAnalysis';
 import {
@@ -17,10 +16,10 @@ import {
   calcConversionRate,
 } from '@/lib/kpiCalculations';
 import {
-  completionColor,
-  teacherChangeColor,
-  surveyColor,
-  conversionColor,
+  completionScore,
+  teacherChangeScore,
+  surveyScore as surveyKpiScore,
+  conversionScore,
   multiTeacherScore,
   kpiColor,
   KPI_COLORS
@@ -352,29 +351,21 @@ export default function DashboardPage() {
 
   // KPI Calculations — all use shared functions from kpiCalculations.ts so numbers
   // match the individual pages (default exemptions applied consistently).
-  const completionRate = useMemo(() => {
+  const completionKpi = useMemo(() => {
     if (!completionData?.classes) return null;
     try {
-      const { rate } = calcCompletionRate(
+      return calcCompletionRate(
         completionData.classes,
         completionData.exemptedReasons,   // use saved user preferences if present
         completionData.exemptedCourses
       );
-      return rate;
     } catch (err) {
       console.error('Error calculating completion rate:', err);
       return null;
     }
   }, [completionData]);
 
-  // Count active classes (excluding ABANDONED/REJECTED)
-  const activeClassesCount = useMemo(() => {
-    if (!completionData?.classes) return 0;
-    return completionData.classes.filter((cls: any) => {
-      const s = cls.status?.toUpperCase();
-      return s !== 'ABANDONED' && s !== 'REJECTED';
-    }).length;
-  }, [completionData]);
+  const completionRate = completionKpi?.rate ?? null;
 
   const { teacherChangeRate, multiTeacherRate, activeTeacherChangeClassesCount } = useMemo(() => {
     if (!teacherChangeData?.classes) return { teacherChangeRate: null, multiTeacherRate: null, activeTeacherChangeClassesCount: 0 };
@@ -401,21 +392,22 @@ export default function DashboardPage() {
     }
   }, [ticketsData]);
 
-  const conversionRate = useMemo(() => {
+  const conversionKpi = useMemo(() => {
     if (!officeHoursData?.officeHours) return null;
     try {
-      const { rate } = calcConversionRate(
+      return calcConversionRate(
         officeHoursData.officeHours,
         officeHoursData.exemptTypes,
         officeHoursData.exemptStatuses,
         officeHoursData.exemptAppointmentStatuses
       );
-      return rate;
     } catch (err) {
       console.error('Error calculating conversion rate:', err);
       return null;
     }
   }, [officeHoursData]);
+
+  const conversionRate = conversionKpi?.rate ?? null;
 
   // Count-based color helper
   const getCountColor = (count: number, thresholds: [number, number, number, number]): string => {
@@ -483,6 +475,116 @@ export default function DashboardPage() {
     }
   }, [ticketsData]);
 
+  const kpiHealth = useMemo(() => {
+    const items: Array<{
+      id: string;
+      label: string;
+      value: string;
+      score: 1 | 2 | 3 | 4 | 5;
+      description: string;
+      action: string;
+      href: string;
+      icon: React.ReactNode;
+      color: string;
+      priority: number;
+    }> = [];
+
+    if (completionRate !== null) {
+      const score = completionScore(completionRate);
+      const neededFor95 = completionKpi
+        ? Math.max(0, Math.ceil(0.95 * completionKpi.totalBase - completionKpi.totalPass))
+        : 0;
+      items.push({
+        id: 'completion',
+        label: KPI_LABELS.COMPLETION_RATE,
+        value: FORMAT.percentage(completionRate),
+        score,
+        description: `${completionKpi?.totalPass ?? 0}/${completionKpi?.totalBase ?? 0} học viên đạt`,
+        action: neededFor95 > 0 ? `Cần thêm ${neededFor95} học viên đạt để chạm mốc 95%` : 'Đang đạt mốc vận hành 95%',
+        href: '/admin/completion-rate',
+        icon: <Icon.CheckCircle size={18} />,
+        color: kpiColor(score),
+        priority: 100 - score * 10,
+      });
+    }
+
+    if (teacherChangeRate !== null) {
+      const score = teacherChangeScore(teacherChangeRate);
+      items.push({
+        id: 'teacher-change',
+        label: KPI_LABELS.TEACHER_CHANGE_RATE,
+        value: FORMAT.percentage(teacherChangeRate),
+        score,
+        description: `${activeTeacherChangeClassesCount} lớp có buổi học trong kỳ`,
+        action: teacherChangeRate > 3 ? 'Ưu tiên các lớp đã đổi LEC để giữ tỷ lệ về dưới 3%' : 'Tỷ lệ thay LEC đang trong vùng kiểm soát',
+        href: '/admin/teacher-change',
+        icon: <Icon.Repeat size={18} />,
+        color: kpiColor(score),
+        priority: 90 - score * 10,
+      });
+    }
+
+    if (multiTeacherRate !== null) {
+      const score = multiTeacherScore(multiTeacherRate);
+      items.push({
+        id: 'multi-teacher',
+        label: KPI_LABELS.MULTI_TEACHER_RATE,
+        value: FORMAT.percentage(multiTeacherRate),
+        score,
+        description: `${activeTeacherChangeClassesCount} lớp có buổi học trong kỳ`,
+        action: multiTeacherRate > 0.5 ? 'Rà các lớp có nhiều LEC/SUPPLY để khóa lại phương án nhân sự' : 'Tỷ lệ lớp nhiều GV đang thấp',
+        href: '/admin/teacher-change',
+        icon: <Icon.Users size={18} />,
+        color: kpiColor(score),
+        priority: 80 - score * 10,
+      });
+    }
+
+    if (surveyScore !== null) {
+      const score = surveyKpiScore(surveyScore);
+      items.push({
+        id: 'survey-score',
+        label: KPI_LABELS.SURVEY_SCORE,
+        value: surveyScore.toFixed(1),
+        score,
+        description: `${ticketsData?.tickets?.length || 0} phiếu phản hồi`,
+        action: surveyScore < 4.5 ? 'Mở nhóm phiếu điểm thấp để xử lý nguyên nhân theo giáo viên/lớp' : 'Điểm khảo sát đang đạt vùng tốt',
+        href: '/admin/tickets',
+        icon: <Icon.User size={18} />,
+        color: kpiColor(score),
+        priority: 70 - score * 10,
+      });
+    }
+
+    if (conversionRate !== null) {
+      const score = conversionScore(conversionRate);
+      items.push({
+        id: 'conversion-rate',
+        label: KPI_LABELS.CONVERSION_RATE,
+        value: FORMAT.percentage(conversionRate),
+        score,
+        description: `${conversionKpi?.convertedAppointments ?? 0}/${conversionKpi?.totalAppointments ?? 0} học viên có đơn`,
+        action: conversionRate < 31 ? 'Kiểm tra các ca đã học thử nhưng chưa có đơn để follow-up' : 'Tỷ lệ chuyển đổi đang đạt vùng mục tiêu',
+        href: '/admin/office-hours',
+        icon: <Icon.TrendingUp size={18} />,
+        color: kpiColor(score),
+        priority: 60 - score * 10,
+      });
+    }
+
+    return items;
+  }, [
+    completionRate,
+    completionKpi,
+    teacherChangeRate,
+    multiTeacherRate,
+    activeTeacherChangeClassesCount,
+    surveyScore,
+    ticketsData,
+    conversionRate,
+    conversionKpi,
+  ]);
+
   // Actionable Insights with severity calculation
   const insights = useMemo(() => {
     const result: Array<{
@@ -495,43 +597,19 @@ export default function DashboardPage() {
       priority: number;
     }> = [];
 
-    // 1. Demo not arranged - Critical
-    if (completionData?.classes) {
-      const demoCount = completionData.classes.filter((c: any) => 
-        c.reasons?.some((r: any) => r.reason === 'DEMO_NOT_ARRANGED')
-      ).length;
-      if (demoCount > 0) {
+    kpiHealth
+      .filter(kpi => kpi.score <= 3)
+      .forEach((kpi, index) => {
         result.push({
-          id: 'demo-not-arranged',
-          title: `${demoCount} lớp chưa sắp xếp thuyết trình cuối khoá`,
-          description: 'Cần xử lý ngay',
-          severity: 'critical' as const,
-          icon: <Icon.AlertTriangle size={16} />,
-          href: '/admin/completion-rate?filter=demo',
-          priority: 100,
+          id: `kpi-${kpi.id}`,
+          title: `${kpi.label}: KPI ${kpi.score}/5`,
+          description: kpi.action,
+          severity: kpi.score <= 2 ? 'critical' : 'warning',
+          icon: kpi.icon,
+          href: kpi.href,
+          priority: 100 - kpi.score * 10 - index,
         });
-      }
-    }
-
-    // 2. Completion Rate Gap
-    if (completionRate !== null) {
-      if (completionRate < 95) {
-        const severity = completionRate < 80 ? 'critical' : 'warning';
-        const studentsNeeded = completionData?.classes 
-          ? Math.ceil((0.95 * completionData.classes.reduce((sum: number, c: any) => sum + (c.base || 0), 0)) - 
-              completionData.classes.reduce((sum: number, c: any) => sum + (c.pass || 0), 0))
-          : 0;
-        result.push({
-          id: 'completion-gap',
-          title: `Tỷ lệ hoàn thành đang ở mức ${FORMAT.percentage(completionRate)}`,
-          description: studentsNeeded > 0 ? `Cần thêm ${studentsNeeded} học viên để đạt 95%` : 'Cần cải thiện',
-          severity,
-          icon: <Icon.TrendingDown size={16} />,
-          href: '/admin/completion-rate',
-          priority: severity === 'critical' ? 90 : 70,
-        });
-      }
-    }
+      });
 
     // 3. Comment Violations
     if (commentViolationsCount !== null && commentViolationsCount > 0) {
@@ -584,169 +662,40 @@ export default function DashboardPage() {
       });
     }
 
-    // 6. Teacher Change Rate
-    if (teacherChangeRate !== null && teacherChangeRate > 3) {
-      let severity: 'info' | 'warning' | 'critical' = 'info';
-      if (teacherChangeRate > 7) severity = 'critical';
-      else if (teacherChangeRate > 5) severity = 'warning';
-      
-      result.push({
-        id: 'teacher-change',
-        title: `Tỷ lệ thay GV đang ở mức ${FORMAT.percentage(teacherChangeRate)}`,
-        description: 'Mục tiêu dưới 3%',
-        severity,
-        icon: <Icon.Repeat size={16} />,
-        href: '/admin/teacher-change',
-        priority: severity === 'critical' ? 70 : severity === 'warning' ? 50 : 30,
-      });
-    }
-
-    // 7. Survey Score Low
-    if (surveyScore !== null && surveyScore < 4.5) {
-      let severity: 'info' | 'warning' | 'critical' = 'info';
-      if (surveyScore < 3.5) severity = 'critical';
-      else if (surveyScore < 4.0) severity = 'warning';
-      
-      result.push({
-        id: 'survey-score',
-        title: `Điểm khảo sát đang ở mức ${surveyScore.toFixed(2)}`,
-        description: 'Cần cải thiện',
-        severity,
-        icon: <Icon.User size={16} />,
-        href: '/admin/tickets',
-        priority: severity === 'critical' ? 65 : severity === 'warning' ? 45 : 25,
-      });
-    }
-
-    // 8. Conversion Rate Low
-    if (conversionRate !== null && conversionRate < 30) {
-      let severity: 'info' | 'warning' | 'critical' = 'info';
-      if (conversionRate < 15) severity = 'critical';
-      else if (conversionRate < 25) severity = 'warning';
-      
-      result.push({
-        id: 'conversion-rate',
-        title: `Tỷ lệ chuyển đổi đang ở mức ${FORMAT.percentage(conversionRate)}`,
-        description: 'Mục tiêu trên 30%',
-        severity,
-        icon: <Icon.TrendingDown size={16} />,
-        href: '/admin/office-hours',
-        priority: severity === 'critical' ? 60 : severity === 'warning' ? 40 : 20,
-      });
-    }
-
-    // Sort by priority (higher = more important) and limit to top 6
-    return result.sort((a, b) => b.priority - a.priority).slice(0, 6);
+    return result.sort((a, b) => b.priority - a.priority).slice(0, 5);
   }, [
-    completionData, 
-    completionRate, 
+    kpiHealth,
     commentViolationsCount, 
     attendanceAlertsCount, 
     newTicketsCount,
-    teacherChangeRate,
-    surveyScore,
-    conversionRate
   ]);
 
-  // KPI Cards - Organized by category
-  const kpiCards = useMemo(() => {
-    const cards = {
-      // Core KPIs - Primary metrics (percentage-based)
-      core: [
-        {
-          key: 'completion',
-          label: 'Tỷ lệ Hoàn thành',
-          value: completionRate !== null ? FORMAT.percentage(completionRate) : 'N/A',
-          description: `${activeClassesCount} lớp học`,
-          color: completionRate !== null ? completionColor(completionRate) : 'var(--text-quaternary)',
-          icon: <Icon.CheckCircle size={18} />,
-          href: '/admin/completion-rate',
-        },
-        {
-          key: 'teacher-change',
-          label: 'Tỷ lệ thay đổi GV',
-          value: teacherChangeRate !== null ? FORMAT.percentage(teacherChangeRate) : 'N/A',
-          description: `${activeTeacherChangeClassesCount} lớp học`,
-          color: teacherChangeRate !== null ? teacherChangeColor(teacherChangeRate) : 'var(--text-quaternary)',
-          icon: <Icon.Repeat size={18} />,
-          href: '/admin/teacher-change',
-        },
-        {
-          key: 'tickets',
-          label: 'Điểm Khảo sát',
-          value: surveyScore !== null ? surveyScore.toFixed(2) : 'N/A',
-          description: `${ticketsData?.tickets?.length || 0} phiếu`,
-          color: surveyScore !== null ? surveyColor(surveyScore) : 'var(--text-quaternary)',
-          icon: <Icon.User size={18} />,
-          href: '/admin/tickets',
-        },
-        {
-          key: 'office-hours',
-          label: 'Tỷ lệ chuyển đổi',
-          value: conversionRate !== null ? FORMAT.percentage(conversionRate) : 'N/A',
-          description: `${officeHoursData?.officeHours?.length || 0} ca học`,
-          color: conversionRate !== null ? conversionColor(conversionRate) : 'var(--text-quaternary)',
-          icon: <Icon.TrendingUp size={18} />,
-          href: '/admin/office-hours',
-        },
-      ],
-      
-      // Quality Alerts - Count-based metrics
-      quality: [
-        {
-          key: 'comment-violations',
-          label: 'Vi phạm Nhận xét',
-          value: commentViolationsCount !== null ? FORMAT.number(commentViolationsCount) : 'N/A',
-          description: `${activeClassesCount} lớp học`,
-          color: commentViolationsCount !== null ? getCountColor(commentViolationsCount, [5, 10, 20, Infinity]) : 'var(--text-quaternary)',
-          icon: <Icon.XCircle size={18} />,
-          href: '/admin/class-quality?tab=violations',
-        },
-        {
-          key: 'attendance-alerts',
-          label: 'Cảnh báo Chuyên cần',
-          value: attendanceAlertsCount !== null ? FORMAT.number(attendanceAlertsCount) : 'N/A',
-          description: `${activeClassesCount} lớp học`,
-          color: attendanceAlertsCount !== null ? getCountColor(attendanceAlertsCount, [3, 6, 10, Infinity]) : 'var(--text-quaternary)',
-          icon: <Icon.AlertCircle size={18} />,
-          href: '/admin/class-quality?tab=attendance',
-        },
-        {
-          key: 'multi-teacher',
-          label: 'Lớp có 3+ GV',
-          value: multiTeacherRate !== null ? FORMAT.percentage(multiTeacherRate) : 'N/A',
-          description: `${activeTeacherChangeClassesCount} lớp học`,
-          color: multiTeacherRate !== null ? kpiColor(multiTeacherScore(multiTeacherRate)) : 'var(--text-quaternary)',
-          icon: <Icon.Users size={18} />,
-          href: '/admin/teacher-change',
-        },
-        {
-          key: 'new-tickets',
-          label: 'Phiếu đánh giá mới',
-          value: newTicketsCount !== null ? FORMAT.number(newTicketsCount) : 'N/A',
-          description: `${ticketsData?.tickets?.length || 0} phiếu`,
-          color: newTicketsCount !== null ? getCountColor(newTicketsCount, [5, 10, 20, Infinity]) : 'var(--text-quaternary)',
-          icon: <Icon.Bell size={18} />,
-          href: '/admin/tickets?status=new',
-        },
-      ],
-    };
-
-    return cards;
-  }, [
-    completionRate, 
-    teacherChangeRate, 
-    surveyScore, 
-    conversionRate,
-    multiTeacherRate,
-    commentViolationsCount,
-    attendanceAlertsCount,
-    newTicketsCount,
-    activeClassesCount,
-    activeTeacherChangeClassesCount,
-    ticketsData,
-    officeHoursData,
-  ]);
+  const qualitySignals = useMemo(() => [
+    {
+      key: 'comment-violations',
+      label: KPI_LABELS.COMMENT_QUALITY,
+      value: commentViolationsCount !== null ? FORMAT.number(commentViolationsCount) : 'N/A',
+      description: commentViolationsCount === 0 ? 'Không có lớp vi phạm nhận xét' : 'Lớp có nhận xét trống, ngắn, trùng hoặc quá hạn',
+      color: commentViolationsCount !== null ? getCountColor(commentViolationsCount, [5, 10, 20, Infinity]) : 'var(--text-quaternary)',
+      href: '/admin/operations?view=quality-table&tab=comments',
+    },
+    {
+      key: 'attendance-alerts',
+      label: KPI_LABELS.ATTENDANCE_QUALITY,
+      value: attendanceAlertsCount !== null ? FORMAT.number(attendanceAlertsCount) : 'N/A',
+      description: attendanceAlertsCount === 0 ? 'Không có lớp cần cảnh báo chuyên cần' : 'Lớp có chuỗi nghỉ/vắng cần theo dõi',
+      color: attendanceAlertsCount !== null ? getCountColor(attendanceAlertsCount, [3, 6, 10, Infinity]) : 'var(--text-quaternary)',
+      href: '/admin/operations?view=quality-table&tab=attendance',
+    },
+    {
+      key: 'new-tickets',
+      label: KPI_LABELS.NEW_FEEDBACK,
+      value: newTicketsCount !== null ? FORMAT.number(newTicketsCount) : 'N/A',
+      description: newTicketsCount === 0 ? 'Không có phiếu mới đang chờ xử lý' : 'Phiếu NEW/OPEN cần được đọc và phân loại',
+      color: newTicketsCount !== null ? getCountColor(newTicketsCount, [5, 10, 20, Infinity]) : 'var(--text-quaternary)',
+      href: '/admin/tickets?status=new',
+    },
+  ], [commentViolationsCount, attendanceAlertsCount, newTicketsCount]);
 
   // No quick links needed - removed per requirements
 
@@ -796,15 +745,16 @@ export default function DashboardPage() {
               gap: 'var(--space-4)',
               marginBottom: 'var(--space-6)',
             }}>
-              {kpiCards.core.map((card, index) => (
-                <KPICard
-                  key={card.key}
+              {kpiHealth.map((card, index) => (
+                <KPIStatCard
+                  key={card.id}
                   label={card.label}
                   value={card.value}
-                  description={card.description}
-                  color={card.color}
+                  desc={card.description}
+                  valueColor={card.color}
                   icon={card.icon}
                   href={card.href}
+                  score={card.score}
                   delay={index * ANIMATION.STAT_CARD_DELAY}
                 />
               ))}
@@ -827,16 +777,15 @@ export default function DashboardPage() {
               gap: 'var(--space-4)',
               marginBottom: 'var(--space-6)',
             }}>
-              {kpiCards.quality.map((card, index) => (
-                <KPICard
+              {qualitySignals.map((card, index) => (
+                <KPIStatCard
                   key={card.key}
                   label={card.label}
                   value={card.value}
-                  description={card.description}
-                  color={card.color}
-                  icon={card.icon}
+                  desc={card.description}
+                  valueColor={card.color}
                   href={card.href}
-                  delay={(kpiCards.core.length + index) * ANIMATION.STAT_CARD_DELAY}
+                  delay={(kpiHealth.length + index) * ANIMATION.STAT_CARD_DELAY}
                 />
               ))}
             </div>

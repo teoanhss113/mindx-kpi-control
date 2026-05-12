@@ -700,3 +700,293 @@ export async function saveUserPermissions(
     return failure(error);
   }
 }
+
+// =====================================================
+// USAGE ANALYTICS
+// =====================================================
+
+type UsageEvent = {
+  user_email: string;
+  event_type: 'page_view' | 'heartbeat';
+  page_path: string;
+  page_key: string | null;
+  page_title: string | null;
+  device_type: string | null;
+  browser_name: string | null;
+  os_name: string | null;
+  occurred_at: string;
+};
+
+type UsageAnalyticsRange = number | {
+  fromDate?: string;
+  toDate?: string;
+};
+
+const USAGE_PAGE_LABELS: Record<string, string> = {
+  home: 'Trang chủ',
+  dashboard: 'Tổng quan',
+  'teacher-schedule': 'Quản lý Vận hành',
+  completion: 'Tỷ lệ Hoàn thành',
+  'teacher-change': 'Thay đổi Giáo viên',
+  tickets: 'Phiếu Đánh giá',
+  'office-hours': 'Ca Trải nghiệm',
+  'final-sessions': 'Giám khảo Cuối khoá',
+  teachers: 'Quản lý Giáo viên',
+  'admin-users': 'Quản lý Tài khoản',
+  'admin-regions': 'Quản lý Khu vực',
+  'admin-roles': 'Quản lý Vai trò',
+  'admin-usage-analytics': 'Phân tích Sử dụng',
+  'available-shifts': 'Ca trực khả dụng',
+  'judge-requests': 'Giám khảo cuối khoá',
+};
+
+function incrementMap(map: Map<string, number>, key: string, amount = 1) {
+  map.set(key, (map.get(key) || 0) + amount);
+}
+
+function topEntries(map: Map<string, number>, limit = 10) {
+  return Array.from(map.entries())
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'vi-VN'))
+    .slice(0, limit);
+}
+
+function pageLabel(event: UsageEvent) {
+  if (event.page_key && USAGE_PAGE_LABELS[event.page_key]) {
+    return USAGE_PAGE_LABELS[event.page_key];
+  }
+
+  if (event.page_title && event.page_title !== 'MindX KPI Control — Tổng quan Quản trị') {
+    return event.page_title;
+  }
+
+  return event.page_key || event.page_path || 'Không rõ';
+}
+
+function parseDateBoundary(value: string | undefined, boundary: 'start' | 'end') {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const time = boundary === 'start' ? '00:00:00.000' : '23:59:59.999';
+  const date = new Date(`${value}T${time}+07:00`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function resolveUsageRange(range: UsageAnalyticsRange) {
+  if (typeof range === 'number') {
+    const safeDays = Math.min(Math.max(range, 1), 180);
+    const to = new Date();
+    const from = new Date(to.getTime() - safeDays * 24 * 60 * 60 * 1000);
+    return { safeDays, since: from.toISOString(), until: to.toISOString() };
+  }
+
+  const fallbackTo = new Date();
+  const requestedTo = parseDateBoundary(range.toDate, 'end') || fallbackTo;
+  const requestedFrom = parseDateBoundary(range.fromDate, 'start') || new Date(requestedTo.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const to = requestedTo < requestedFrom ? requestedFrom : requestedTo;
+  const maxFrom = new Date(to.getTime() - 180 * 24 * 60 * 60 * 1000);
+  const from = requestedFrom < maxFrom ? maxFrom : requestedFrom;
+  const safeDays = Math.max(1, Math.ceil((to.getTime() - from.getTime()) / (24 * 60 * 60 * 1000)));
+
+  return { safeDays, since: from.toISOString(), until: to.toISOString() };
+}
+
+export async function getUsageAnalytics(idToken: string, range: UsageAnalyticsRange = 30) {
+  try {
+    await requireAdminToken(idToken);
+
+    const { safeDays, since, until } = resolveUsageRange(range);
+
+    const query = supabaseAdmin
+      .from('usage_events')
+      .select('user_email, event_type, page_path, page_key, page_title, device_type, browser_name, os_name, occurred_at')
+      .gte('occurred_at', since)
+      .lte('occurred_at', until)
+      .order('occurred_at', { ascending: false })
+      .limit(10000);
+
+    const { data, error } = await query;
+
+    if (error) throw error;
+
+    const onlineSince = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+    const { data: onlineData, error: onlineError } = await supabaseAdmin
+      .from('usage_events')
+      .select('user_email, event_type, page_path, page_key, page_title, device_type, browser_name, os_name, occurred_at')
+      .gte('occurred_at', onlineSince)
+      .order('occurred_at', { ascending: false })
+      .limit(1000);
+
+    if (onlineError) throw onlineError;
+
+    const events = (data || []) as UsageEvent[];
+    const onlineEvents = (onlineData || []) as UsageEvent[];
+    const pageViews = events.filter(event => event.event_type === 'page_view');
+    const heartbeats = events.filter(event => event.event_type === 'heartbeat');
+    const activeUsers = new Set(events.map(event => event.user_email));
+    const activePages = new Set(pageViews.map(event => event.page_path));
+
+    const userEvents = new Map<string, number>();
+    const userPageViews = new Map<string, number>();
+    const pageViewCounts = new Map<string, number>();
+    const pageUserCounts = new Map<string, Set<string>>();
+    const deviceCounts = new Map<string, number>();
+    const browserCounts = new Map<string, number>();
+    const osCounts = new Map<string, number>();
+    const dayCounts = new Map<string, number>();
+    const weekCounts = new Map<string, number>();
+    const hourCounts = new Map<string, number>();
+    const dailyActiveUsers = new Map<string, Set<string>>();
+    const weeklyActiveUsers = new Map<string, Set<string>>();
+    const userPageMatrix = new Map<string, Map<string, number>>();
+    const userLastActivity = new Map<string, string>();
+    let lastActivityAt: string | null = null;
+
+    events.forEach(event => {
+      incrementMap(userEvents, event.user_email);
+
+      const date = new Date(event.occurred_at);
+      const dayKey = date.toISOString().slice(0, 10);
+      const weekStart = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+      weekStart.setUTCDate(weekStart.getUTCDate() - ((weekStart.getUTCDay() + 6) % 7));
+      const weekKey = weekStart.toISOString().slice(0, 10);
+      const hourKey = `${String(date.getHours()).padStart(2, '0')}:00`;
+      if (!dailyActiveUsers.has(dayKey)) dailyActiveUsers.set(dayKey, new Set());
+      dailyActiveUsers.get(dayKey)?.add(event.user_email);
+      if (!weeklyActiveUsers.has(weekKey)) weeklyActiveUsers.set(weekKey, new Set());
+      weeklyActiveUsers.get(weekKey)?.add(event.user_email);
+
+      if (!lastActivityAt || event.occurred_at > lastActivityAt) {
+        lastActivityAt = event.occurred_at;
+      }
+      const currentLastActivity = userLastActivity.get(event.user_email);
+      if (!currentLastActivity || event.occurred_at > currentLastActivity) {
+        userLastActivity.set(event.user_email, event.occurred_at);
+      }
+
+      if (event.event_type !== 'page_view') return;
+
+      const label = pageLabel(event);
+      incrementMap(deviceCounts, event.device_type || 'Không rõ');
+      incrementMap(browserCounts, event.browser_name || 'Không rõ');
+      incrementMap(osCounts, event.os_name || 'Không rõ');
+      incrementMap(dayCounts, dayKey);
+      incrementMap(weekCounts, weekKey);
+      incrementMap(hourCounts, hourKey);
+      incrementMap(pageViewCounts, label);
+      incrementMap(userPageViews, event.user_email);
+
+      if (!pageUserCounts.has(label)) pageUserCounts.set(label, new Set());
+      pageUserCounts.get(label)?.add(event.user_email);
+
+      if (!userPageMatrix.has(event.user_email)) userPageMatrix.set(event.user_email, new Map());
+      incrementMap(userPageMatrix.get(event.user_email)!, label);
+    });
+
+    const topPages = topEntries(pageViewCounts, 10).map(item => ({
+      ...item,
+      uniqueUsers: pageUserCounts.get(item.name)?.size || 0,
+    }));
+
+    const userPageDetails = Array.from(userPageMatrix.entries())
+      .flatMap(([email, pageMap]) => Array.from(pageMap.entries()).map(([page, views]) => ({ email, page, views })))
+      .sort((a, b) => a.email.localeCompare(b.email, 'vi-VN') || b.views - a.views || a.page.localeCompare(b.page, 'vi-VN'));
+
+    const userSummaries = Array.from(userPageMatrix.entries())
+      .map(([email, pageMap]) => {
+        const pages = Array.from(pageMap.entries());
+        const totalPageViews = pages.reduce((sum, [, views]) => sum + views, 0);
+        const topPage = pages.sort((a, b) => b[1] - a[1])[0];
+
+        return {
+          email,
+          uniquePages: pageMap.size,
+          totalPageViews,
+          totalEvents: userEvents.get(email) || 0,
+          lastActivityAt: userLastActivity.get(email) || null,
+          topPage: topPage?.[0] || '—',
+        };
+      })
+      .sort((a, b) => b.totalPageViews - a.totalPageViews || a.email.localeCompare(b.email, 'vi-VN'));
+
+    const dailyTrend = Array.from(dayCounts.entries())
+      .map(([date, count]) => ({ date, count }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    const weeklyTrend = Array.from(weekCounts.entries())
+      .map(([weekStart, count]) => ({ weekStart, count }))
+      .sort((a, b) => a.weekStart.localeCompare(b.weekStart));
+
+    const dailyActiveTrend = Array.from(dailyActiveUsers.entries())
+      .map(([date, users]) => ({ date, count: users.size }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    const weeklyActiveTrend = Array.from(weeklyActiveUsers.entries())
+      .map(([weekStart, users]) => ({ weekStart, count: users.size }))
+      .sort((a, b) => a.weekStart.localeCompare(b.weekStart));
+
+    const hourlyDistribution = Array.from(hourCounts.entries())
+      .map(([hour, count]) => ({ hour, count }))
+      .sort((a, b) => a.hour.localeCompare(b.hour));
+
+    const busiestHour = hourlyDistribution.reduce(
+      (best, current) => current.count > best.count ? current : best,
+      { hour: '—', count: 0 },
+    );
+
+    const latestOnlineEvents = new Map<string, UsageEvent>();
+    onlineEvents.forEach(event => {
+      const current = latestOnlineEvents.get(event.user_email);
+      if (!current || event.occurred_at > current.occurred_at) {
+        latestOnlineEvents.set(event.user_email, event);
+      }
+    });
+
+    const onlineUsers = Array.from(latestOnlineEvents.values())
+      .map(event => ({
+        email: event.user_email,
+        lastSeenAt: event.occurred_at,
+        page: pageLabel(event),
+        device: event.device_type || 'Không rõ',
+      }))
+      .sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt) || a.email.localeCompare(b.email, 'vi-VN'));
+
+    return {
+      success: true,
+      data: {
+        rangeDays: safeDays,
+        since,
+        lastActivityAt,
+        summary: {
+          totalEvents: events.length,
+          totalPageViews: pageViews.length,
+          totalHeartbeats: heartbeats.length,
+          activeUsers: activeUsers.size,
+          activePages: activePages.size,
+          onlineUsers: onlineUsers.length,
+          avgEventsPerUser: activeUsers.size ? events.length / activeUsers.size : 0,
+          avgPageViewsPerUser: activeUsers.size ? pageViews.length / activeUsers.size : 0,
+          avgEventsPerDay: events.length / safeDays,
+          busiestHour: busiestHour.hour,
+        },
+        topUsers: topEntries(userEvents, 10).map(item => ({
+          email: item.name,
+          events: item.count,
+          pageViews: userPageViews.get(item.name) || 0,
+        })),
+        topPages,
+        devices: topEntries(deviceCounts, 10),
+        browsers: topEntries(browserCounts, 10),
+        operatingSystems: topEntries(osCounts, 10),
+        userSummaries,
+        userPageDetails,
+        dailyTrend,
+        weeklyTrend,
+        dailyActiveTrend,
+        weeklyActiveTrend,
+        hourlyDistribution,
+        onlineUsers,
+      },
+    };
+  } catch (error) {
+    { const f = failure(error); return { success: false as const, error: f.error, data: null }; }
+  }
+}

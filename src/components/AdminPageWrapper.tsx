@@ -4,12 +4,11 @@ import { ReactNode, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { PageLayout } from '@/components/PageLayout';
 import { useAuth } from '@/lib/AuthContext';
-import styles from '@/app/dashboard.module.css';
 
 interface AdminPageWrapperProps {
   children: ReactNode;
   title: string;
-  activePage?: 'admin-users' | 'admin-regions' | 'admin-roles';
+  activePage?: 'admin-users' | 'admin-regions' | 'admin-roles' | 'admin-usage-analytics';
 }
 
 export function AdminPageWrapper({ children, title, activePage = 'admin-users' }: AdminPageWrapperProps) {

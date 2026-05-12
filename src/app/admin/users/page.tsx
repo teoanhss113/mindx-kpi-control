@@ -20,11 +20,24 @@ interface Profile {
   role_id: string | null; // New role system
   is_active: boolean;
   created_at: string;
+  last_login_at: string | null;
   // Enriched from LMS (not in database)
   username?: string;
   full_name?: string;
   // Role info (joined from roles table)
   roles?: Role | null;
+}
+
+function formatActivityTime(value?: string | null) {
+  if (!value) return '—';
+
+  return new Date(value).toLocaleString('vi-VN', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
 export default function UsersPage() {
@@ -450,6 +463,7 @@ export default function UsersPage() {
                   <SortableHeader label="Username" sortKey="username" currentSortKey={sortBy} sortOrder={sortOrder} onSort={(key) => handleSort(key as UserSortKey)} />
                   <SortableHeader label="Vai trò" sortKey="role" currentSortKey={sortBy} sortOrder={sortOrder} onSort={(key) => handleSort(key as UserSortKey)} />
                   <SortableHeader label="Trạng thái" sortKey="is_active" currentSortKey={sortBy} sortOrder={sortOrder} onSort={(key) => handleSort(key as UserSortKey)} />
+                  <SortableHeader label="Hoạt động lần cuối" sortKey="last_login_at" currentSortKey={sortBy} sortOrder={sortOrder} onSort={(key) => handleSort(key as UserSortKey)} />
                   <SortableHeader label="Ngày tạo" sortKey="created_at" currentSortKey={sortBy} sortOrder={sortOrder} onSort={(key) => handleSort(key as UserSortKey)} />
                   <th style={{ width: 80 }}></th>
                 </tr>
@@ -467,6 +481,9 @@ export default function UsersPage() {
                     </td>
                     <td>
                       <ActiveStatusBadge active={user.is_active} />
+                    </td>
+                    <td style={{ color: 'var(--text-tertiary)', fontSize: 13, whiteSpace: 'nowrap' }}>
+                      {formatActivityTime(user.last_login_at)}
                     </td>
                     <td style={{ color: 'var(--text-tertiary)', fontSize: 13 }}>
                       {new Date(user.created_at).toLocaleDateString('vi-VN')}
@@ -498,7 +515,7 @@ export default function UsersPage() {
       {!loading && unmanagedUsers.length > 0 && (
         <div style={{ marginTop: 'var(--space-6)' }}>
         <AdminTableSection
-          title="Tài khoản chưa phân quyền"
+          title="Tài khoản chưa được cấp quyền"
           count={unmanagedUsers.length}
           loading={loading}
           isExpanded={showUnmanagedTable}
@@ -510,7 +527,7 @@ export default function UsersPage() {
                 <tr>
                   <th>Email</th>
                   <th>Trạng thái</th>
-                  <th>Đăng nhập lần cuối</th>
+                  <th>Hoạt động lần cuối</th>
                   <th>Ngày tạo</th>
                   <th style={{ width: 80 }}></th>
                 </tr>
@@ -523,7 +540,7 @@ export default function UsersPage() {
                       <ActiveStatusBadge active={user.is_active} />
                     </td>
                     <td style={{ color: 'var(--text-tertiary)', fontSize: 13 }}>
-                      {user.last_login_at ? new Date(user.last_login_at).toLocaleDateString('vi-VN') : '—'}
+                      {formatActivityTime(user.last_login_at)}
                     </td>
                     <td style={{ color: 'var(--text-tertiary)', fontSize: 13 }}>
                       {new Date(user.created_at).toLocaleDateString('vi-VN')}

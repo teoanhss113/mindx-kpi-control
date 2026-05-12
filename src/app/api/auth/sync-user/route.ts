@@ -16,17 +16,27 @@ export async function POST(request: NextRequest) {
     const idToken = extractBearer(request);
     const verified = await verifyFirebaseIdToken(idToken);
 
+    const email = verified.email?.trim().toLowerCase();
+    if (!email) {
+      return NextResponse.json(
+        { success: false, error: 'Email not found in token' },
+        { status: 400 }
+      );
+    }
+
     const body = await request.json().catch(() => ({}));
     const { displayName, photoURL } = body || {};
+    const updates: Record<string, string | null> = {
+      last_login_at: new Date().toISOString(),
+    };
+
+    if (displayName !== undefined) updates.display_name = displayName || null;
+    if (photoURL !== undefined) updates.photo_url = photoURL || null;
 
     const { data, error } = await supabaseAdmin
       .from('profiles')
-      .update({
-        display_name: displayName || null,
-        photo_url: photoURL || null,
-        last_login_at: new Date().toISOString(),
-      })
-      .eq('email', verified.email)
+      .update(updates)
+      .eq('email', email)
       .select(`*, roles (id, name, description)`)
       .maybeSingle();
 
@@ -35,7 +45,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       data: {
-        email: verified.email,
+        email,
         role: data?.roles?.name || null,
         is_active: data?.is_active,
       },
@@ -58,6 +68,14 @@ export async function GET(request: NextRequest) {
     const idToken = extractBearer(request);
     const verified = await verifyFirebaseIdToken(idToken);
 
+    const email = verified.email?.trim().toLowerCase();
+    if (!email) {
+      return NextResponse.json(
+        { success: false, error: 'Email not found in token' },
+        { status: 400 }
+      );
+    }
+
     const { data: profile, error: profileError } = await supabaseAdmin
       .from('profiles')
       .select(`
@@ -74,7 +92,7 @@ export async function GET(request: NextRequest) {
           )
         )
       `)
-      .eq('email', verified.email)
+      .eq('email', email)
       .maybeSingle();
 
     if (profileError) throw profileError;

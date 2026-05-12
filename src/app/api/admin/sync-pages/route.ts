@@ -114,6 +114,13 @@ const REQUIRED_PAGES = [
     description: 'Trang quản lý vai trò và phân quyền',
     display_order: 14,
   },
+  {
+    key: 'admin-usage-analytics',
+    page_name: 'Phân tích Sử dụng',
+    path: '/admin/usage-analytics',
+    description: 'Theo dõi tần suất sử dụng, nhu cầu, thiết bị và tải hệ thống',
+    display_order: 15,
+  },
 ];
 
 export async function POST(request: NextRequest) {

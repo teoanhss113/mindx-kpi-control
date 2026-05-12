@@ -33,6 +33,7 @@ import {
   Unlock as _Unlock,
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { useRouter } from 'next/navigation'
 import styles from '@/app/dashboard.module.css'
 import { CentreSelect as CentreSelectComponent } from './CentreSelect'
 import { FilterChip } from './FilterChip'
@@ -1558,6 +1559,71 @@ export function StatCard({
       transition={{ duration: 0.3, delay }}
     >
       <div className={styles.statLabel}>{label}</div>
+      <div
+        className={styles.statValue}
+        style={valueColor ? { color: valueColor } : undefined}
+      >
+        {value}
+      </div>
+      <div className={styles.statDesc}>{desc}</div>
+    </motion.div>
+  )
+}
+
+export function KPIStatCard({
+  label,
+  value,
+  desc,
+  score,
+  valueColor,
+  delay = 0,
+  icon,
+  href,
+}: {
+  label: string
+  value: string
+  desc: string
+  score?: 1 | 2 | 3 | 4 | 5
+  valueColor?: string
+  delay?: number
+  icon?: ReactNode
+  href?: string
+}) {
+  const router = useRouter()
+  const isClickable = Boolean(href)
+
+  const openTarget = () => {
+    if (href) router.push(href)
+  }
+
+  return (
+    <motion.div
+      className={[styles.statCard, isClickable ? styles.statCardClickable : ''].filter(Boolean).join(' ')}
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3, delay }}
+      onClick={isClickable ? openTarget : undefined}
+      tabIndex={isClickable ? 0 : undefined}
+      role={isClickable ? 'button' : undefined}
+      onKeyDown={isClickable ? (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          openTarget()
+        }
+      } : undefined}
+    >
+      <div className={styles.statHeader}>
+        {icon && <span className={styles.statIcon}>{icon}</span>}
+        <div className={styles.statLabel}>{label}</div>
+        {score && (
+          <span
+            className={styles.statScoreBadge}
+            style={valueColor ? { borderColor: valueColor, color: valueColor } : undefined}
+          >
+            KPI {score}/5
+          </span>
+        )}
+      </div>
       <div
         className={styles.statValue}
         style={valueColor ? { color: valueColor } : undefined}

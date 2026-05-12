@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
     const idToken = extractBearer(request);
     const verified = await verifyFirebaseIdToken(idToken);
 
-    const email = verified.email;
+    const email = verified.email?.trim().toLowerCase();
     if (!email) {
       return NextResponse.json(
         { error: 'Email not found in token' },
@@ -33,10 +33,27 @@ export async function POST(request: NextRequest) {
       .maybeSingle();
 
     if (existingProfile) {
+      const { data: updatedProfile, error: updateError } = await supabaseAdmin
+        .from('profiles')
+        .update({
+          last_login_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('email', email)
+        .select()
+        .single();
+
+      if (updateError) {
+        return NextResponse.json(
+          { error: 'Failed to update login timestamp' },
+          { status: 500 }
+        );
+      }
+
       return NextResponse.json({
         success: true,
         action: 'found',
-        profile: existingProfile,
+        profile: updatedProfile,
       });
     }
 
@@ -48,6 +65,7 @@ export async function POST(request: NextRequest) {
         email,
         role_id: null,
         is_active: true,
+        last_login_at: new Date().toISOString(),
       })
       .select()
       .single();

@@ -14,7 +14,7 @@ import { getCache, setCache, clearCache } from '@/lib/idb';
 import { getCourseCategory } from '@/lib/courseCategories';
 import { getNavItemsWithRouter } from '@/lib/navigation';
 import { useAllowedPages } from '@/hooks/useAllowedPages';
-import { surveyColor, KPI_COLORS, SURVEY_LEGEND } from '@/lib/kpiScoring';
+import { surveyColor, surveyScore, KPI_COLORS, SURVEY_LEGEND } from '@/lib/kpiScoring';
 import { fetchTickets, updateTicket, searchUsers } from '@/services/ticketService';
 import { fetchPendingSurveyClasses } from '@/services/classesService';
 import { classSurveyKey, fetchStudentClassSurveys, STUDENT_TEACHING_SURVEY_ID } from '@/services/classSurveyService';
@@ -22,7 +22,7 @@ import { Ticket, LmsUser, TicketQuestion } from '@/types/ticket';
 import { Class } from '@/types/classes';
 import {
   Icon, SortIcon, MultiSelect, SelectOption, CompactSelect,
-  Toolbar, StatCard, ChartSectionHeader,
+  Toolbar, KPIStatCard, ChartSectionHeader,
   TableToolbar, TableGroupHeader, SubTableGroupHeader, AdminTableSection, Modal, ModalHeader, EmptyState,
   ViewModeToggle,
   initials,
@@ -36,7 +36,7 @@ import { useTableSort } from '@/hooks/useTableSort';
 import { useFilterOptions } from '@/hooks/useFilterOptions';
 import { useQuickFilterChips } from '@/hooks/useUserPreferences';
 import { PageLayout } from '@/components/PageLayout';
-import { CACHE_KEYS, LABELS, MESSAGES, ENTITIES, FORMAT, CHART_COLORS, TICKET_LABELS, CLASS_INACTIVE_STATUSES } from '@/constants';
+import { CACHE_KEYS, LABELS, MESSAGES, ENTITIES, FORMAT, CHART_COLORS, TICKET_LABELS, CLASS_INACTIVE_STATUSES, KPI_LABELS } from '@/constants';
 import { useSharedDateRange, useSharedCentres } from '@/hooks/useSharedFilterState';
 import { ProtectedPage } from '@/components/ProtectedPage';
 import styles from '@/app/dashboard.module.css';
@@ -1377,10 +1377,17 @@ export default function TicketsDashboard() {
           {/* ── KPI Stats ── */}
           {(stats.total > 0 || loading) && (
             <motion.div className={styles.statsGrid} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
-              <StatCard label={TICKET_LABELS.AVG_SCORE_GV} value={stats.avgScore > 0 ? `★ ${stats.avgScore}` : '—'} desc={`Trên ${stats.scoredTickets} phiếu đánh giá giáo viên`} valueColor={stats.avgScore > 0 ? surveyColor(stats.avgScore) : undefined} delay={0.0} />
-              <StatCard label={TICKET_LABELS.TOTAL_TICKETS_STAT} value={String(stats.total)} desc="Phiếu phản hồi trong kỳ" delay={0.07} />
-              <StatCard label={TICKET_LABELS.NEW_TICKETS_STAT} value={String(stats.newTickets)} desc="Chưa xử lý" valueColor={stats.newTickets > 0 ? 'var(--status-emerald)' : undefined} delay={0.14} />
-              <StatCard label={TICKET_LABELS.RESOLVE_RATE_STAT} value={`${stats.resolveRate.toFixed(1)}%`} desc={`${stats.closedTickets} đã xử lý`} valueColor={stats.resolveRate >= 90 ? 'var(--status-success)' : 'var(--status-warning)'} delay={0.21} />
+              <KPIStatCard
+                label={KPI_LABELS.SURVEY_SCORE}
+                value={stats.avgScore > 0 ? `★ ${stats.avgScore}` : '—'}
+                desc={`Trên ${stats.scoredTickets} phiếu đánh giá giáo viên`}
+                valueColor={stats.avgScore > 0 ? surveyColor(stats.avgScore) : undefined}
+                score={stats.avgScore > 0 ? surveyScore(stats.avgScore) : undefined}
+                icon={<Icon.User size={18} />}
+                delay={0.0}
+              />
+              <KPIStatCard label={KPI_LABELS.NEW_TICKETS} value={String(stats.newTickets)} desc={`${stats.total} phiếu phản hồi trong kỳ`} valueColor={stats.newTickets > 0 ? 'var(--status-warning)' : 'var(--status-success)'} delay={0.07} />
+              <KPIStatCard label={KPI_LABELS.RESOLVE_RATE} value={`${stats.resolveRate.toFixed(1)}%`} desc={`${stats.closedTickets} đã xử lý`} valueColor={stats.resolveRate >= 90 ? 'var(--status-success)' : 'var(--status-warning)'} delay={0.14} />
             </motion.div>
           )}
 

@@ -224,6 +224,30 @@ export const TICKET_LABELS = {
   PENDING_SURVEYS: 'Cần khảo sát',
 } as const;
 
+export const KPI_LABELS = {
+  SCORE: 'KPI SCORE',
+  COMPLETION_RATE: 'TỶ LỆ HOÀN THÀNH',
+  TEACHER_CHANGE_RATE: 'TỶ LỆ THAY GV CHÍNH (LEC)',
+  MULTI_TEACHER_RATE: 'TỶ LỆ LỚP CÓ 3+ GV',
+  SURVEY_SCORE: 'ĐIỂM KHẢO SÁT GV',
+  CONVERSION_RATE: 'TỶ LỆ CHUYỂN ĐỔI',
+  DATA_SCOPE: 'PHẠM VI DỮ LIỆU',
+  NEW_TICKETS: 'PHIẾU MỚI',
+  RESOLVE_RATE: 'TỶ LỆ DONE',
+  TRIAL_STUDENTS: 'HỌC VIÊN HỌC THỬ',
+  COMMENT_QUALITY: 'NHẬN XÉT LỚP HỌC',
+  ATTENDANCE_QUALITY: 'CHUYÊN CẦN HỌC VIÊN',
+  NEW_FEEDBACK: 'PHIẾU PHẢN HỒI MỚI',
+} as const;
+
+export const KPI_DESCRIPTIONS = {
+  COMPLETION_RATE: 'Theo ngưỡng tỷ lệ hoàn thành',
+  TEACHER_CHANGE_RATE: 'Theo ngưỡng tỷ lệ thay GV chính',
+  MULTI_TEACHER_RATE: 'Theo ngưỡng lớp có 3+ GV',
+  SURVEY_SCORE: 'Theo ngưỡng điểm khảo sát GV',
+  CONVERSION_RATE: 'Theo ngưỡng tỷ lệ học thử sang đơn hàng',
+} as const;
+
 /**
  * LOADING MESSAGES — Standardized Vietnamese messages
  */

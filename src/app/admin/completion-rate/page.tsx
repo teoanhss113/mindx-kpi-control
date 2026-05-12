@@ -21,7 +21,7 @@ import { PageLayout } from '@/components/PageLayout';
 import { ProtectedPage } from '@/components/ProtectedPage';
 import {
   Icon, SortIcon, Spinner, useToast, ToastContainer,
-  MultiSelect, SelectOption, RangeSlider, Toolbar, StatCard,
+  MultiSelect, SelectOption, RangeSlider, Toolbar, KPIStatCard,
   ChartSectionHeader, TableToolbar, TableGroupHeader, AdminTableSection,
   Modal, ModalHeader, EmptyState,
   initials,
@@ -35,7 +35,7 @@ import {
 import { useTableSort } from '@/hooks/useTableSort';
 import { useQuickFilterChips } from '@/hooks/useUserPreferences';
 import { useCSVExportPreferences } from '@/hooks/useCSVExportPreferences';
-import { CACHE_KEYS, LABELS, MESSAGES, ENTITIES, FORMAT, CLASS_INACTIVE_STATUSES } from '@/constants';
+import { CACHE_KEYS, LABELS, MESSAGES, ENTITIES, FORMAT, CLASS_INACTIVE_STATUSES, KPI_LABELS } from '@/constants';
 import { useSharedDateRange, useSharedCentres } from '@/hooks/useSharedFilterState';
 import { exportToCSV, CSVColumn, CSVFormatters } from '@/lib/csvExport';
 import { isExemptStudent, DEFAULT_EXEMPTED_REASONS } from '@/lib/kpiCalculations';
@@ -586,18 +586,25 @@ export default function DashboardPage() {
                 <div>
                   {/* STAT CARDS */}
                   <div className={styles.statsGrid}>
-                    {[
-                      { label: 'TỶ LỆ HOÀN THÀNH', value: `${filteredStats.overallRate.toFixed(1)}%`, desc: `${filteredStats.totalPass} / ${filteredStats.totalBase} học viên`, color: rateColor(filteredStats.overallRate) },
-                      { label: 'HỌC VIÊN MIỄN TRỪ', value: String(filteredStats.totalExcluded + filteredStats.totalExempt), desc: `${filteredStats.totalExcluded} lý do · ${filteredStats.totalExempt} miễn trừ`, color: 'var(--text-secondary)' },
-                      { label: 'LỚP HỌC ĐANG XÉT', value: String(filteredStats.totalClasses), desc: `Trên tổng ${normalClasses.filter((c: any) => !c.isExcludedByCourse).length} lớp`, color: 'var(--text-secondary)' },
-                    ].map((card, i) => (
-                      <motion.div key={card.label} className={styles.statCard}
-                        initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.3, delay: i * 0.07 }}>
-                        <div className={styles.statLabel}>{card.label}</div>
-                        <div className={styles.statValue} style={{ color: card.color }}>{card.value}</div>
-                        <div className={styles.statDesc}>{card.desc}</div>
-                      </motion.div>
+                    {(() => {
+                      const score = completionScore(filteredStats.overallRate);
+                      const needed95 = completionSuggestions.find(s => s.target === 95)?.needed ?? 0;
+                      return [
+                        { label: KPI_LABELS.COMPLETION_RATE, value: `${filteredStats.overallRate.toFixed(1)}%`, desc: `${filteredStats.totalPass} / ${filteredStats.totalBase} học viên`, color: rateColor(filteredStats.overallRate), score },
+                        { label: 'CẦN THÊM ĐỂ ĐẠT 95%', value: String(needed95), desc: needed95 === 0 ? 'Đã đạt mốc 95%' : 'học viên cần chuyển sang đạt', color: needed95 === 0 ? 'var(--status-success)' : 'var(--status-warning)' },
+                        { label: KPI_LABELS.DATA_SCOPE, value: String(filteredStats.totalClasses), desc: `${filteredStats.totalExcluded + filteredStats.totalExempt} học viên được miễn trừ`, color: 'var(--text-secondary)' },
+                      ];
+                    })().map((card, i) => (
+                      <KPIStatCard
+                        key={card.label}
+                        label={card.label}
+                        value={card.value}
+                        desc={card.desc}
+                        valueColor={card.color}
+                        score={card.score}
+                        icon={card.score ? <Icon.CheckCircle size={18} /> : undefined}
+                        delay={i * 0.07}
+                      />
                     ))}
                   </div>
 

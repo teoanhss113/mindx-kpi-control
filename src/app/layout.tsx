@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 import { AuthProvider } from '@/lib/AuthContext';
 import { PermissionsProvider } from '@/lib/PermissionsContext';
+import { ActivityTracker } from '@/components/ActivityTracker';
 
 export const metadata: Metadata = {
   title: 'MindX KPI Control — Tổng quan Quản trị',
@@ -32,6 +33,7 @@ export default function RootLayout({
       <body>
         <AuthProvider>
           <PermissionsProvider>
+            <ActivityTracker />
             {children}
           </PermissionsProvider>
         </AuthProvider>
