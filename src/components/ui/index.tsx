@@ -43,14 +43,23 @@ import { FilterChip } from './FilterChip'
 // ─────────────────────────────────────────────────────────────────────────────
 export {
   CustomTooltip,
+  CHART_LAYOUT,
   StandardXAxis,
   StandardYAxisCategory,
   StandardYAxisNumber,
   ChartLegend,
+  KPIBarChart,
+  KPIChartCard,
+  KPIChartLegend,
   VerticalBarChartConfig,
   HorizontalBarChartConfig,
   ComposedChartConfig,
+  getChartHeight,
+  getKPILegendItems,
+  getPaddedPercentDomain,
+  getSharedChartLayout,
 } from './ChartComponents'
+export type { ChartLegendItemConfig, KPIChartDatum } from './ChartComponents'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // BADGE COMPONENTS — Reusable badge system

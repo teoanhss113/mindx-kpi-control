@@ -1,18 +1,14 @@
 'use client';
 
-import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
-import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as ReTooltip,
-  ResponsiveContainer, Cell,
-} from 'recharts';
 import { useAuth } from '@/lib/AuthContext';
 import { isAuthenticated, loadSession } from '@/services/authService';
 import { fetchAllClasses, dateRangeToUtcRange, GET_CLASSES_LIGHT_QUERY } from '@/services/classesService';
 import { fetchAllCentres, Centre } from '@/services/centresService';
 import { getCache, setCache, clearCache } from '@/lib/idb';
-import { KPI_COLORS, completionScore, completionColor, COMPLETION_LEGEND } from '@/lib/kpiScoring';
+import { completionScore, completionColor, COMPLETION_LEGEND } from '@/lib/kpiScoring';
 import { getCourseCategory } from '@/lib/courseCategories';
 import { getNavItemsWithRouter } from '@/lib/navigation';
 import { useAllowedPages } from '@/hooks/useAllowedPages';
@@ -25,7 +21,7 @@ import {
   ChartSectionHeader, TableToolbar, TableGroupHeader, AdminTableSection,
   Modal, ModalHeader, EmptyState,
   initials,
-  StandardXAxis, StandardYAxisCategory, CustomTooltip, VerticalBarChartConfig,
+  KPIBarChart, KPIChartCard, getKPILegendItems, getSharedChartLayout,
   SortableHeader, CentreSelect, QuickFilterChips, ExportButton,
   KPIThresholdSuggestions,
   CSVExportSettings, FilterChip, type CSVColumnConfig,
@@ -61,6 +57,7 @@ const REASON_LABELS: Record<string, string> = {
 
 // KPI scoring is centralized in src/lib/kpiScoring.ts
 const rateColor = completionColor;
+const COMPLETION_CHART_LEGEND = getKPILegendItems(COMPLETION_LEGEND);
 
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
@@ -81,23 +78,6 @@ function normalizeCompletionReasonMap(map: Record<string, boolean>): Record<stri
 }
 
 // isExemptStudent is imported from @/lib/kpiCalculations (shared with dashboard)
-
-// ─── Multi-Select Dropdown ───────────────────────────────────────────────────
-
-
-// ─── Custom Recharts Tooltip ─────────────────────────────────────────────────
-function ChartTooltip({ active, payload, label }: any) {
-  if (!active || !payload?.length) return null;
-  const d = payload[0].payload;
-  return (
-    <div style={{ background: 'var(--text-primary)', color: 'var(--bg-surface)', padding: '8px 12px', borderRadius: "var(--radius-comfortable)", fontSize: 12, lineHeight: 1.6, boxShadow: '0 4px 12px rgba(0,0,0,0.2)' }}>
-      <div style={{ fontWeight: 590, marginBottom: 'var(--space-1)' }}>{label}</div>
-      <div>Tỷ lệ: <strong style={{ color: rateColor(d.rate) }}>{d.rate.toFixed(1)}%</strong></div>
-      <div style={{ color: 'var(--text-quaternary)' }}>{d.pass}/{d.base} học viên</div>
-      {d.classes !== undefined && <div style={{ color: 'var(--text-quaternary)' }}>{d.classes} lớp</div>}
-    </div>
-  );
-}
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function DashboardPage() {
@@ -637,75 +617,36 @@ export default function DashboardPage() {
                             exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.25 }}
                             className={styles.chartsGrid}>
 
-                            {/* Both chart cards share the same total height so legends align at bottom */}
+                            {/* Keep chart sizing consistent across breakdown cards. */}
                             {(() => {
-                              const LEGEND_H = 44; // px reserved for legend at bottom
-                              const TITLE_H = 28;  // px for the chart title
-                              const centreH = Math.max(120, centreChartData.length * 32);
-                              const courseH = Math.max(120, courseLineChartData.length * 32);
-                              // Both cards use the taller chart's height so they align
-                              const sharedChartH = Math.max(centreH, courseH);
-                              const cardH = sharedChartH + LEGEND_H + TITLE_H;
+                              const { chartHeight, cardHeight } = getSharedChartLayout([
+                                centreChartData.length,
+                                courseLineChartData.length,
+                              ], 180);
                               return (
                                 <>
-                                  {/* Chart cơ sở */}
                                   {centreChartData.length > 1 && (
-                                    <div className={styles.chartCard} style={{ height: cardH, display: 'flex', flexDirection: 'column' }}>
-                                      <div className={styles.chartTitle}>Theo Cơ Sở</div>
-                                      <div style={{ flex: 1, minHeight: 0 }}>
-                                        <ResponsiveContainer width="100%" height={sharedChartH}>
-                                          <BarChart data={centreChartData} {...VerticalBarChartConfig}>
-                                            <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="rgba(0,0,0,0.06)" />
-                                            <StandardXAxis label="Tỷ lệ (%)" domain={[0, 100]} tickFormatter={v => `${v}%`} />
-                                            <StandardYAxisCategory dataKey="name" label="Cơ sở" />
-                                            <ReTooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(0,0,0,0.03)' }} />
-                                            <Bar dataKey="rate" radius={[0, 4, 4, 0]} maxBarSize={16}>
-                                              {centreChartData.map((d, i) => (
-                                                <Cell key={i} fill={rateColor(d.rate)} fillOpacity={0.85} />
-                                              ))}
-                                            </Bar>
-                                          </BarChart>
-                                        </ResponsiveContainer>
-                                      </div>
-                                      <div className={styles.chartLegend}>
-                                        {COMPLETION_LEGEND.map(l => ({ color: KPI_COLORS[l.score], label: l.label })).map(l => (
-                                          <div key={l.label} className={styles.legendItem}>
-                                            <span className={styles.legendSwatch} style={{ background: l.color }} />
-                                            {l.label}
-                                          </div>
-                                        ))}
-                                      </div>
-                                    </div>
+                                    <KPIChartCard title="Theo Cơ Sở - KPI Score" height={cardHeight} legendItems={COMPLETION_CHART_LEGEND}>
+                                      <KPIBarChart
+                                        data={centreChartData.map(d => ({ ...d, score: completionScore(d.rate) }))}
+                                        yLabel="Cơ sở"
+                                        domain={[0, 100]}
+                                        height={chartHeight}
+                                        getColor={datum => rateColor(Number(datum.rate ?? 0))}
+                                      />
+                                    </KPIChartCard>
                                   )}
 
-                                  {/* Chart khối */}
                                   {courseLineChartData.length > 1 && (
-                                    <div className={styles.chartCard} style={{ height: cardH, display: 'flex', flexDirection: 'column' }}>
-                                      <div className={styles.chartTitle}>Theo Khối</div>
-                                      <div style={{ flex: 1, minHeight: 0 }}>
-                                        <ResponsiveContainer width="100%" height={sharedChartH}>
-                                          <BarChart data={courseLineChartData} {...VerticalBarChartConfig}>
-                                            <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="rgba(0,0,0,0.06)" />
-                                            <StandardXAxis label="Tỷ lệ (%)" domain={[0, 100]} tickFormatter={v => `${v}%`} />
-                                            <StandardYAxisCategory dataKey="name" label="Khối học" />
-                                            <ReTooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(0,0,0,0.03)' }} />
-                                            <Bar dataKey="rate" radius={[0, 4, 4, 0]} maxBarSize={16}>
-                                              {courseLineChartData.map((d, i) => (
-                                                <Cell key={i} fill={rateColor(d.rate)} fillOpacity={0.85} />
-                                              ))}
-                                            </Bar>
-                                          </BarChart>
-                                        </ResponsiveContainer>
-                                      </div>
-                                      <div className={styles.chartLegend}>
-                                        {COMPLETION_LEGEND.map(l => ({ color: KPI_COLORS[l.score], label: l.label })).map(l => (
-                                          <div key={l.label} className={styles.legendItem}>
-                                            <span className={styles.legendSwatch} style={{ background: l.color }} />
-                                            {l.label}
-                                          </div>
-                                        ))}
-                                      </div>
-                                    </div>
+                                    <KPIChartCard title="Theo Khối - KPI Score" height={cardHeight} legendItems={COMPLETION_CHART_LEGEND}>
+                                      <KPIBarChart
+                                        data={courseLineChartData.map(d => ({ ...d, score: completionScore(d.rate) }))}
+                                        yLabel="Khối học"
+                                        domain={[0, 100]}
+                                        height={chartHeight}
+                                        getColor={datum => rateColor(Number(datum.rate ?? 0))}
+                                      />
+                                    </KPIChartCard>
                                   )}
                                 </>
                               );

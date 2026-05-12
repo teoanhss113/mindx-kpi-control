@@ -1,12 +1,8 @@
 'use client';
 
-import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
-import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as ReTooltip,
-  ResponsiveContainer, Cell,
-} from 'recharts';
 import { useAuth } from '@/lib/AuthContext';
 import { isAuthenticated, loadSession } from '@/services/authService';
 import { fetchAllClasses, haveSlotInToUtcRange, GET_CLASSES_LIGHT_QUERY } from '@/services/classesService';
@@ -14,12 +10,11 @@ import { fetchAllCentres, Centre } from '@/services/centresService';
 import { getCache, setCache, clearCache } from '@/lib/idb';
 import { getCourseCategory } from '@/lib/courseCategories';
 import {
-  KPI_COLORS, kpiColor,
+  kpiColor,
   teacherChangeScore as lecChangeScore,
   multiTeacherScore,
   TEACHER_CHANGE_LEGEND,
 } from '@/lib/kpiScoring';
-import { getNavItemsWithRouter } from '@/lib/navigation';
 import { useAllowedPages } from '@/hooks/useAllowedPages';
 import { Class, Session, TeacherSlot } from '@/types/classes';
 import {
@@ -29,7 +24,7 @@ import {
   TableToolbar, TableGroupHeader, AdminTableSection,
   Modal, ModalHeader, EmptyState,
   initials,
-  StandardXAxis, StandardYAxisCategory, CustomTooltip, VerticalBarChartConfig,
+  KPIBarChart, KPIChartCard, getKPILegendItems, getPaddedPercentDomain, getSharedChartLayout,
   SortableColumn, SortableHeader,
   CentreSelect, QuickFilterChips, ExportButton, KPIThresholdSuggestions,
   CSVExportSettings, RoleBadge as SharedRoleBadge, TeacherAssignmentStatusBadge, FilterChip, CourseCategoryBadge, CentreBadge, type CSVColumnConfig,
@@ -39,16 +34,14 @@ import { useTableSort } from '@/hooks/useTableSort';
 import { useFilterOptions } from '@/hooks/useFilterOptions';
 import { useQuickFilterChips } from '@/hooks/useUserPreferences';
 import { useCSVExportPreferences } from '@/hooks/useCSVExportPreferences';
-import { CACHE_KEYS, LABELS, MESSAGES, ENTITIES, FORMAT, CLASS_INACTIVE_STATUSES, KPI_LABELS } from '@/constants';
+import { CACHE_KEYS, MESSAGES, ENTITIES, FORMAT, CLASS_INACTIVE_STATUSES, KPI_LABELS } from '@/constants';
 import { useSharedDateRange, useSharedCentres } from '@/hooks/useSharedFilterState';
 import { exportToCSV, CSVColumn, CSVFormatters } from '@/lib/csvExport';
 import { ProtectedPage } from '@/components/ProtectedPage';
 import styles from '@/app/dashboard.module.css';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-// Linear Design System: Import chart colors from constants
-import { CHART_COLORS as CHART_COLOR_CONSTANTS } from '@/constants';
-const CHART_COLORS = CHART_COLOR_CONSTANTS.PALETTE;
+const TEACHER_CHANGE_CHART_LEGEND = getKPILegendItems(TEACHER_CHANGE_LEGEND);
 
 // Role shortName constants
 const ROLE_LEC    = 'LEC';
@@ -95,16 +88,6 @@ interface ClassAnalyzed {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 function pad2(n: number) { return String(n).padStart(2, '0'); }
-
-function defaultMonthRange() {
-  const now   = new Date();
-  const first = new Date(now.getFullYear(), now.getMonth(), 1);
-  const last  = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-  return {
-    from: `${first.getFullYear()}-${pad2(first.getMonth()+1)}-${pad2(first.getDate())}`,
-    to:   `${last.getFullYear()}-${pad2(last.getMonth()+1)}-${pad2(last.getDate())}`,
-  };
-}
 
 /**
  * KPI 1 — LEC change rate per class:
@@ -167,32 +150,6 @@ function analyzeTeacherChanges(cls: Class): Omit<ClassAnalyzed, 'cls' | 'courseL
   };
 }
 
-// ─── Chart tooltip ────────────────────────────────────────────────────────────
-function ChartTooltip({ active, payload, label }: any) {
-  if (!active || !payload?.length) return null;
-  const d = payload[0].payload;
-  return (
-    <div style={{
-      background: 'var(--text-primary)', color: 'var(--bg-surface)', padding: '8px 12px',
-      borderRadius: "var(--radius-comfortable)", fontSize: 12, lineHeight: 1.6, boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
-    }}>
-      <div style={{ fontWeight: 590, marginBottom: 'var(--space-1)' }}>{label}</div>
-      {d.rate !== undefined && (
-        <div>Tỷ lệ: <strong style={{ color: kpiColor(lecChangeScore(d.rate)) }}>{(d.rate).toFixed(1)}%</strong></div>
-      )}
-      {d.changed !== undefined && d.total !== undefined && (
-        <div style={{ color: 'var(--text-quaternary)' }}>{d.changed}/{d.total} lớp thay GV chính (LEC)</div>
-      )}
-      {d.multiCount !== undefined && d.total !== undefined && (
-        <div style={{ color: 'var(--text-quaternary)' }}>{d.multiCount}/{d.total} lớp có 3+ GV</div>
-      )}
-      {d.classes !== undefined && (
-        <div style={{ color: 'var(--text-quaternary)' }}>{d.classes} lớp</div>
-      )}
-    </div>
-  );
-}
-
 // ─── Teacher chip ─────────────────────────────────────────────────────────────
 function TeacherChip({ name, role }: { name: string; role: string }) {
   const isSupply = role === ROLE_SUPPLY;
@@ -221,7 +178,7 @@ function ScoreDot({ score }: { score: 1 | 2 | 3 | 4 | 5 }) {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function TeacherChangePage() {
-  const { session, isLoading: authLoading, logout } = useAuth();
+  const { session, isLoading: authLoading } = useAuth();
   const router = useRouter();
   const { hasPreferences } = useQuickFilterChips();
 
@@ -233,8 +190,8 @@ export default function TeacherChangePage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   
   // Shared filter state (synced across pages)
-  const [dateFrom, dateTo, setDateFrom, setDateTo, datesLoaded] = useSharedDateRange();
-  const [selectedCentres, setSelectedCentres, centresLoaded] = useSharedCentres();
+  const [dateFrom, dateTo, setDateFrom, setDateTo] = useSharedDateRange();
+  const [selectedCentres, setSelectedCentres] = useSharedCentres();
   
   const [toolbarSelectedCourses, setToolbarSelectedCourses] = useState<string[]>([]); // NEW: Toolbar-level courses
   const [abortController, setAbortController] = useState<AbortController | null>(null);
@@ -448,11 +405,8 @@ export default function TeacherChangePage() {
       .sort((a, b) => b.rate - a.rate);
   }, [activeClasses]);
 
-  // Dynamic X-axis domain: cap at max+padding, never 100
-  const maxCentreRate    = Math.max(...centreChartData.map(d => d.rate), 0);
-  const maxCourseRate    = Math.max(...courseLineChartData.map(d => d.rate), 0);
-  const centreXDomain: [number, number]    = [0, Math.min(100, Math.ceil(maxCentreRate * 1.3 + 0.5) || 10)];
-  const courseLineXDomain: [number, number] = [0, Math.min(100, Math.ceil(maxCourseRate * 1.3 + 0.5) || 10)];
+  const centreXDomain = getPaddedPercentDomain(centreChartData.map(d => d.rate));
+  const courseLineXDomain = getPaddedPercentDomain(courseLineChartData.map(d => d.rate));
 
   // ── Filters ───────────────────────────────────────────────────────────────
 
@@ -619,17 +573,10 @@ export default function TeacherChangePage() {
     defaultSortOrder: 'asc'
   });
 
-  const BAR_H        = 28;
-  const centreH      = Math.max(180, centreChartData.length * BAR_H);
-  const courseH      = Math.max(180, courseLineChartData.length * BAR_H);
-  const sharedChartH = Math.max(centreH, courseH);
-  const cardHeight   = sharedChartH + 56 + 32;
+  const chartLayout = getSharedChartLayout([centreChartData.length, courseLineChartData.length], 180);
 
   // Allowed pages (for navigation filtering)
   const { allowedPages } = useAllowedPages();
-
-  // Navigation items
-  const navItems = getNavItemsWithRouter('teacher-change', router, allowedPages);
 
   const skeletonRows = Array.from({ length: 8 }).map((_, i) => (
     <div key={i} className={styles.skeletonRow}
@@ -745,61 +692,29 @@ export default function TeacherChangePage() {
                     exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.25 }}>
 
                     {centreChartData.length > 0 && (
-                      <div className={styles.chartCard} style={{ height: cardHeight, display: 'flex', flexDirection: 'column' }}>
-                        <div className={styles.chartTitle}>Theo Cơ Sở — % Lớp Thay GV</div>
-                        <div style={{ flex: 1, minHeight: 0 }}>
-                          <ResponsiveContainer width="100%" height={sharedChartH}>
-                            <BarChart data={centreChartData} {...VerticalBarChartConfig}>
-                              <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" horizontal={false} />
-                              <StandardXAxis label="Tỷ lệ (%)" domain={centreXDomain} tickFormatter={v => `${v}%`} />
-                              <StandardYAxisCategory dataKey="name" label="Cơ sở" />
-                              <ReTooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(0,0,0,0.03)' }} />
-                              <Bar dataKey="rate" radius={[0, 4, 4, 0]} maxBarSize={16}
-                                label={{ position: 'right', fontSize: 10, fill: 'var(--text-quaternary)', formatter: (v: any) => (typeof v === 'number' && v > 0) ? `${v.toFixed(1)}%` : '' }}>
-                                {centreChartData.map((d, i) =>
-                                  <Cell key={i} fill={kpiColor(lecChangeScore(d.rate))} fillOpacity={0.85} />)}
-                              </Bar>
-                            </BarChart>
-                          </ResponsiveContainer>
-                        </div>
-                        <div className={styles.chartLegend}>
-                          {TEACHER_CHANGE_LEGEND.map(l => (
-                            <div key={l.score} className={styles.legendItem}>
-                              <span className={styles.legendSwatch} style={{ background: KPI_COLORS[l.score] }} />
-                              {l.label}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
+                      <KPIChartCard title="Theo Cơ Sở - KPI Score" height={chartLayout.cardHeight} legendItems={TEACHER_CHANGE_CHART_LEGEND}>
+                        <KPIBarChart
+                          data={centreChartData.map(d => ({ ...d, score: lecChangeScore(d.rate) }))}
+                          height={chartLayout.chartHeight}
+                          dataKey="rate"
+                          yLabel="Cơ sở"
+                          xLabel="Tỷ lệ thay GV (%)"
+                          domain={centreXDomain}
+                        />
+                      </KPIChartCard>
                     )}
 
                     {courseLineChartData.length > 0 && (
-                      <div className={styles.chartCard} style={{ height: cardHeight, display: 'flex', flexDirection: 'column' }}>
-                        <div className={styles.chartTitle}>Theo Khối — % Lớp Thay GV</div>
-                        <div style={{ flex: 1, minHeight: 0 }}>
-                          <ResponsiveContainer width="100%" height={sharedChartH}>
-                            <BarChart data={courseLineChartData} {...VerticalBarChartConfig}>
-                              <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" horizontal={false} />
-                              <StandardXAxis label="Tỷ lệ (%)" domain={courseLineXDomain} tickFormatter={v => `${v}%`} />
-                              <StandardYAxisCategory dataKey="name" label="Khối học" />
-                              <ReTooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(0,0,0,0.03)' }} />
-                              <Bar dataKey="rate" radius={[0, 4, 4, 0]} maxBarSize={16}
-                                label={{ position: 'right', fontSize: 10, fill: 'var(--text-quaternary)', formatter: (v: any) => (typeof v === 'number' && v > 0) ? `${v.toFixed(1)}%` : '' }}>
-                                {courseLineChartData.map((d, i) =>
-                                  <Cell key={i} fill={kpiColor(lecChangeScore(d.rate))} fillOpacity={0.85} />)}
-                              </Bar>
-                            </BarChart>
-                          </ResponsiveContainer>
-                        </div>
-                        <div className={styles.chartLegend}>
-                          {TEACHER_CHANGE_LEGEND.map(l => (
-                            <div key={l.score} className={styles.legendItem}>
-                              <span className={styles.legendSwatch} style={{ background: KPI_COLORS[l.score] }} />
-                              {l.label}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
+                      <KPIChartCard title="Theo Khối - KPI Score" height={chartLayout.cardHeight} legendItems={TEACHER_CHANGE_CHART_LEGEND}>
+                        <KPIBarChart
+                          data={courseLineChartData.map(d => ({ ...d, score: lecChangeScore(d.rate) }))}
+                          height={chartLayout.chartHeight}
+                          dataKey="rate"
+                          yLabel="Khối học"
+                          xLabel="Tỷ lệ thay GV (%)"
+                          domain={courseLineXDomain}
+                        />
+                      </KPIChartCard>
                     )}
                   </motion.div>
                 )}

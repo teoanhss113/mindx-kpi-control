@@ -6,11 +6,13 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
-import { requireAdmin, authErrorResponse } from '@/lib/auth/serverAuth';
+import { requirePagePermission, authErrorResponse } from '@/lib/auth/serverAuth';
+
+const PAGE_KEY = 'final-sessions';
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    await requireAdmin(request);
+    await requirePagePermission(request, PAGE_KEY, 'view');
     const { id } = await params;
     const { data, error } = await supabaseAdmin
       .from('final_sessions')
@@ -46,7 +48,7 @@ export interface SessionInsert {
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    await requireAdmin(request);
+    await requirePagePermission(request, PAGE_KEY, 'edit');
     const { id } = await params;
     const body = await request.json();
     const sessions: SessionInsert[] = body.sessions;
@@ -111,7 +113,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const user = await requireAdmin(request);
+    const user = await requirePagePermission(request, PAGE_KEY, 'edit');
     const { id } = await params;
     const body = await request.json();
     const {
@@ -217,7 +219,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
 export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    await requireAdmin(request);
+    await requirePagePermission(request, PAGE_KEY, 'edit');
     const { id } = await params;
     const sessionId = request.nextUrl.searchParams.get('sessionId');
     if (!sessionId) return NextResponse.json({ error: 'sessionId required' }, { status: 400 });

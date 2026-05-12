@@ -4,14 +4,18 @@
  * Admin Actions
  * Server actions for admin CRUD operations.
  *
- * Every action requires a Firebase ID token whose holder has the Admin
- * role. The token is verified server-side via requireAdminToken before
- * any privileged supabaseAdmin call is made.
+ * Every action requires a Firebase ID token whose holder has permission
+ * for the related admin page before any privileged supabaseAdmin call is made.
  */
 
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { revalidatePath } from 'next/cache';
-import { requireAdminToken, AuthError } from '@/lib/auth/serverAuth';
+import { requirePagePermissionToken, AuthError } from '@/lib/auth/serverAuth';
+
+const ADMIN_USERS_PAGE = 'admin-users';
+const ADMIN_REGIONS_PAGE = 'admin-regions';
+const ADMIN_ROLES_PAGE = 'admin-roles';
+const ADMIN_USAGE_ANALYTICS_PAGE = 'admin-usage-analytics';
 
 interface CreateUserData {
   email: string;
@@ -66,10 +70,6 @@ interface UpdatePermissionData extends CreatePermissionData {
   id: string;
 }
 
-type ActionResult<T = void> =
-  | (T extends void ? { success: true } : { success: true; data: T })
-  | { success: false; error: string; data?: T };
-
 function failure(error: unknown): { success: false; error: string } {
   if (error instanceof AuthError) {
     return { success: false, error: error.message };
@@ -83,7 +83,7 @@ function failure(error: unknown): { success: false; error: string } {
 
 export async function getUsers(idToken: string) {
   try {
-    await requireAdminToken(idToken);
+    await requirePagePermissionToken(idToken, ADMIN_USERS_PAGE);
 
     const { data, error } = await supabaseAdmin
       .from('profiles')
@@ -100,7 +100,7 @@ export async function getUsers(idToken: string) {
 
 export async function getUnmanagedUsers(idToken: string) {
   try {
-    await requireAdminToken(idToken);
+    await requirePagePermissionToken(idToken, ADMIN_USERS_PAGE);
 
     const { data, error } = await supabaseAdmin
       .from('profiles')
@@ -117,7 +117,7 @@ export async function getUnmanagedUsers(idToken: string) {
 
 export async function createUser(idToken: string, userData: CreateUserData) {
   try {
-    await requireAdminToken(idToken);
+    await requirePagePermissionToken(idToken, ADMIN_USERS_PAGE, 'edit');
 
     const email = userData.email.trim().toLowerCase();
 
@@ -161,7 +161,7 @@ export async function createUser(idToken: string, userData: CreateUserData) {
 
 export async function updateUser(idToken: string, userData: UpdateUserData) {
   try {
-    await requireAdminToken(idToken);
+    await requirePagePermissionToken(idToken, ADMIN_USERS_PAGE, 'edit');
 
     const { error } = await supabaseAdmin
       .from('profiles')
@@ -187,7 +187,7 @@ export async function updateUser(idToken: string, userData: UpdateUserData) {
  */
 export async function deleteUser(idToken: string, userId: string) {
   try {
-    await requireAdminToken(idToken);
+    await requirePagePermissionToken(idToken, ADMIN_USERS_PAGE, 'edit');
 
     const { error } = await supabaseAdmin
       .from('profiles')
@@ -212,7 +212,7 @@ export async function deleteUser(idToken: string, userId: string) {
 
 export async function getRegions(idToken: string) {
   try {
-    await requireAdminToken(idToken);
+    await requirePagePermissionToken(idToken, ADMIN_REGIONS_PAGE);
 
     const { data, error } = await supabaseAdmin
       .from('regions')
@@ -228,7 +228,7 @@ export async function getRegions(idToken: string) {
 
 export async function createRegion(idToken: string, regionData: CreateRegionData) {
   try {
-    await requireAdminToken(idToken);
+    await requirePagePermissionToken(idToken, ADMIN_REGIONS_PAGE, 'edit');
 
     const { data: newRegion, error: createError } = await supabaseAdmin
       .from('regions')
@@ -267,7 +267,7 @@ export async function createRegion(idToken: string, regionData: CreateRegionData
 
 export async function updateRegion(idToken: string, regionData: UpdateRegionData) {
   try {
-    await requireAdminToken(idToken);
+    await requirePagePermissionToken(idToken, ADMIN_REGIONS_PAGE, 'edit');
 
     const { error: updateError } = await supabaseAdmin
       .from('regions')
@@ -311,7 +311,7 @@ export async function updateRegion(idToken: string, regionData: UpdateRegionData
 
 export async function deleteRegion(idToken: string, regionId: string) {
   try {
-    await requireAdminToken(idToken);
+    await requirePagePermissionToken(idToken, ADMIN_REGIONS_PAGE, 'edit');
 
     const { error } = await supabaseAdmin
       .from('regions')
@@ -332,7 +332,7 @@ export async function deleteRegion(idToken: string, regionId: string) {
 
 export async function getPermissions(idToken: string) {
   try {
-    await requireAdminToken(idToken);
+    await requirePagePermissionToken(idToken, ADMIN_USERS_PAGE);
 
     const { data, error } = await supabaseAdmin
       .from('user_permissions')
@@ -352,7 +352,7 @@ export async function getPermissions(idToken: string) {
 
 export async function getPermissionUsers(idToken: string) {
   try {
-    await requireAdminToken(idToken);
+    await requirePagePermissionToken(idToken, ADMIN_USERS_PAGE);
 
     const { data, error } = await supabaseAdmin
       .from('profiles')
@@ -368,7 +368,7 @@ export async function getPermissionUsers(idToken: string) {
 
 export async function getPermissionRegions(idToken: string) {
   try {
-    await requireAdminToken(idToken);
+    await requirePagePermissionToken(idToken, ADMIN_USERS_PAGE);
 
     const { data, error } = await supabaseAdmin
       .from('regions')
@@ -385,7 +385,7 @@ export async function getPermissionRegions(idToken: string) {
 
 export async function createPermission(idToken: string, permissionData: CreatePermissionData) {
   try {
-    await requireAdminToken(idToken);
+    await requirePagePermissionToken(idToken, ADMIN_USERS_PAGE, 'edit');
 
     const { data: existing } = await supabaseAdmin
       .from('user_permissions')
@@ -419,7 +419,7 @@ export async function createPermission(idToken: string, permissionData: CreatePe
 
 export async function updatePermission(idToken: string, permissionData: UpdatePermissionData) {
   try {
-    await requireAdminToken(idToken);
+    await requirePagePermissionToken(idToken, ADMIN_USERS_PAGE, 'edit');
 
     const { error } = await supabaseAdmin
       .from('user_permissions')
@@ -442,7 +442,7 @@ export async function updatePermission(idToken: string, permissionData: UpdatePe
 
 export async function deletePermission(idToken: string, permissionId: string) {
   try {
-    await requireAdminToken(idToken);
+    await requirePagePermissionToken(idToken, ADMIN_USERS_PAGE, 'edit');
 
     const { error } = await supabaseAdmin
       .from('user_permissions')
@@ -463,7 +463,7 @@ export async function deletePermission(idToken: string, permissionId: string) {
 
 export async function getRoles(idToken: string) {
   try {
-    await requireAdminToken(idToken);
+    await requirePagePermissionToken(idToken, ADMIN_ROLES_PAGE);
 
     const { data, error } = await supabaseAdmin
       .from('roles')
@@ -479,7 +479,7 @@ export async function getRoles(idToken: string) {
 
 export async function getPages(idToken: string) {
   try {
-    await requireAdminToken(idToken);
+    await requirePagePermissionToken(idToken, ADMIN_ROLES_PAGE);
 
     const { data, error } = await supabaseAdmin
       .from('pages')
@@ -495,7 +495,7 @@ export async function getPages(idToken: string) {
 
 export async function createRole(idToken: string, roleData: CreateRoleData) {
   try {
-    await requireAdminToken(idToken);
+    await requirePagePermissionToken(idToken, ADMIN_ROLES_PAGE, 'edit');
 
     const { data: existing } = await supabaseAdmin
       .from('roles')
@@ -543,7 +543,7 @@ export async function createRole(idToken: string, roleData: CreateRoleData) {
 
 export async function updateRole(idToken: string, roleData: UpdateRoleData) {
   try {
-    await requireAdminToken(idToken);
+    await requirePagePermissionToken(idToken, ADMIN_ROLES_PAGE, 'edit');
 
     const { data: existing } = await supabaseAdmin
       .from('roles')
@@ -596,7 +596,7 @@ export async function updateRole(idToken: string, roleData: UpdateRoleData) {
 
 export async function deleteRole(idToken: string, roleId: string) {
   try {
-    await requireAdminToken(idToken);
+    await requirePagePermissionToken(idToken, ADMIN_ROLES_PAGE, 'edit');
 
     const { data: role } = await supabaseAdmin
       .from('roles')
@@ -637,7 +637,7 @@ export async function deleteRole(idToken: string, roleId: string) {
 
 export async function getUserRoles(idToken: string) {
   try {
-    await requireAdminToken(idToken);
+    await requirePagePermissionToken(idToken, ADMIN_USERS_PAGE);
 
     const { data, error } = await supabaseAdmin
       .from('roles')
@@ -654,7 +654,7 @@ export async function getUserRoles(idToken: string) {
 
 export async function getUserPermissionsByUserId(idToken: string, userId: string) {
   try {
-    await requireAdminToken(idToken);
+    await requirePagePermissionToken(idToken, ADMIN_USERS_PAGE);
 
     const { data, error } = await supabaseAdmin
       .from('user_permissions')
@@ -680,7 +680,7 @@ export async function saveUserPermissions(
   }>,
 ) {
   try {
-    await requireAdminToken(idToken);
+    await requirePagePermissionToken(idToken, ADMIN_USERS_PAGE, 'edit');
 
     await supabaseAdmin
       .from('user_permissions')
@@ -791,7 +791,7 @@ function resolveUsageRange(range: UsageAnalyticsRange) {
 
 export async function getUsageAnalytics(idToken: string, range: UsageAnalyticsRange = 30) {
   try {
-    await requireAdminToken(idToken);
+    await requirePagePermissionToken(idToken, ADMIN_USAGE_ANALYTICS_PAGE);
 
     const { safeDays, since, until } = resolveUsageRange(range);
 

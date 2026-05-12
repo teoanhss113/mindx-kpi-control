@@ -10,14 +10,35 @@
  * - Subtle shadows on elevated chart containers
  */
 
-import { XAxis as RechartsXAxis, YAxis as RechartsYAxis, Legend as RechartsLegend } from 'recharts';
+import type { ReactNode } from 'react';
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  ResponsiveContainer,
+  Tooltip as RechartsTooltip,
+  XAxis as RechartsXAxis,
+  YAxis as RechartsYAxis,
+} from 'recharts';
+import { KPI_COLORS } from '@/lib/kpiScoring';
+import styles from '@/app/dashboard.module.css';
+
+type ChartValue = string | number;
+type KPIScore = keyof typeof KPI_COLORS;
+
+interface TooltipPayloadItem {
+  color?: string;
+  name?: ChartValue;
+  value?: ChartValue;
+}
 
 // ─── Custom Tooltip Component (Linear Dark Style) ─────────────────────────────
 
 interface CustomTooltipProps {
   active?: boolean;
-  payload?: any[];
-  label?: string;
+  payload?: TooltipPayloadItem[];
+  label?: string | number;
 }
 
 export const CustomTooltip = ({ active, payload, label }: CustomTooltipProps) => {
@@ -120,7 +141,7 @@ interface StandardXAxisProps {
   type?: 'number' | 'category';
   domain?: [number, number];
   ticks?: number[];
-  tickFormatter?: (value: any) => string;
+  tickFormatter?: (value: ChartValue) => string;
 }
 
 export const StandardXAxis = ({ 
@@ -186,7 +207,7 @@ interface StandardYAxisNumberProps {
   orientation?: 'left' | 'right';
   label?: string;
   domain?: [number, number];
-  tickFormatter?: (value: any) => string;
+  tickFormatter?: (value: ChartValue) => string;
 }
 
 export const StandardYAxisNumber = ({ 
@@ -219,6 +240,139 @@ export const StandardYAxisNumber = ({
 interface ChartLegendItem {
   color: string;
   label: string;
+}
+
+export type ChartLegendItemConfig = ChartLegendItem;
+
+export type KPIChartDatum = {
+  name: string;
+  value?: number;
+  rate?: number;
+  score?: KPIScore;
+  [key: string]: string | number | KPIScore | undefined;
+};
+
+export const CHART_LAYOUT = {
+  BAR_HEIGHT: 32,
+  MIN_HEIGHT: 180,
+  LEGEND_HEIGHT: 44,
+  TITLE_HEIGHT: 28,
+  GRID_STROKE: 'rgba(0,0,0,0.06)',
+  CURSOR_FILL: 'rgba(0,0,0,0.03)',
+  BAR_RADIUS: [0, 4, 4, 0] as [number, number, number, number],
+  MAX_BAR_SIZE: 16,
+} as const;
+
+export function getChartHeight(itemCount: number, minHeight = CHART_LAYOUT.MIN_HEIGHT) {
+  return Math.max(minHeight, itemCount * CHART_LAYOUT.BAR_HEIGHT);
+}
+
+export function getSharedChartLayout(itemCounts: number[], minHeight = CHART_LAYOUT.MIN_HEIGHT) {
+  const chartHeight = Math.max(...itemCounts.map(count => getChartHeight(count, minHeight)), minHeight);
+  return {
+    chartHeight,
+    cardHeight: chartHeight + CHART_LAYOUT.LEGEND_HEIGHT + CHART_LAYOUT.TITLE_HEIGHT,
+  };
+}
+
+export function getPaddedPercentDomain(values: number[], fallbackMax = 10): [number, number] {
+  const maxValue = Math.max(...values, 0);
+  return [0, Math.min(100, Math.ceil(maxValue * 1.3 + 0.5) || fallbackMax)];
+}
+
+export function getKPILegendItems(items: { score: KPIScore; label: string }[]): ChartLegendItemConfig[] {
+  return items.map(item => ({ color: KPI_COLORS[item.score], label: item.label }));
+}
+
+export function KPIChartLegend({ items }: { items: ChartLegendItemConfig[] }) {
+  return (
+    <div className={styles.chartLegend}>
+      {items.map(item => (
+        <div key={item.label} className={styles.legendItem}>
+          <span className={styles.legendSwatch} style={{ background: item.color }} />
+          {item.label}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function KPIChartCard({
+  title,
+  children,
+  legendItems,
+  height,
+}: {
+  title: string;
+  children: ReactNode;
+  legendItems?: ChartLegendItemConfig[];
+  height?: number;
+}) {
+  return (
+    <div className={styles.chartCard} style={{ height, display: 'flex', flexDirection: 'column' }}>
+      <div className={styles.chartTitle}>{title}</div>
+      <div style={{ flex: 1, minHeight: 0 }}>{children}</div>
+      {legendItems && <KPIChartLegend items={legendItems} />}
+    </div>
+  );
+}
+
+export function KPIBarChart({
+  data,
+  dataKey = 'rate',
+  scoreKey = 'score',
+  xLabel = 'Tỷ lệ (%)',
+  yLabel,
+  domain = [0, 100],
+  ticks,
+  height,
+  valueFormatter = value => `${Number(value).toFixed(1)}%`,
+  tickFormatter = value => `${value}%`,
+  getColor,
+  showValueLabel = false,
+}: {
+  data: KPIChartDatum[];
+  dataKey?: string;
+  scoreKey?: string;
+  xLabel?: string;
+  yLabel: string;
+  domain?: [number, number];
+  ticks?: number[];
+  height: number;
+  valueFormatter?: (value: number) => string;
+  tickFormatter?: (value: ChartValue) => string;
+  getColor?: (datum: KPIChartDatum) => string;
+  showValueLabel?: boolean;
+}) {
+  return (
+    <ResponsiveContainer width="100%" height={height}>
+      <BarChart data={data} {...VerticalBarChartConfig}>
+        <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke={CHART_LAYOUT.GRID_STROKE} />
+        <StandardXAxis label={xLabel} domain={domain} ticks={ticks} tickFormatter={tickFormatter} />
+        <StandardYAxisCategory dataKey="name" label={yLabel} />
+        <RechartsTooltip content={<CustomTooltip />} cursor={{ fill: CHART_LAYOUT.CURSOR_FILL }} />
+        <Bar
+          dataKey={dataKey}
+          radius={CHART_LAYOUT.BAR_RADIUS}
+          maxBarSize={CHART_LAYOUT.MAX_BAR_SIZE}
+          label={showValueLabel ? {
+            position: 'right',
+            fontSize: 10,
+            fill: 'var(--text-quaternary)',
+            formatter: (value) => (typeof value === 'number' && value > 0 ? valueFormatter(value) : ''),
+          } : undefined}
+        >
+          {data.map((datum, index) => (
+            <Cell
+              key={`${datum.name}-${index}`}
+              fill={getColor?.(datum) ?? (datum[scoreKey] ? KPI_COLORS[datum[scoreKey] as KPIScore] : 'var(--brand-indigo)')}
+              fillOpacity={0.85}
+            />
+          ))}
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>
+  );
 }
 
 interface ChartLegendProps {
@@ -291,13 +445,3 @@ export const ComposedChartConfig = {
   layout: 'vertical' as const,
   margin: { top: 4, right: 60, left: 20, bottom: 20 }, // Increased left margin for Y-axis label
 };
-
-// Fixed chart rendering
-// Fixed chart rendering
-// Fixed tooltip rendering
-// Improved responsive behavior
-/* Added completion rate charts */
-/* Added teacher change charts */
-
-// Fixed tooltip rendering
-// Fixed tooltip rendering and responsiveness

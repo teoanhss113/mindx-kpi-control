@@ -3,10 +3,6 @@
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
-import {
-  BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as ReTooltip,
-  ResponsiveContainer, Cell,
-} from 'recharts';
 import { useAuth } from '@/lib/AuthContext';
 import { loadSession } from '@/services/authService';
 import { fetchAllCentres, Centre } from '@/services/centresService';
@@ -14,7 +10,7 @@ import { getCache, setCache, clearCache } from '@/lib/idb';
 import { getCourseCategory } from '@/lib/courseCategories';
 import { getNavItemsWithRouter } from '@/lib/navigation';
 import { useAllowedPages } from '@/hooks/useAllowedPages';
-import { surveyColor, surveyScore, KPI_COLORS, SURVEY_LEGEND } from '@/lib/kpiScoring';
+import { surveyColor, surveyScore, SURVEY_LEGEND } from '@/lib/kpiScoring';
 import { fetchTickets, updateTicket, searchUsers } from '@/services/ticketService';
 import { fetchPendingSurveyClasses } from '@/services/classesService';
 import { classSurveyKey, fetchStudentClassSurveys, STUDENT_TEACHING_SURVEY_ID } from '@/services/classSurveyService';
@@ -28,7 +24,7 @@ import {
   initials,
   ToastContainer,
   useToast,
-  StandardXAxis, StandardYAxisCategory, ChartLegend, VerticalBarChartConfig, CustomTooltip,
+  KPIBarChart, KPIChartCard, getKPILegendItems, getSharedChartLayout,
   SortableHeader, SortableColumn, TopicBadge, UserSearchInput, type UserSearchResult, ModalFooter,
   CentreSelect, CourseCategoryBadge, CentreBadge, QuickFilterChips, TicketStatusBadge, FilterChip, KPIThresholdSuggestions, getPriorityMeta, getTicketStatusMeta, Badge,
 } from '@/components/ui';
@@ -49,6 +45,8 @@ const SURVEY_TARGETS = [
   { value: 4.5, label: '4.5' },
   { value: 4.8, label: '> 4.7' },
 ];
+
+const SURVEY_CHART_LEGEND = getKPILegendItems(SURVEY_LEGEND);
 
 const TICKET_EXEMPTED_REASONS = [
   'CHANGE_CLASS_SCHEDULE_CHANGE',
@@ -1399,105 +1397,95 @@ export default function TicketsDashboard() {
           )}
 
           {/* CHARTS */}
-          {mappedTickets.length > 1 && (centreChartData.length > 0 || courseLineChartData.length > 0) && (
-            <div className={styles.chartsSection}>
-              <ChartSectionHeader
-                title="Biểu Đồ Phân Tích"
-              />
-              <div className={styles.chartsGrid}>
-                
-                {/* Chart 1: Số phiếu theo Cơ sở */}
-                {centreChartData.length > 0 && (
-                  <div className={styles.chartCard}>
-                    <div className={styles.chartTitle}>{TICKET_LABELS.TICKETS_BY_CENTRE}</div>
-                    <div style={{ flex: 1, minHeight: 0 }}>
-                      <ResponsiveContainer width="100%" height={Math.max(200, centreChartData.length * 32)}>
-                        <BarChart data={centreChartData} {...VerticalBarChartConfig}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" horizontal={false} />
-                          <StandardXAxis label="Số phiếu" />
-                          <StandardYAxisCategory dataKey="name" label="Cơ sở" />
-                          <ReTooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(0,0,0,0.03)' }} />
-                          <Bar dataKey="Số phiếu" fill={CHART_COLORS.SECONDARY[0]} radius={[0, 4, 4, 0]} />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
-                )}
+          {mappedTickets.length > 1 && (centreChartData.length > 0 || courseLineChartData.length > 0) && (() => {
+            const { chartHeight: centreHeight, cardHeight: centreCardHeight } = getSharedChartLayout([centreChartData.length], 180);
+            const { chartHeight: courseHeight, cardHeight: courseCardHeight } = getSharedChartLayout([courseLineChartData.length], 180);
 
-                {/* Chart 2: Điểm TB (GV) theo Cơ sở - Line Chart */}
-                {centreChartData.length > 0 && (
-                  <div className={styles.chartCard}>
-                    <div className={styles.chartTitle}>Điểm Trung Bình Giáo Viên Theo Cơ Sở</div>
-                    <div style={{ flex: 1, minHeight: 0 }}>
-                      <ResponsiveContainer width="100%" height={Math.max(200, centreChartData.length * 32)}>
-                        <BarChart data={centreChartData} {...VerticalBarChartConfig}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" horizontal={false} />
-                          <StandardXAxis label="Điểm (1-5)" domain={[0, 5]} ticks={[0, 1, 2, 3, 4, 5]} />
-                          <StandardYAxisCategory dataKey="name" label="Cơ sở" />
-                          <ReTooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(0,0,0,0.03)' }} />
-                          <Bar dataKey="Điểm TB (GV)" radius={[0, 4, 4, 0]}>
-                            {centreChartData.map((entry, index) => {
-                              const score = entry['Điểm TB (GV)'];
-                              return <Cell key={`cell-${index}`} fill={surveyColor(score)} />;
-                            })}
-                          </Bar>
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                    <ChartLegend items={SURVEY_LEGEND.map(l => ({
-                      color: KPI_COLORS[l.score],
-                      label: l.label,
-                    }))} />
-                  </div>
-                )}
+            return (
+              <div className={styles.chartsSection}>
+                <ChartSectionHeader title="Biểu Đồ Phân Tích" />
+                <div className={styles.chartsGrid}>
+                  {centreChartData.length > 0 && (
+                    <KPIChartCard
+                      title="Điểm Trung Bình Giáo Viên Theo Cơ Sở"
+                      height={centreCardHeight}
+                      legendItems={SURVEY_CHART_LEGEND}
+                    >
+                      <KPIBarChart
+                        data={centreChartData}
+                        dataKey="Điểm TB (GV)"
+                        xLabel="Điểm (1-5)"
+                        yLabel="Cơ sở"
+                        domain={[0, 5]}
+                        ticks={[0, 1, 2, 3, 4, 5]}
+                        height={centreHeight}
+                        valueFormatter={value => `★ ${value.toFixed(1)}`}
+                        tickFormatter={value => String(value)}
+                        getColor={datum => surveyColor(Number(datum['Điểm TB (GV)']))}
+                        showValueLabel
+                      />
+                    </KPIChartCard>
+                  )}
 
-                {/* Chart 3: Số phiếu theo Khối */}
-                {courseLineChartData.length > 0 && (
-                  <div className={styles.chartCard}>
-                    <div className={styles.chartTitle}>{TICKET_LABELS.TICKETS_BY_COURSE_LINE}</div>
-                    <div style={{ flex: 1, minHeight: 0 }}>
-                      <ResponsiveContainer width="100%" height={Math.max(200, courseLineChartData.length * 40)}>
-                        <BarChart data={courseLineChartData} {...VerticalBarChartConfig}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" horizontal={false} />
-                          <StandardXAxis label="Số phiếu" />
-                          <StandardYAxisCategory dataKey="name" label="Khối học" />
-                          <ReTooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(0,0,0,0.03)' }} />
-                          <Bar dataKey="Số phiếu" fill={CHART_COLORS.SECONDARY[0]} radius={[0, 4, 4, 0]} />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
-                )}
+                  {courseLineChartData.length > 0 && (
+                    <KPIChartCard
+                      title="Điểm Trung Bình Giáo Viên Theo Khối"
+                      height={courseCardHeight}
+                      legendItems={SURVEY_CHART_LEGEND}
+                    >
+                      <KPIBarChart
+                        data={courseLineChartData}
+                        dataKey="Điểm TB (GV)"
+                        xLabel="Điểm (1-5)"
+                        yLabel="Khối học"
+                        domain={[0, 5]}
+                        ticks={[0, 1, 2, 3, 4, 5]}
+                        height={courseHeight}
+                        valueFormatter={value => `★ ${value.toFixed(1)}`}
+                        tickFormatter={value => String(value)}
+                        getColor={datum => surveyColor(Number(datum['Điểm TB (GV)']))}
+                        showValueLabel
+                      />
+                    </KPIChartCard>
+                  )}
 
-                {/* Chart 4: Điểm TB (GV) theo Khối - Line Chart */}
-                {courseLineChartData.length > 0 && (
-                  <div className={styles.chartCard}>
-                    <div className={styles.chartTitle}>Điểm Trung Bình Giáo Viên Theo Khối</div>
-                    <div style={{ flex: 1, minHeight: 0 }}>
-                      <ResponsiveContainer width="100%" height={Math.max(200, courseLineChartData.length * 40)}>
-                        <BarChart data={courseLineChartData} {...VerticalBarChartConfig}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" horizontal={false} />
-                          <StandardXAxis label="Điểm (1-5)" domain={[0, 5]} ticks={[0, 1, 2, 3, 4, 5]} />
-                          <StandardYAxisCategory dataKey="name" label="Khối học" />
-                          <ReTooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(0,0,0,0.03)' }} />
-                          <Bar dataKey="Điểm TB (GV)" radius={[0, 4, 4, 0]}>
-                            {courseLineChartData.map((entry, index) => {
-                              const score = entry['Điểm TB (GV)'];
-                              return <Cell key={`cell-${index}`} fill={surveyColor(score)} />;
-                            })}
-                          </Bar>
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                    <ChartLegend items={SURVEY_LEGEND.map(l => ({
-                      color: KPI_COLORS[l.score],
-                      label: l.label,
-                    }))} />
-                  </div>
-                )}
+                  {centreChartData.length > 0 && (
+                    <KPIChartCard title={TICKET_LABELS.TICKETS_BY_CENTRE} height={centreCardHeight}>
+                      <KPIBarChart
+                        data={centreChartData}
+                        dataKey="Số phiếu"
+                        xLabel="Số phiếu"
+                        yLabel="Cơ sở"
+                        domain={[0, Math.max(...centreChartData.map(d => d['Số phiếu']), 0)]}
+                        height={centreHeight}
+                        valueFormatter={value => `${value.toFixed(0)} phiếu`}
+                        tickFormatter={value => String(value)}
+                        getColor={() => CHART_COLORS.SECONDARY[0]}
+                        showValueLabel
+                      />
+                    </KPIChartCard>
+                  )}
+
+                  {courseLineChartData.length > 0 && (
+                    <KPIChartCard title={TICKET_LABELS.TICKETS_BY_COURSE_LINE} height={courseCardHeight}>
+                      <KPIBarChart
+                        data={courseLineChartData}
+                        dataKey="Số phiếu"
+                        xLabel="Số phiếu"
+                        yLabel="Khối học"
+                        domain={[0, Math.max(...courseLineChartData.map(d => d['Số phiếu']), 0)]}
+                        height={courseHeight}
+                        valueFormatter={value => `${value.toFixed(0)} phiếu`}
+                        tickFormatter={value => String(value)}
+                        getColor={() => CHART_COLORS.SECONDARY[0]}
+                        showValueLabel
+                      />
+                    </KPIChartCard>
+                  )}
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
         {/* View Mode Toggle — Outside and above the panel for consistency */}
         {(mappedTickets.length > 0 || pendingClasses.length > 0 || loading || pendingLoading) && (

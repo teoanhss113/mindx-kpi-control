@@ -4,22 +4,13 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
-import { requireAdmin, authErrorResponse } from '@/lib/auth/serverAuth';
+import { requirePagePermission, authErrorResponse } from '@/lib/auth/serverAuth';
+
+const PAGE_KEY = 'final-sessions';
 
 export async function GET(request: NextRequest) {
   try {
-    await requireAdmin(request);
-
-    const { data, error } = await supabaseAdmin
-      .from('judge_batches')
-      .select(`
-        *,
-        final_sessions(count),
-        final_sessions!inner(
-          judge_requests(count)
-        )
-      `)
-      .order('week_from', { ascending: false });
+    await requirePagePermission(request, PAGE_KEY, 'view');
 
     // Simpler approach — separate count queries are more reliable
     const { data: batches, error: bErr } = await supabaseAdmin
@@ -41,7 +32,7 @@ export async function GET(request: NextRequest) {
 
     // Get request counts per batch (join through final_sessions)
     const batchIds = (batches || []).map(b => b.id);
-    let requestCountMap: Record<string, number> = {};
+    const requestCountMap: Record<string, number> = {};
     if (batchIds.length > 0) {
       const { data: sessions } = await supabaseAdmin
         .from('final_sessions')
@@ -77,7 +68,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const user = await requireAdmin(request);
+    const user = await requirePagePermission(request, PAGE_KEY, 'edit');
     const body = await request.json();
     const { slug, title, week_from, week_to, notes, is_public } = body;
 

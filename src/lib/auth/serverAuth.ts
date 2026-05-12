@@ -39,6 +39,23 @@ export interface AuthenticatedUser {
   isActive: boolean;
 }
 
+interface ProfileWithRoleName {
+  id: string;
+  is_active: boolean;
+  roles?: { name?: string | null } | null;
+}
+
+interface ProfileWithPagePermissions {
+  role_id: string | null;
+  roles?: {
+    role_permissions?: Array<{
+      can_view: boolean;
+      can_edit: boolean;
+      pages?: { key?: string | null } | null;
+    }>;
+  } | null;
+}
+
 export function extractBearer(request: NextRequest): string {
   const header = request.headers.get('authorization') || request.headers.get('Authorization');
   if (!header) throw new AuthError('Missing Authorization header');
@@ -96,13 +113,13 @@ async function loadProfile(
   if (!profile) throw new AuthError('Profile not found', 403);
   if (!profile.is_active) throw new AuthError('Account is disabled', 403);
 
-  const roleName: string | null =
-    (profile as any).roles?.name ?? null;
+  const typedProfile = profile as ProfileWithRoleName;
+  const roleName: string | null = typedProfile.roles?.name ?? null;
 
   return {
     uid,
     email,
-    profileId: profile.id,
+    profileId: typedProfile.id,
     roleName,
     isAdmin: roleName === 'Admin',
     isActive: !!profile.is_active,
@@ -120,12 +137,62 @@ export async function requireAdminToken(idToken: string): Promise<AuthenticatedU
   return user;
 }
 
+export async function requirePagePermissionToken(
+  idToken: string,
+  pageKey: string,
+  permission: 'view' | 'edit' = 'view',
+): Promise<AuthenticatedUser> {
+  const user = await requireUserToken(idToken);
+  if (user.isAdmin) return user;
+
+  const { data, error } = await supabaseAdmin
+    .from('profiles')
+    .select(`
+      role_id,
+      roles (
+        role_permissions (
+          can_view,
+          can_edit,
+          pages ( key )
+        )
+      )
+    `)
+    .eq('id', user.profileId)
+    .maybeSingle();
+
+  const permissionProfile = data as ProfileWithPagePermissions | null;
+
+  if (error || !permissionProfile?.role_id) {
+    throw new AuthError('Page access required', 403);
+  }
+
+  const rolePermissions = permissionProfile.roles?.role_permissions || [];
+  const pagePermission = rolePermissions.find((rp) => rp.pages?.key === pageKey);
+  const allowed = permission === 'edit'
+    ? !!(pagePermission?.can_view && pagePermission?.can_edit)
+    : !!pagePermission?.can_view;
+
+  if (!allowed) {
+    throw new AuthError('Page access required', 403);
+  }
+
+  return user;
+}
+
 export async function requireUser(request: NextRequest): Promise<AuthenticatedUser> {
   return requireUserToken(extractBearer(request));
 }
 
 export async function requireAdmin(request: NextRequest): Promise<AuthenticatedUser> {
   return requireAdminToken(extractBearer(request));
+}
+
+export async function requirePagePermission(
+  request: NextRequest,
+  pageKey: string,
+  permission: 'view' | 'edit' = 'view',
+): Promise<AuthenticatedUser> {
+  return requirePagePermissionToken(extractBearer(request), pageKey, permission);
 }
 
 /**
