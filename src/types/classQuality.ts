@@ -1,6 +1,7 @@
 import { Class } from './classes';
+import type { ParsedArea, TemplateMatch } from '@/lib/commentContent';
 
-export type CommentStatus = 'ok' | 'empty' | 'brief' | 'duplicate_self' | 'duplicate_other' | 'overdue';
+export type CommentStatus = 'ok' | 'empty' | 'brief' | 'duplicate_self' | 'duplicate_other' | 'template_exact' | 'template_modified' | 'overdue';
 
 export type AttendanceAlert = 'frequent_absent' | 'consecutive_absent' | 'late_stage_absent';
 
@@ -19,8 +20,10 @@ export interface StudentCommentStatus {
     teacherName: string;
     text: string;
     status: CommentStatus;
+    templateMatch?: TemplateMatch;
     isOverdue: boolean;
     overdueHours?: number;
+    parsedAreas?: ParsedArea[];
   }[];
 }
 

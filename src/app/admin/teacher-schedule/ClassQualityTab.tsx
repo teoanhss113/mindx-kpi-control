@@ -37,6 +37,7 @@ export function ClassQualityTab({
   const [progress, setProgress] = useState({ loaded: 0, total: 0 });
   const [abortController, setAbortController] = useState<AbortController | null>(null);
   const [search, setSearch] = useState('');
+  const [classCodeSearch, setClassCodeSearch] = useState('');
 
   const loadData = async () => {
     if (!fromDate || !toDate) {
@@ -59,7 +60,7 @@ export function ClassQualityTab({
       const centreIds = selectedCentres.length > 0 ? selectedCentres : centres.map(c => c.id);
       
       const result = await fetchAllClasses(
-        { haveSlotIn: { from: hFrom, to: hTo }, centres: centreIds },
+        { haveSlotIn: { from: hFrom, to: hTo }, centres: centreIds, ...(classCodeSearch.trim() ? { search: classCodeSearch.trim() } : {}) },
         (loaded, total, chunk) => {
           setProgress({ loaded, total });
           accumulated = [...accumulated, ...chunk];
@@ -121,6 +122,8 @@ export function ClassQualityTab({
         hasData={classes.length > 0}
         onClearCache={() => setClasses([])}
         showRegionQuickSelect={true}
+        classCodeSearch={classCodeSearch}
+        onClassCodeSearchChange={setClassCodeSearch}
       />
       
       <div style={{ marginTop: 'var(--space-4)' }}>

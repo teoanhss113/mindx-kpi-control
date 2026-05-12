@@ -27,7 +27,15 @@ import {
 function classToScheduleSlots(cls: Class): TeacherScheduleSlot[] {
   const slots: TeacherScheduleSlot[] = [];
   const classSiteId = cls.classSites?.[0]?._id;
-  
+
+  // Sort sessions chronologically so sessionNumber reflects true order
+  const sortedSessions = [...cls.slots].sort((a, b) =>
+    new Date(a.startTime || a.date).getTime() - new Date(b.startTime || b.date).getTime()
+  );
+  const sessionIndexMap = new Map<string, number>(
+    sortedSessions.map((s, i) => [s._id, i + 1])
+  );
+
   cls.slots.forEach(slot => {
     const sessionTeachers = slot.teachers
       .filter(teacherSlot => teacherSlot.isActive)
@@ -77,11 +85,12 @@ function classToScheduleSlots(cls: Class): TeacherScheduleSlot[] {
           status: cls.status,
           studentCount: cls.students.filter(s => s.activeInClass).length,
           sessionHour: slot.sessionHour,
+          sessionNumber: sessionIndexMap.get(slot._id),
         });
       }
     });
   });
-  
+
   return slots;
 }
 
@@ -509,7 +518,13 @@ export async function fetchClassByIdFull(classId: string): Promise<Class | null>
           }
           studentAttendance {
             _id status comment sendCommentStatus
-            commentByAreas { content }
+            commentByAreas {
+              content
+              grade
+              commentAreaId
+              type
+              courseProcessFinalEvaluationTitle
+            }
             student { id fullName phoneNumber email gender imageUrl }
           }
         }
@@ -518,6 +533,52 @@ export async function fetchClassByIdFull(classId: string): Promise<Class | null>
           isActive
           teacher { id username code fullName email phoneNumber imageUrl }
           role { id name shortName }
+        }
+        courseProcess {
+          id
+          defaultCommentAreas {
+            id name type isRequired guideline
+            rates { value commentSamples }
+          }
+          specificSessions {
+            session
+            commentAreas {
+              id name type isRequired guideline
+              rates { value commentSamples }
+            }
+          }
+          finalSession {
+            finalEvaluations {
+              id title
+              commentAreas {
+                id name type isRequired guideline
+                rates { value commentSamples }
+              }
+            }
+            demoScore {
+              commentAreas {
+                id name type
+                demo { id title maxScore }
+              }
+            }
+          }
+          checkpointSessions {
+            session
+            checkpointCommentArea {
+              id name type
+            }
+            otherComments {
+              id name type isRequired guideline
+              rates { value commentSamples }
+            }
+            evaluations {
+              id title
+              commentAreas {
+                id name type isRequired guideline
+                rates { value commentSamples }
+              }
+            }
+          }
         }
       }
     }

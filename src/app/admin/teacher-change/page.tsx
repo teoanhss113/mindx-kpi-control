@@ -240,6 +240,7 @@ export default function TeacherChangePage() {
   const [abortController, setAbortController] = useState<AbortController | null>(null);
 
   const [search,              setSearch]              = useState('');
+  const [classCodeSearch,     setClassCodeSearch]     = useState('');
   const [rateRange,           setRateRange]           = useState<[number, number]>([0, 100]);
   const [selectedCourseLines, setSelectedCourseLines] = useState<string[]>([]);
   const [selectedStatuses,    setSelectedStatuses]    = useState<string[]>([]);
@@ -317,7 +318,7 @@ export default function TeacherChangePage() {
       const { from: hFrom, to: hTo } = haveSlotInToUtcRange(from, to);
       const centreIds = selectedCentres.length > 0 ? selectedCentres : centres.map(c => c.id);
       const result = await fetchAllClasses(
-        { haveSlotIn: { from: hFrom, to: hTo }, centres: centreIds },
+        { haveSlotIn: { from: hFrom, to: hTo }, centres: centreIds, ...(classCodeSearch.trim() ? { search: classCodeSearch.trim() } : {}) },
         (loaded, total, chunk) => {
           setProgress({ loaded, total });
           accumulated = [...accumulated, ...chunk];
@@ -661,6 +662,8 @@ export default function TeacherChangePage() {
           hasData={classes.length > 0} onClearCache={handleClearCache}
           onCancel={handleCancelFetch}
           showRegionQuickSelect={true}
+          classCodeSearch={classCodeSearch}
+          onClassCodeSearchChange={setClassCodeSearch}
           quickFilterSlots={
             hasPreferences && (
               <QuickFilterChips

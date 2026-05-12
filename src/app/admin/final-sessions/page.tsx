@@ -168,6 +168,7 @@ export default function FinalSessionsAdminPage() {
 
   // Selection
   const [selected, setSelected] = useState<Set<string>>(new Set()); // slot._id
+  const [classCodeSearch, setClassCodeSearch] = useState('');
 
   // Existing đợt
   const [dots, setDots] = useState<Dot[]>([]);
@@ -239,7 +240,7 @@ export default function FinalSessionsAdminPage() {
 
     try {
       await fetchAllClasses(
-        { centres: centreIds, endDateFrom, endDateTo },
+        { centres: centreIds, endDateFrom, endDateTo, ...(classCodeSearch.trim() ? { search: classCodeSearch.trim() } : {}) },
         (loaded, total, chunk) => {
           setProgress({ loaded, total });
           for (const cls of chunk) {
@@ -485,6 +486,8 @@ export default function FinalSessionsAdminPage() {
         progress={progress}
         hasData={candidates.length > 0}
         showRegionQuickSelect={true}
+        classCodeSearch={classCodeSearch}
+        onClassCodeSearchChange={setClassCodeSearch}
       />
 
       {/* ── No results empty state ── */}

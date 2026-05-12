@@ -1346,6 +1346,8 @@ export function Toolbar({
   quickFilterSlots,
   filterToIds,
   showRegionQuickSelect = true,
+  classCodeSearch,
+  onClassCodeSearchChange,
 }: {
   centres?: { id: string; shortName: string; name: string }[]
   centreOptions?: SelectOption[]
@@ -1366,10 +1368,48 @@ export function Toolbar({
   quickFilterSlots?: React.ReactNode
   filterToIds?: string[]
   showRegionQuickSelect?: boolean
+  classCodeSearch?: string
+  onClassCodeSearchChange?: (v: string) => void
 }) {
   return (
     <div className={styles.toolbar}>
       <div className={styles.toolbarRow}>
+        {/* Class code search — rendered first when provided */}
+        {onClassCodeSearchChange !== undefined && (
+          <>
+            <div className={styles.dateControls}>
+              <span className={styles.dateLabel}>Mã lớp</span>
+              <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                <input
+                  type="text"
+                  className={styles.dateInput}
+                  style={{ paddingRight: classCodeSearch ? 24 : undefined, width: 140 }}
+                  placeholder="Tìm mã lớp..."
+                  value={classCodeSearch ?? ''}
+                  onChange={e => onClassCodeSearchChange(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter' && !loading) onFetch(); }}
+                />
+                {classCodeSearch && (
+                  <button
+                    onClick={() => onClassCodeSearchChange('')}
+                    style={{
+                      position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)',
+                      background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+                      color: 'var(--text-quaternary)', display: 'flex', alignItems: 'center',
+                      lineHeight: 1,
+                    }}
+                    title="Xoá tìm kiếm"
+                    aria-label="Xoá mã lớp"
+                  >
+                    <Icon.Close size={12} />
+                  </button>
+                )}
+              </div>
+            </div>
+            <div className={styles.toolbarSeparator} />
+          </>
+        )}
+
         {/* Cơ sở */}
         <div className={styles.dateControls}>
           <span className={styles.dateLabel}>Cơ sở</span>

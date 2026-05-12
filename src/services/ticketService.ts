@@ -7,6 +7,7 @@ export interface FetchTicketsParams {
   centreId_in?: string[];
   createdAt_gte?: string;
   createdAt_lte?: string;
+  search?: string;
 }
 
 export async function fetchTickets(
@@ -108,7 +109,7 @@ export async function fetchTickets(
       feedbackTopic_in: [],
       status_in: [],
       channel_in: [],
-      filter_textSearch: "",
+      filter_textSearch: params.search || "",
       deadline_gte: "",
       deadline_lte: "",
       createdAt_gte: params.createdAt_gte || "",

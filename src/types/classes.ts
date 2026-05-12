@@ -36,6 +36,7 @@ export interface Class {
   students: StudentSlot[];
   slots: Session[];
   surveySessions?: ClassSurveySessionStatus[];
+  courseProcess?: CourseProcess | null;
 }
 
 export interface ClassSurveySessionStatus {
@@ -86,13 +87,21 @@ export interface StudentSlot {
   };
 }
 
+export type CommentByAreaType = 'RATE' | 'CONTENT' | 'CHECKPOINT' | 'DEMO';
+
+export interface CommentByArea {
+  content: string;
+  grade?: number | null;
+  commentAreaId?: string;
+  type?: CommentByAreaType;
+  courseProcessFinalEvaluationTitle?: string | null;
+}
+
 export interface StudentAttendance {
   _id: string;
   status: string;
   comment: string;
-  commentByAreas?: {
-    content: string;
-  }[];
+  commentByAreas?: CommentByArea[];
   sendCommentStatus: string;
   student: {
     id: string;
@@ -102,6 +111,57 @@ export interface StudentAttendance {
     gender: string;
     imageUrl: string;
   };
+}
+
+// ─── CourseProcess (criteria templates) ───────────────────────────────────────
+
+export interface CommentAreaRate {
+  value: number;
+  commentSamples: string[];
+}
+
+export interface CommentAreaTranslation {
+  key: string;
+  value: string;
+  locale: string;
+}
+
+export interface CommentAreaDef {
+  id: string;
+  name: string;
+  type: CommentByAreaType;
+  fieldName?: string;
+  translations?: CommentAreaTranslation[];
+  slots?: string[];
+  sortOrder?: number;
+  isActive?: boolean;
+  isRequired?: boolean;
+  guideline?: string | null;
+  rates?: CommentAreaRate[];
+}
+
+export interface CourseProcessEvaluation {
+  id: string;
+  title: string;
+  commentAreas: CommentAreaDef[];
+}
+
+export interface CourseProcessCheckpointSession {
+  session: number;
+  checkpointCommentArea?: { id: string; name: string; type: CommentByAreaType } | null;
+  otherComments?: CommentAreaDef[];
+  evaluations?: CourseProcessEvaluation[];
+}
+
+export interface CourseProcess {
+  id: string;
+  defaultCommentAreas?: CommentAreaDef[];
+  specificSessions?: { session: number; commentAreas: CommentAreaDef[] }[];
+  finalSession?: {
+    finalEvaluations?: CourseProcessEvaluation[];
+    demoScore?: { commentAreas: CommentAreaDef[] };
+  };
+  checkpointSessions?: CourseProcessCheckpointSession[];
 }
 
 export interface TeacherAttendance {

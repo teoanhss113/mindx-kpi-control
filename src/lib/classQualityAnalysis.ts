@@ -1,7 +1,13 @@
-import { Class, Session } from '@/types/classes';
+import { Class, Session, CommentAreaDef } from '@/types/classes';
 import { getCourseCategory } from '@/lib/courseCategories';
 import { computeTBCK, determineRank } from '@/lib/courseGrading';
-import { getStudentAttendanceCommentContent } from '@/lib/commentContent';
+import {
+  getStudentAttendanceCommentContent,
+  parseCommentAreas,
+  buildCommentAreaLookup,
+  parseCommentByAreasStructured,
+} from '@/lib/commentContent';
+import type { TemplateMatch } from '@/lib/commentContent';
 import { 
   ClassCommentAnalysis, 
   ClassAttendanceAnalysis, 
@@ -29,13 +35,32 @@ export const DEFAULT_EXEMPTED_SESSIONS: number[] = Array.from(
   (_, i) => i + 1
 ).filter(s => !CHECKPOINT_SESSIONS.includes(s));
 
-export function analyzeComments(cls: Class, exemptedSessions: number[] = DEFAULT_EXEMPTED_SESSIONS): ClassCommentAnalysis {
+function summarizeTemplateMatch(parsedAreas: ReturnType<typeof parseCommentByAreasStructured>): TemplateMatch | undefined {
+  const matches = parsedAreas
+    .flatMap(area => area.criteria)
+    .map(criterion => criterion.templateMatch)
+    .filter((match): match is TemplateMatch => !!match && match !== 'custom');
+
+  if (matches.includes('exact')) return 'exact';
+  if (matches.includes('modified')) return 'modified';
+  return undefined;
+}
+
+export function analyzeComments(
+  cls: Class,
+  exemptedSessions: number[] = DEFAULT_EXEMPTED_SESSIONS,
+  commentAreas: CommentAreaDef[] = []
+): ClassCommentAnalysis {
   let emptyCount = 0;
   let briefCount = 0;
   let duplicateCount = 0;
   let overdueCount = 0;
   let okCount = 0;
-  
+
+  // Build commentAreaId → definition lookup ONCE per class.
+  // Used to (a) group criteria by evaluation title and (b) detect template-match.
+  const commentAreaLookup = buildCommentAreaLookup(cls.courseProcess, commentAreas);
+
   const slots = (cls.slots ?? [])
     .filter(s => s.date)
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
@@ -102,18 +127,29 @@ export function analyzeComments(cls: Class, exemptedSessions: number[] = DEFAULT
        let status: CommentStatus = 'ok';
        let isOverdue = false;
        let overdueHours = 0;
+       const structured = commentAreaLookup.size > 0
+         ? parseCommentByAreasStructured(sa.commentByAreas, commentAreaLookup)
+         : [];
+       const parsedAreas = structured.length > 0
+         ? structured
+         : parseCommentAreas(sa.commentByAreas || []);
+       const templateMatch = summarizeTemplateMatch(parsedAreas);
        
        if (!text) {
          if (isPast) status = 'empty';
        } else if (text.length < 30) {
          status = 'brief';
        } else {
-         // Check duplicate within the same slot (other students)
-         if ((slotCommentFreq.get(text) || 0) > 1) {
+         const duplicatesOtherStudent = (slotCommentFreq.get(text) || 0) > 1;
+         const duplicatesThisStudent = st.comments.some(c => c.text === text);
+
+         if (templateMatch === 'exact') {
+           status = 'template_exact';
+         } else if (templateMatch === 'modified') {
+           status = 'template_modified';
+         } else if (duplicatesOtherStudent) {
            status = 'duplicate_other';
-         } 
-         // Check duplicate with THIS student's previous comments
-         else if (st.comments.some(c => c.text === text)) {
+         } else if (duplicatesThisStudent) {
            status = 'duplicate_self';
          }
        }
@@ -129,7 +165,7 @@ export function analyzeComments(cls: Class, exemptedSessions: number[] = DEFAULT
 
        if (status === 'empty') { st.emptyCount++; emptyCount++; }
        else if (status === 'brief') { st.briefCount++; briefCount++; }
-       else if (status === 'duplicate_self' || status === 'duplicate_other') { st.duplicateCount++; duplicateCount++; }
+       else if (status === 'duplicate_self' || status === 'duplicate_other' || status === 'template_exact' || status === 'template_modified') { st.duplicateCount++; duplicateCount++; }
        else if (status === 'overdue') { st.overdueCount++; overdueCount++; }
        else if (status === 'ok' && isPast) { st.okCount++; okCount++; }
 
@@ -139,8 +175,10 @@ export function analyzeComments(cls: Class, exemptedSessions: number[] = DEFAULT
          teacherName,
          text,
          status,
+         templateMatch,
          isOverdue,
-         overdueHours: isOverdue ? Math.floor(overdueHours) : undefined
+         overdueHours: isOverdue ? Math.floor(overdueHours) : undefined,
+         parsedAreas,
        });
     });
   }
@@ -890,7 +928,11 @@ function analyzeDemo(cls: Class, sessionIndex: number = 13): CheckpointAnalysis 
   };
 }
 
-export function analyzeClassQuality(cls: Class, exemptedSessions?: number[]): AnalyzedClassForQuality {
+export function analyzeClassQuality(
+  cls: Class,
+  exemptedSessions?: number[],
+  commentAreas: CommentAreaDef[] = []
+): AnalyzedClassForQuality {
   const preferredSessions = getPreferredCheckpointSessions(cls);
   const cp1Analysis = analyzeCheckpoint(cls, preferredSessions.cp1);
   const cp2Analysis = analyzeCheckpoint(cls, preferredSessions.cp2, [cp1Analysis.sessionIndex]);
@@ -921,7 +963,7 @@ export function analyzeClassQuality(cls: Class, exemptedSessions?: number[]): An
   return {
     cls,
     courseLineName: getCourseCategory(cls),
-    commentAnalysis: analyzeComments(cls, exemptedSessions),
+    commentAnalysis: analyzeComments(cls, exemptedSessions, commentAreas),
     attendanceAnalysis: analyzeAttendance(cls),
     reschedulingAnalysis: analyzeSessionRescheduling(cls),
     cp1Analysis,

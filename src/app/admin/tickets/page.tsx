@@ -155,6 +155,7 @@ export default function TicketsDashboard() {
   const [selectedFeedbackTopics, setSelectedFeedbackTopics] = useState<string[]>([]);
   const [selectedSessions, setSelectedSessions] = useState<string[]>([]);
   const [search, setSearch] = useState('');
+  const [classCodeSearch, setClassCodeSearch] = useState('');
   
   // Storage for post-processed Google Sheet data pulled UP from the child component!
   const [sheetProcessedRows, setSheetProcessedRows] = useState<any[]>([]);
@@ -278,6 +279,7 @@ export default function TicketsDashboard() {
           createdAt_gte: dStart.toISOString(),
           createdAt_lte: dEnd.toISOString(),
           centreId_in: selectedCentres.length > 0 ? selectedCentres : [],
+          ...(classCodeSearch.trim() ? { search: classCodeSearch.trim() } : {}),
         }, (loaded, total, chunk) => {
           tLoaded = loaded;
           tTotal = total || 0;
@@ -1355,6 +1357,8 @@ export default function TicketsDashboard() {
             addToast(MESSAGES.CACHE.CLEARED, 'success');
           }}
           showRegionQuickSelect={true}
+          classCodeSearch={classCodeSearch}
+          onClassCodeSearchChange={setClassCodeSearch}
           quickFilterSlots={
             hasPreferences && (
               <QuickFilterChips

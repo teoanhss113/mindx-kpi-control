@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo, useCallback, useRef, memo, Fragment, useTransition, type ReactNode } from 'react';
+import { useEffect, useState, useMemo, useCallback, useRef, memo, Fragment, useTransition, useDeferredValue, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -10,7 +10,7 @@ import {
 } from 'recharts';
 import { useAuth } from '@/lib/AuthContext';
 import { loadSession } from '@/services/authService';
-import { fetchAllClasses, haveSlotInToUtcRange } from '@/services/classesService';
+import { fetchAllClasses, fetchStudentCommentAreas, haveSlotInToUtcRange } from '@/services/classesService';
 import { fetchAllCentres, Centre } from '@/services/centresService';
 import { fetchOfficeHours } from '@/services/officeHoursService';
 import { getCache, setCache, clearCache } from '@/lib/idb';
@@ -20,9 +20,10 @@ import { useAllowedPages } from '@/hooks/useAllowedPages';
 import { addSupplyTeacherToSession, fetchClassTeacherSchedules, fetchTeacherSchedules, findAvailableTeachers, fetchClassByIdFull } from '@/services/teacherScheduleService';
 import { searchUsers } from '@/services/ticketService';
 import { TeacherSchedule, TeacherScheduleSlot, CoordinationRequest, TeacherAvailability, Teacher } from '@/types/teacherSchedule';
-import { Class, Session } from '@/types/classes';
+import { Class, Session, CommentAreaDef } from '@/types/classes';
 import { AnalyzedClassForQuality } from '@/types/classQuality';
 import { analyzeClassQuality, DEFAULT_EXEMPTED_SESSIONS } from '@/lib/classQualityAnalysis';
+import type { ParsedArea } from '@/lib/commentContent';
 import { computeTBCK, determineRank } from '@/lib/courseGrading';
 import { PageLayout } from '@/components/PageLayout';
 import { ClassQualityUnifiedTable } from '@/components/ClassQualityUnifiedTable';
@@ -124,6 +125,165 @@ const DEFAULT_HOLIDAY_PERIODS: HolidayPeriod[] = [
 ];
 
 
+
+function TemplateBadge({ match }: { match: 'exact' | 'modified' | 'custom' }) {
+  const map = {
+    exact: { label: 'Mẫu', bg: 'rgba(245, 158, 11, 0.15)', fg: '#b45309', title: 'Copy nguyên gợi ý mẫu của hệ thống' },
+    modified: { label: 'Sửa', bg: 'rgba(14, 165, 233, 0.15)', fg: '#0369a1', title: 'Có sửa lại so với gợi ý mẫu' },
+    custom: { label: 'Tự viết', bg: 'rgba(34, 197, 94, 0.15)', fg: '#15803d', title: 'Tự viết, không trùng mẫu' },
+  } as const;
+  const m = map[match];
+  return (
+    <span
+      title={m.title}
+      style={{
+        marginLeft: 6, fontSize: 9, fontWeight: 600, padding: '1px 5px',
+        borderRadius: 4, background: m.bg, color: m.fg, lineHeight: 1.4,
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {m.label}
+    </span>
+  );
+}
+
+function ScoreDots({ score, max = 5 }: { score: number; max?: number }) {
+  return (
+    <span style={{ display: 'inline-flex', gap: 2, verticalAlign: 'middle', marginLeft: 4 }}>
+      {Array.from({ length: max }, (_, i) => (
+        <span
+          key={i}
+          style={{
+            width: 8,
+            height: 8,
+            borderRadius: '50%',
+            background: i < score ? 'var(--brand-indigo)' : 'var(--border-default)',
+            display: 'inline-block',
+          }}
+        />
+      ))}
+    </span>
+  );
+}
+
+function StructuredCommentView({ areas }: { areas: ParsedArea[] }) {
+  return (
+    <div style={{ fontSize: 11, color: 'var(--text-primary)', lineHeight: 1.55 }}>
+      {areas.map((area, aIdx) => (
+        <div key={aIdx} style={{ marginBottom: aIdx < areas.length - 1 ? 10 : 0 }}>
+          {area.name && (
+            <div style={{
+              fontWeight: 700,
+              fontSize: 10,
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+              color: 'var(--text-tertiary)',
+              borderBottom: '1px solid var(--border-default)',
+              paddingBottom: 2,
+              marginBottom: 6,
+            }}>
+              {area.name}
+            </div>
+          )}
+          {area.sectionTitle && !area.name && (
+            <div style={{ fontWeight: 600, fontSize: 11, color: 'var(--text-secondary)', marginBottom: 4 }}>
+              {area.sectionTitle}
+            </div>
+          )}
+          {area.generalText && (
+            <div style={{ whiteSpace: 'pre-line', color: 'var(--text-primary)' }}>
+              {area.generalText}
+            </div>
+          )}
+          {area.criteria.map((criterion, cIdx) => (
+            <div key={cIdx} style={{
+              marginBottom: cIdx < area.criteria.length - 1 ? 6 : 0,
+              paddingLeft: area.name ? 8 : 0,
+            }}>
+              {criterion.name && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: criterion.text ? 2 : 0, flexWrap: 'wrap' }}>
+                  <span style={{ fontWeight: 600, color: 'var(--text-secondary)', fontSize: 10.5 }}>
+                    {criterion.name}
+                  </span>
+                  {criterion.score !== undefined && (
+                    <ScoreDots score={criterion.score} />
+                  )}
+                  {criterion.templateMatch && (
+                    <TemplateBadge match={criterion.templateMatch} />
+                  )}
+                </div>
+              )}
+              {!criterion.name && criterion.score !== undefined && (
+                <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+                  <ScoreDots score={criterion.score} />
+                  {criterion.templateMatch && <TemplateBadge match={criterion.templateMatch} />}
+                </span>
+              )}
+              {criterion.text && (
+                <div style={{ whiteSpace: 'pre-line', color: 'var(--text-primary)', paddingLeft: 8 }}>
+                  {criterion.text}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function TeacherCommentCell({ text, parsedAreas }: { text: string; parsedAreas?: ParsedArea[] }) {
+  const [expanded, setExpanded] = useState(false);
+
+  const hasStructured = parsedAreas && parsedAreas.length > 0 && (
+    parsedAreas.some(a => a.name || a.criteria.length > 0 || a.generalText)
+  );
+
+  if (hasStructured) {
+    const totalCriteria = parsedAreas!.reduce((n, a) => n + a.criteria.length, 0);
+    const isLong = totalCriteria > 3 || parsedAreas!.length > 2;
+    const visibleAreas = isLong && !expanded ? parsedAreas!.slice(0, 2) : parsedAreas!;
+
+    return (
+      <div>
+        <StructuredCommentView areas={visibleAreas} />
+        {isLong && (
+          <button
+            type="button"
+            onClick={() => setExpanded(e => !e)}
+            style={{ marginTop: 4, fontSize: 10, color: 'var(--brand-indigo)', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontWeight: 600 }}
+          >
+            {expanded ? 'Thu gọn ▲' : `Xem thêm ▼`}
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  // Fallback: plain text
+  const PREVIEW_LINES = 4;
+  const lines = text.split('\n').filter(l => l.trim());
+  const isLong = lines.length > PREVIEW_LINES || text.length > 400;
+
+  return (
+    <div>
+      <div style={{ whiteSpace: 'pre-line', lineHeight: 1.55, fontSize: 11, color: 'var(--text-primary)' }}>
+        {isLong && !expanded
+          ? lines.slice(0, PREVIEW_LINES).join('\n') + (lines.length > PREVIEW_LINES ? '…' : '')
+          : text}
+      </div>
+      {isLong && (
+        <button
+          type="button"
+          onClick={() => setExpanded(e => !e)}
+          style={{ marginTop: 4, fontSize: 10, color: 'var(--brand-indigo)', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontWeight: 600 }}
+        >
+          {expanded ? 'Thu gọn ▲' : `Xem thêm (${lines.length} dòng) ▼`}
+        </button>
+      )}
+    </div>
+  );
+}
 
 function CopyButton({ content, label }: { content: string; label: string }) {
   const [copied, setCopied] = useState(false);
@@ -695,6 +855,7 @@ function createScheduleSlotFromClassSession(cls: Class, sessionIndex: number): T
     status: cls.status,
     studentCount: cls.students?.filter(student => student.activeInClass).length,
     sessionHour: session.sessionHour,
+    sessionNumber: sessionIndex + 1,
   };
 }
 
@@ -2159,9 +2320,9 @@ const ClassCard = memo(({ slot, onClick }: ClassCardProps) => {
       </div>
       
       {/* Session info for classes (not office hours) */}
-      {slot.type === 'class' && slot.sessionHour !== undefined && (
+      {slot.type === 'class' && slot.sessionNumber !== undefined && (
         <div style={{ fontSize: 9, color: 'var(--text-tertiary)', marginBottom: 4 }}>
-          Buổi {slot.sessionHour || '—'}
+          Buổi {slot.sessionNumber}
         </div>
       )}
       
@@ -2287,8 +2448,11 @@ export default function TeacherSchedulePage() {
   
   // ── Table filter states ────────────────────────────────────────────────────
   const [searchTerm, setSearchTerm] = useState('');
+  const deferredSearchTerm = useDeferredValue(searchTerm);
+  const [classCodeSearch, setClassCodeSearch] = useState('');
   const [scheduleTypeFilter, setScheduleTypeFilter] = useState<ScheduleTypeFilter>('ALL');
   const [rawClasses, setRawClasses] = useState<Class[]>([]);
+  const [studentCommentAreas, setStudentCommentAreas] = useState<CommentAreaDef[]>([]);
   
   // ── Calendar collapse states ───────────────────────────────────────────────
   const [collapsedTimeSlots, setCollapsedTimeSlots] = useState<Set<string>>(new Set());
@@ -2455,6 +2619,7 @@ export default function TeacherSchedulePage() {
           haveSlotIn: { from: monthHaveSlotIn.from, to: monthHaveSlotIn.to },
           statusIn: ['RUNNING', 'FINISHED'],
           ...(centreIds && centreIds.length > 0 ? { centres: centreIds } : {}),
+          ...(classCodeSearch.trim() ? { search: classCodeSearch.trim() } : {}),
         },
         (loaded, total) => {
           clsLoaded = loaded;
@@ -2478,10 +2643,19 @@ export default function TeacherSchedulePage() {
         signal
       );
 
+      const commentAreasPromise = fetchStudentCommentAreas(
+        Array.from({ length: 30 }, (_, i) => String(i + 1)).concat('final'),
+        signal
+      ).catch(err => {
+        console.warn('Unable to fetch student comment areas:', err);
+        return [] as CommentAreaDef[];
+      });
+
       // Fire them in parallel!
-      const [scopedClasses, officeHoursResult] = await Promise.all([
+      const [scopedClasses, officeHoursResult, commentAreas] = await Promise.all([
         classesPromise,
-        officeHoursPromise
+        officeHoursPromise,
+        commentAreasPromise
       ]);
 
       // Combine all pre-fetched data instantly to generate schedule models
@@ -2505,10 +2679,12 @@ export default function TeacherSchedulePage() {
         setLoadedRange({ from: start, to: end });
         setSchedules(result);
         setRawClasses(classes);
+        setStudentCommentAreas(commentAreas);
         await setCache(CACHE_KEYS.TEACHER_SCHEDULE, {
           version: TEACHER_SCHEDULE_CACHE_VERSION,
           schedules: result,
           rawClasses: classes,
+          studentCommentAreas: commentAreas,
           dateFrom: start,
           dateTo: end,
           selectedCentres: centreIds || [],
@@ -2617,7 +2793,7 @@ export default function TeacherSchedulePage() {
       if (existingClass) {
         setCommentModalSessionIndex(getSlotSessionIndex(existingClass, slot));
         setClassQualityData(applyQualityExemptionRules(
-          analyzeClassQuality(existingClass, exemptedSessions),
+          analyzeClassQuality(existingClass, exemptedSessions, studentCommentAreas),
           { exemptOneOnOneClasses, holidayPeriods },
         ));
       } else {
@@ -2627,7 +2803,7 @@ export default function TeacherSchedulePage() {
             if (cls) {
               setCommentModalSessionIndex(getSlotSessionIndex(cls, slot));
               setClassQualityData(applyQualityExemptionRules(
-                analyzeClassQuality(cls, exemptedSessions),
+                analyzeClassQuality(cls, exemptedSessions, studentCommentAreas),
                 { exemptOneOnOneClasses, holidayPeriods },
               ));
             }
@@ -2636,7 +2812,7 @@ export default function TeacherSchedulePage() {
           .finally(() => setClassQualityLoading(false));
       }
     }
-  }, [schedules, rawClasses, exemptedSessions, exemptOneOnOneClasses, holidayPeriods, addToast]);
+  }, [schedules, rawClasses, studentCommentAreas, exemptedSessions, exemptOneOnOneClasses, holidayPeriods, addToast]);
 
   const handleSearchAvailableTeachers = useCallback(() => {
     if (!coordinationRequest.date || !coordinationRequest.centreId) {
@@ -2689,6 +2865,7 @@ export default function TeacherSchedulePage() {
       await setCache(CACHE_KEYS.TEACHER_SCHEDULE, {
         schedules: nextSchedules,
         rawClasses,
+        studentCommentAreas,
         dateFrom: fromDate,
         dateTo: toDate,
         selectedCentres,
@@ -2730,7 +2907,7 @@ export default function TeacherSchedulePage() {
     } finally {
       setReloadingClassId(null);
     }
-  }, [addToast, schedules, rawClasses, fromDate, toDate, selectedCentres, selectedSlot, selectedTeachers, selectedCourseLines, scheduleTypeFilter, exemptedSessions, exemptOneOnOneClasses, holidayPeriods]);
+  }, [addToast, schedules, rawClasses, studentCommentAreas, fromDate, toDate, selectedCentres, selectedSlot, selectedTeachers, selectedCourseLines, scheduleTypeFilter, exemptedSessions, exemptOneOnOneClasses, holidayPeriods]);
 
   const handleAddSupplyTeacher = useCallback(async (ta: TeacherAvailability) => {
     if (!selectedSlot) return;
@@ -2822,6 +2999,14 @@ export default function TeacherSchedulePage() {
           if (cached.version === TEACHER_SCHEDULE_CACHE_VERSION) {
             if (cached.schedules) setSchedules(cached.schedules);
             if (cached.rawClasses) setRawClasses(cached.rawClasses);
+            if (cached.studentCommentAreas) {
+              setStudentCommentAreas(cached.studentCommentAreas);
+            } else {
+              const commentAreas = await fetchStudentCommentAreas(
+                Array.from({ length: 30 }, (_, i) => String(i + 1)).concat('final')
+              ).catch(() => [] as CommentAreaDef[]);
+              setStudentCommentAreas(commentAreas);
+            }
           }
         }
       } catch (e) {
@@ -2844,6 +3029,7 @@ export default function TeacherSchedulePage() {
       version: TEACHER_SCHEDULE_CACHE_VERSION,
       schedules,
       rawClasses,
+      studentCommentAreas,
       loadedCentreIds,
       calendarCentreFilter,
       selectedTeachers,
@@ -2855,7 +3041,7 @@ export default function TeacherSchedulePage() {
       loadedRange,
       timestamp: Date.now(),
     }).catch(console.error);
-  }, [loading, schedules, rawClasses, loadedCentreIds, calendarCentreFilter, selectedTeachers, selectedCourseLines, scheduleTypeFilter, exemptedSessions, exemptOneOnOneClasses, holidayPeriods, loadedRange]);
+  }, [loading, schedules, rawClasses, studentCommentAreas, loadedCentreIds, calendarCentreFilter, selectedTeachers, selectedCourseLines, scheduleTypeFilter, exemptedSessions, exemptOneOnOneClasses, holidayPeriods, loadedRange]);
 
   // ── Derived Data ────────────────────────────────────────────────────────────
   // No longer need centreOptions - using CentreSelect component
@@ -2917,10 +3103,10 @@ export default function TeacherSchedulePage() {
   // ── Analyzed Classes for Quality Table ───────────────────────────────────────
   const analyzedClasses = useMemo(() => {
     return rawClasses.map(cls => applyQualityExemptionRules(
-      analyzeClassQuality(cls, exemptedSessions),
+      analyzeClassQuality(cls, exemptedSessions, studentCommentAreas),
       { exemptOneOnOneClasses, holidayPeriods },
     ));
-  }, [rawClasses, exemptedSessions, exemptOneOnOneClasses, holidayPeriods]);
+  }, [rawClasses, studentCommentAreas, exemptedSessions, exemptOneOnOneClasses, holidayPeriods]);
 
   useEffect(() => {
     analyzedClassesRef.current = analyzedClasses;
@@ -3150,36 +3336,27 @@ export default function TeacherSchedulePage() {
     });
   }, [allWeeks, currentWeekIndex]);
 
-  const calendarSlotMap = useMemo(() => {
-    const map = new Map<string, Map<string, any[]>>(); 
-    if (allWeeks.length === 0 || !allWeeks[currentWeekIndex]) return map;
-    
-    const currentWeekDates = allWeeks[currentWeekIndex];
-    const weekStartTime = currentWeekDates[0].getTime();
-    const weekEndTime = currentWeekDates[6].getTime() + 86399999; 
-    
-    type SlotEntry = { slot: any; teacher: any; slotDate: string; startStr: string; endStr: string; durationMs: number };
+  // Phase 1: Build slot entry map for ALL weeks — expensive O(n×m), only recomputes when filtered schedules change
+  type SlotEntry = { slot: any; teacher: any; slotDate: string; startStr: string; endStr: string; durationMs: number };
+  const allSlotsEntryMap = useMemo(() => {
     const bestEntryMap = new Map<string, SlotEntry>();
-    
     filteredSchedulesForCalendar.forEach(schedule => {
       const teacher = schedule.teacher;
       schedule.slots.forEach((slot: any) => {
-        const slotStartMs = new Date(slot.startTime).getTime();
-        if (slotStartMs < weekStartTime || slotStartMs > weekEndTime) return;
-        
         const slotEndMs = new Date(slot.endTime).getTime();
+        const slotStartMs = new Date(slot.startTime).getTime();
         const slotDate = slot.startTime.split('T')[0];
         const startStr = FORMAT.time(new Date(slot.startTime));
         const endStr = FORMAT.time(new Date(slot.endTime));
         const durationMs = slotEndMs - slotStartMs;
-        
+
         const dedupeKey = slot.type === 'class'
           ? `class-${slot.classId || slot.className}-${slot.sessionId || startStr}-${slotDate}`
           : `${slot.className || slot.id}-${teacher.id}-${slotDate}`;
-          
+
         const entrySessionTeachers = getSlotSessionTeacherItems({ ...slot, teacher });
         const existing = bestEntryMap.get(dedupeKey);
-        
+
         if (!existing) {
           const lecTeacher = entrySessionTeachers.find((item: any) =>
             (item.roleShortName || item.roleName || '').toUpperCase() === 'LEC'
@@ -3215,8 +3392,20 @@ export default function TeacherSchedulePage() {
         }
       });
     });
-    
-    bestEntryMap.forEach(entry => {
+    return bestEntryMap;
+  }, [filteredSchedulesForCalendar]);
+
+  // Phase 2: Cheap week slice — only recomputes when week navigation changes
+  const calendarSlotMap = useMemo(() => {
+    const map = new Map<string, Map<string, any[]>>();
+    if (allWeeks.length === 0 || !allWeeks[currentWeekIndex]) return map;
+
+    const currentWeekDates = allWeeks[currentWeekIndex];
+    const weekStartStr = currentWeekDates[0].toISOString().split('T')[0];
+    const weekEndStr = currentWeekDates[6].toISOString().split('T')[0];
+
+    allSlotsEntryMap.forEach(entry => {
+      if (entry.slotDate < weekStartStr || entry.slotDate > weekEndStr) return;
       const timeKey = `${entry.startStr} - ${entry.endStr}`;
       const cellKey = `${entry.slotDate}-${timeKey}`;
       if (!map.has(cellKey)) map.set(cellKey, new Map<string, any[]>());
@@ -3225,7 +3414,7 @@ export default function TeacherSchedulePage() {
       if (!centreMap.has(centreName)) centreMap.set(centreName, []);
       centreMap.get(centreName)!.push(entry.slot);
     });
-    
+
     map.forEach(centreMap => {
       centreMap.forEach(slots => {
         slots.sort((a, b) => {
@@ -3245,7 +3434,7 @@ export default function TeacherSchedulePage() {
       });
     });
     return map;
-  }, [filteredSchedulesForCalendar, allWeeks, currentWeekIndex]);
+  }, [allSlotsEntryMap, allWeeks, currentWeekIndex]);
 
   const { allowedPages } = useAllowedPages();
   const navItems = getNavItemsWithRouter('teacher-schedule', router, allowedPages);
@@ -3284,6 +3473,8 @@ export default function TeacherSchedulePage() {
             clearCache(CACHE_KEYS.TEACHER_SCHEDULE);
           }}
           showRegionQuickSelect={true}
+          classCodeSearch={classCodeSearch}
+          onClassCodeSearchChange={setClassCodeSearch}
           quickFilterSlots={
             <div className={styles.toolbarCluster}>
               {hasPreferences && (
@@ -3314,7 +3505,7 @@ export default function TeacherSchedulePage() {
         )}
 
         {schedules.length > 0 && (
-          <ScheduleViewToggle value={viewMode} onChange={setViewMode} />
+          <ScheduleViewToggle value={viewMode} onChange={(v) => startTransition(() => setViewMode(v))} />
         )}
 
         {viewMode === 'calendar' && schedules.length > 0 && (
@@ -3410,7 +3601,7 @@ export default function TeacherSchedulePage() {
           >              <WeekNavigator
                 weeks={allWeeks}
                 currentWeekIndex={currentWeekIndex}
-                onWeekChange={setCurrentWeekIndex}
+                onWeekChange={(i) => startTransition(() => setCurrentWeekIndex(i))}
               />
               
               <CalendarGrid
@@ -3811,7 +4002,12 @@ export default function TeacherSchedulePage() {
                       const ok = comments.filter(c => c?.status === 'ok').length;
                       const brief = comments.filter(c => c?.status === 'brief').length;
                       const empty = comments.filter(c => c?.status === 'empty' || c?.status === 'overdue').length;
-                      const duplicate = comments.filter(c => c?.status === 'duplicate_self' || c?.status === 'duplicate_other').length;
+                      const duplicate = comments.filter(c =>
+                        c?.status === 'duplicate_self'
+                        || c?.status === 'duplicate_other'
+                        || c?.status === 'template_exact'
+                        || c?.status === 'template_modified'
+                      ).length;
                       const hasIssues = brief > 0 || empty > 0 || duplicate > 0;
                       return { slot, sessionIndex, ok, brief, empty, duplicate, hasIssues };
                     });
@@ -3884,11 +4080,9 @@ export default function TeacherSchedulePage() {
                                     <tr key={st.studentId}>
                                       <td style={{ fontWeight: 510, fontSize: 12 }}>{st.studentName}</td>
                                       <td><CommentStatusBadge status={status} /></td>
-                                      <td style={{ fontSize: 11, color: c?.text ? 'var(--text-primary)' : 'var(--text-quaternary)', lineHeight: 1.4 }}>
+                                      <td style={{ fontSize: 11, color: c?.text ? 'var(--text-primary)' : 'var(--text-quaternary)', lineHeight: 1.4, verticalAlign: 'top', paddingTop: 6 }}>
                                         {c?.text ? (
-                                          <span style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                                            {c.text}
-                                          </span>
+                                          <TeacherCommentCell text={c.text} parsedAreas={c.parsedAreas} />
                                         ) : (
                                           <em>{c ? 'Không có nội dung' : 'Không yêu cầu'}</em>
                                         )}

@@ -37,6 +37,7 @@ export interface TeacherScheduleSlot {
   status: string;
   studentCount?: number;
   sessionHour?: number;
+  sessionNumber?: number; // 1-based chronological order within the class
 }
 
 export interface TeacherSchedule {

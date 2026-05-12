@@ -129,6 +129,7 @@ export default function DashboardPage() {
   const [filterReasons, setFilterReasons] = useState<string[]>([]);
   const [rateRange, setRateRange] = useState<[number, number]>([0, 100]);
   const [showDemoOnly, setShowDemoOnly] = useState(false);
+  const [classCodeSearch, setClassCodeSearch] = useState('');
 
   // Table collapse states
   const [showActiveTable, setShowActiveTable] = useState(true);
@@ -220,7 +221,7 @@ export default function DashboardPage() {
     try {
       const { endDateFrom, endDateTo } = dateRangeToUtcRange(new Date(fromDate), new Date(toDate));
       const centreIds = selectedCentres.length > 0 ? selectedCentres : centres.map(c => c.id);
-      const result = await fetchAllClasses({ endDateFrom, endDateTo, centres: centreIds }, (loaded, total, chunk) => {
+      const result = await fetchAllClasses({ endDateFrom, endDateTo, centres: centreIds, ...(classCodeSearch.trim() ? { search: classCodeSearch.trim() } : {}) }, (loaded, total, chunk) => {
         setProgress({ loaded, total });
         curClasses = [...curClasses, ...chunk];
         setClasses([...curClasses]);
@@ -560,6 +561,8 @@ export default function DashboardPage() {
             hasData={classes.length > 0} onClearCache={handleClearCache}
             onCancel={handleCancelFetch}
             showRegionQuickSelect={true}
+            classCodeSearch={classCodeSearch}
+            onClassCodeSearchChange={setClassCodeSearch}
           quickFilterSlots={
             hasPreferences && (
               <QuickFilterChips

@@ -25,7 +25,7 @@ export const CACHE_KEYS = {
   FILTER_STATE: 'mindx_filter_state_v1', // Shared filter state across pages
 } as const;
 
-export const TEACHER_SCHEDULE_CACHE_VERSION = 7;
+export const TEACHER_SCHEDULE_CACHE_VERSION = 9;
 
 /**
  * COLUMN LABELS — Standardized Vietnamese labels

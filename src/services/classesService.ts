@@ -5,7 +5,7 @@
  */
 
 import { lmsQuery } from './lmsClient';
-import { ClassesResponse, GetClassesVariables, Class } from '@/types/classes';
+import { ClassesResponse, GetClassesVariables, Class, CommentAreaDef } from '@/types/classes';
 
 // ─── GraphQL Query ───────────────────────────────────────────────────────────
 
@@ -101,8 +101,60 @@ const GET_CLASSES_QUERY = /* graphql */ `
           }
           studentAttendance {
             _id status comment sendCommentStatus
-            commentByAreas { content }
+            commentByAreas {
+              content
+              grade
+              commentAreaId
+              type
+              courseProcessFinalEvaluationTitle
+            }
             student { id fullName phoneNumber email gender imageUrl }
+          }
+        }
+        courseProcess {
+          id
+          defaultCommentAreas {
+            id name type isRequired guideline
+            rates { value commentSamples }
+          }
+          specificSessions {
+            session
+            commentAreas {
+              id name type isRequired guideline
+              rates { value commentSamples }
+            }
+          }
+          finalSession {
+            finalEvaluations {
+              id title
+              commentAreas {
+                id name type isRequired guideline
+                rates { value commentSamples }
+              }
+            }
+            demoScore {
+              commentAreas {
+                id name type
+                demo { id title maxScore }
+              }
+            }
+          }
+          checkpointSessions {
+            session
+            checkpointCommentArea {
+              id name type
+            }
+            otherComments {
+              id name type isRequired guideline
+              rates { value commentSamples }
+            }
+            evaluations {
+              id title
+              commentAreas {
+                id name type isRequired guideline
+                rates { value commentSamples }
+              }
+            }
           }
         }
       }
@@ -110,6 +162,62 @@ const GET_CLASSES_QUERY = /* graphql */ `
     }
   }
 `;
+
+const STUDENT_COMMENT_AREAS_QUERY = /* graphql */ `
+  query studentCommentAreas($payload: FindCommentAreasInput!) {
+    studentCommentAreas(payload: $payload) {
+      data {
+        id
+        name
+        translations { key value locale }
+        fieldName
+        type
+        rates { value commentSamples }
+        isActive
+        sortOrder
+        slots
+        isPublic
+        isRequired
+        guideline
+      }
+      pagination { total }
+    }
+  }
+`;
+
+interface StudentCommentAreasResponse {
+  data: {
+    studentCommentAreas: {
+      data: CommentAreaDef[];
+      pagination: { total: number };
+    };
+  };
+}
+
+export async function fetchStudentCommentAreas(
+  slots: string[] = [],
+  signal?: AbortSignal
+): Promise<CommentAreaDef[]> {
+  const uniqueSlots = Array.from(new Set(slots.filter(Boolean)));
+  const payload = {
+    filter: {
+      isActive_equals: true,
+      type_in: ['CONTENT', 'RATE'],
+      ...(uniqueSlots.length > 0 ? { slots_in: uniqueSlots } : {}),
+    },
+    pagination: { paginationType: 'NONE' },
+    orderBy: 'sortOrder_DESC',
+  };
+
+  const response = await lmsQuery<StudentCommentAreasResponse>({
+    query: STUDENT_COMMENT_AREAS_QUERY,
+    operationName: 'studentCommentAreas',
+    variables: { payload },
+    signal,
+  });
+
+  return response.data.studentCommentAreas.data || [];
+}
 
 export const GET_CLASSES_LIGHT_QUERY = /* graphql */ `
   query GetClassesLight(
