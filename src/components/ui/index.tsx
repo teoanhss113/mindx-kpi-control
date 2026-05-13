@@ -35,8 +35,12 @@ import {
 import { motion, AnimatePresence } from 'framer-motion'
 import { useRouter } from 'next/navigation'
 import styles from '@/app/dashboard.module.css'
+import { LABELS } from '@/constants'
 import { CentreSelect as CentreSelectComponent } from './CentreSelect'
 import { FilterChip } from './FilterChip'
+
+export { CopyClassCodesButton } from './CopyClassCodesButton'
+export { SortableColumnWithCopy } from './SortableColumnWithCopy'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CHART COMPONENTS — Standardized chart configurations
@@ -233,6 +237,46 @@ export function TableActionButton({
         {label}
       </span>
     </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// COPY CLASS CODE BUTTON — Reusable button for copying class codes
+// ─────────────────────────────────────────────────────────────────────────────
+export function CopyClassCodeButton({ 
+  classCode, 
+  size = 'default',
+  onCopySuccess,
+}: { 
+  classCode: string
+  size?: 'default' | 'sm'
+  onCopySuccess?: () => void
+}) {
+  const [copied, setCopied] = useState(false)
+
+  const handleCopy = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    try {
+      await navigator.clipboard.writeText(classCode)
+      setCopied(true)
+      onCopySuccess?.()
+      setTimeout(() => setCopied(false), 2000)
+    } catch (err) {
+      console.error('Failed to copy class code:', err)
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      className={styles.copyBtn}
+      title={copied ? LABELS.COPIED : LABELS.COPY_CLASS_CODE}
+      style={size === 'sm' ? { fontSize: '11px', padding: '2px 6px' } : undefined}
+    >
+      {copied ? <Icon.Check size={size === 'sm' ? 11 : 13} /> : <Icon.Copy size={size === 'sm' ? 11 : 13} />}
+      <span style={{ marginLeft: 4 }}>{copied ? LABELS.COPIED : LABELS.COPY}</span>
+    </button>
   )
 }
 

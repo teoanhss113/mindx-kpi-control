@@ -1,6 +1,6 @@
 import { Class, Session, CommentAreaDef } from '@/types/classes';
 import { getCourseCategory } from '@/lib/courseCategories';
-import { COMMENT_SLA_HOURS, COURSE_CHECKPOINT_SESSIONS } from '@/constants';
+import { COMMENT_SLA_HOURS, COURSE_CHECKPOINT_SESSIONS, COURSE_CODE_CHECKPOINT_SESSIONS } from '@/constants';
 import { computeTBCK, determineRank } from '@/lib/courseGrading';
 import {
   getStudentAttendanceCommentContent,
@@ -23,8 +23,34 @@ import {
   StudentDemoScore
 } from '@/types/classQuality';
 
+function getCourseCodeForCheckpoint(cls: Class): string | null {
+  const combined = [
+    cls.course?.courseLine?.name,
+    cls.course?.name,
+    cls.name,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toUpperCase();
+
+  const normalizedCombined = combined.replace(/[^A-Z0-9]/g, '');
+
+  const matchedCode = Object.keys(COURSE_CODE_CHECKPOINT_SESSIONS).find(code =>
+    new RegExp(`(^|[^A-Z0-9])${code}([^A-Z0-9]|$)`).test(combined) ||
+    normalizedCombined.includes(code)
+  );
+
+  return matchedCode ?? null;
+}
+
 function getCheckpointSessionsForClass(cls: Class): readonly number[] {
-  return (COURSE_CHECKPOINT_SESSIONS[getCourseCategory(cls)] ?? COURSE_CHECKPOINT_SESSIONS.Others) as readonly number[];
+  const courseCode = getCourseCodeForCheckpoint(cls);
+  if (courseCode) {
+    return COURSE_CODE_CHECKPOINT_SESSIONS[courseCode] as readonly number[];
+  }
+
+  const category = getCourseCategory(cls) as keyof typeof COURSE_CHECKPOINT_SESSIONS;
+  return (COURSE_CHECKPOINT_SESSIONS[category] ?? COURSE_CHECKPOINT_SESSIONS.Others) as readonly number[];
 }
 
 function getFinalSessionNumber(cls: Class, slots: Session[]): number {
@@ -108,7 +134,8 @@ export function analyzeComments(
     const finalSessionNumber = getFinalSessionNumber(cls, slots);
     const isCheckpoint = checkpointSessions.includes(sessionNumber);
     const isFinalSession = sessionNumber === finalSessionNumber;
-    const isCommentRequiredForAbsent = isCheckpoint || isFinalSession || !exemptedSessions.includes(sessionNumber);
+    // Buổi Checkpoint/Cuối khóa BẮT BUỘC có nhận xét kể cả khi vắng (nhận xét quá trình)
+    const isCommentRequiredForAbsent = isCheckpoint || isFinalSession;
     const commentDeadlineHours = getCommentDeadlineHours(cls, sessionNumber, slots);
     
     // Find teacher
@@ -135,7 +162,9 @@ export function analyzeComments(
        const studentStatus = sa.status?.toUpperCase() || '';
        const isAbsent = ['ABSENT', 'ABSENT_UNEXCUSED', 'ABSENT_WITH_NOTICE'].includes(studentStatus);
 
-       // Skip comment check if student is absent on sessions that do not require absent comments.
+       // Logic kiểm tra nhận xét:
+       // 1. Nếu học viên vắng (bất kỳ loại) → KHÔNG cần nhận xét
+       // 2. TRỪ KHI là buổi Checkpoint/Cuối khóa → BẮT BUỘC có nhận xét (nhận xét quá trình)
        if (isAbsent && !isCommentRequiredForAbsent) {
          return;
        }
@@ -618,9 +647,19 @@ function getDemoQualityBand(score: number | null): 'good' | 'medium' | 'poor' | 
 }
 
 function getPreferredCheckpointSessions(cls: Class): { cp1: number; cp2: number; demo: number } {
+  const courseCode = getCourseCodeForCheckpoint(cls);
   const category = getCourseCategory(cls);
   const total = cls.numberOfSessions || cls.slots?.length || 14;
   const lastSessionIndex = Math.max(0, total - 1);
+
+  if (courseCode) {
+    const [cp1Session, cp2Session] = COURSE_CODE_CHECKPOINT_SESSIONS[courseCode];
+    return {
+      cp1: Math.max(0, cp1Session - 1),
+      cp2: Math.max(0, cp2Session - 1),
+      demo: category === 'Robotics' || category === 'Art' ? lastSessionIndex : Math.min(13, lastSessionIndex),
+    };
+  }
 
   if (category === 'Robotics') {
     return { cp1: 3, cp2: 7, demo: lastSessionIndex };

@@ -8,6 +8,7 @@ import {
   AttendanceSessionCell, AttendanceStatusBadge, CommentStatusBadge, isAttendanceStatus,
   BatchStatusBadge, COMMENT_STATUS_COUNT_LABELS, CourseCategoryBadge, RescheduleStatusBadge,
   Icon, TableActionButton, TableActionGroup,
+  SortableColumnWithCopy,
 } from '@/components/ui';
 import { authFetch } from '@/lib/auth/clientAuth';
 import { dateRangeToUtcRange, fetchAllClasses } from '@/services/classesService';
@@ -509,6 +510,7 @@ export default function FinalSessionsAdminPage() {
             progress={progress}
             isExpanded={showCandidates}
             onToggle={() => setShowCandidates(p => !p)}
+            actionSlot={undefined}
           />
 
           <AnimatePresence initial={false}>
@@ -559,7 +561,15 @@ export default function FinalSessionsAdminPage() {
                     <div className={`${styles.sortableCol} ${sortKey === 'centre' ? styles.activeSort : ''}`} onClick={() => handleSort('centre')}>Cơ sở <SortIcon col="centre" sortKey={sortKey} sortDir={sortDir} /></div>
                     <div className={`${styles.sortableCol} ${sortKey === 'category' ? styles.activeSort : ''}`} onClick={() => handleSort('category')}>Khối <SortIcon col="category" sortKey={sortKey} sortDir={sortDir} /></div>
                     <div>Giờ</div>
-                    <div className={`${styles.sortableCol} ${sortKey === 'name' ? styles.activeSort : ''}`} onClick={() => handleSort('name')}>Tên lớp <SortIcon col="name" sortKey={sortKey} sortDir={sortDir} /></div>
+                    <SortableColumnWithCopy
+                      label="Tên lớp"
+                      sortKey="name"
+                      currentSortKey={sortKey}
+                      sortDir={sortDir}
+                      onSort={() => handleSort('name')}
+                      classCodes={sortedCandidates.map(c => c.cls.name)}
+                      disabled={sortedCandidates.length === 0}
+                    />
                     <div className={`${styles.sortableCol} ${sortKey === 'teacher' ? styles.activeSort : ''}`} onClick={() => handleSort('teacher')}>Giáo viên chính <SortIcon col="teacher" sortKey={sortKey} sortDir={sortDir} /></div>
                     <div className={`${styles.sortableCol} ${sortKey === 'students' ? styles.activeSort : ''}`} onClick={() => handleSort('students')} style={{ justifyContent: 'center' }}>{LABELS.STUDENTS} <SortIcon col="students" sortKey={sortKey} sortDir={sortDir} /></div>
                     <div>Giám khảo</div>

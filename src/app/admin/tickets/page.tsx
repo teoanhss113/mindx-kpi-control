@@ -27,6 +27,7 @@ import {
   KPIBarChart, KPIChartCard, getKPILegendItems, getSharedChartLayout,
   SortableHeader, SortableColumn, TopicBadge, UserSearchInput, type UserSearchResult, ModalFooter,
   CentreSelect, CourseCategoryBadge, CentreBadge, QuickFilterChips, TicketStatusBadge, FilterChip, KPIThresholdSuggestions, getPriorityMeta, getTicketStatusMeta, Badge,
+  SortableColumnWithCopy,
 } from '@/components/ui';
 import { useTableSort } from '@/hooks/useTableSort';
 import { useFilterOptions } from '@/hooks/useFilterOptions';
@@ -1510,6 +1511,7 @@ export default function TicketsDashboard() {
                 progress={progress}
                 isExpanded={showActiveTable}
                 onToggle={() => setShowActiveTable(p => !p)}
+                actionSlot={undefined}
                 toolbarSlot={(mappedTickets.length > 0 || pendingClasses.length > 0 || loading || pendingLoading) ? (
                   <>
                     <TableToolbar
@@ -1789,7 +1791,15 @@ export default function TicketsDashboard() {
                           background: 'var(--bg-elevated)',
                           minWidth: 900
                         }}>
-                          <SortableColumn label="Lớp học" sortKey="className" currentSortKey={classSortBy} sortOrder={classSortOrder} onSort={(key) => handleClassSort(key as typeof classSortBy)} className={styles.sortableCol} />
+                          <SortableColumnWithCopy
+                            label="Lớp học"
+                            sortKey="className"
+                            currentSortKey={classSortBy}
+                            sortDir={classSortOrder}
+                            onSort={() => handleClassSort('className')}
+                            classCodes={[...standardGroups, ...earlyLateGroups].map(group => group.className)}
+                            disabled={(standardGroups.length + earlyLateGroups.length) === 0}
+                          />
                           <SortableColumn label="Buổi" sortKey="sessions" currentSortKey={classSortBy} sortOrder={classSortOrder} onSort={(key) => handleClassSort(key as typeof classSortBy)} className={styles.sortableCol} />
                           <SortableColumn label="Hoàn thành" sortKey="students" currentSortKey={classSortBy} sortOrder={classSortOrder} onSort={(key) => handleClassSort(key as typeof classSortBy)} className={styles.sortableCol} />
                           <SortableColumn label="Số phiếu" sortKey="count" currentSortKey={classSortBy} sortOrder={classSortOrder} onSort={(key) => handleClassSort(key as typeof classSortBy)} className={styles.sortableCol} />

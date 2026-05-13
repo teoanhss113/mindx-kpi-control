@@ -24,7 +24,7 @@ import {
   KPIBarChart, KPIChartCard, getKPILegendItems, getSharedChartLayout,
   SortableHeader, CentreSelect, QuickFilterChips, ExportButton,
   KPIThresholdSuggestions,
-  CSVExportSettings, FilterChip, type CSVColumnConfig,
+  CSVExportSettings, FilterChip, SortableColumnWithCopy, type CSVColumnConfig,
   COMPLETION_STATUS_LABELS, CompletionStatusBadge, type CompletionStatusKind,
   Badge, CourseCategoryBadge, CentreBadge,
 } from '@/components/ui';
@@ -664,12 +664,14 @@ export default function DashboardPage() {
                     isExpanded={showActiveTable}
                     onToggle={() => setShowActiveTable(p => !p)}
                     actionSlot={
-                      <ExportButton
-                        onClick={handleExportCSV}
-                        onSettingsClick={() => setShowCSVSettings(true)}
-                        disabled={filteredNormalClasses.length === 0}
-                        count={filteredNormalClasses.length}
-                      />
+                      <>
+                        <ExportButton
+                          onClick={handleExportCSV}
+                          onSettingsClick={() => setShowCSVSettings(true)}
+                          disabled={filteredNormalClasses.length === 0}
+                          count={filteredNormalClasses.length}
+                        />
+                      </>
                     }
                     toolbarSlot={
                       <TableToolbar
@@ -727,7 +729,15 @@ export default function DashboardPage() {
                   >
                           <div className={styles.tableScrollWrapper}>
                             <div className={styles.classItemHeader}>
-                        <div className={`${styles.sortableCol} ${sortKey === 'name' ? styles.activeSort : ''}`} onClick={() => handleSort('name')}>Lớp học <SortIcon col="name" sortKey={sortKey} sortDir={sortOrder} /></div>
+                        <SortableColumnWithCopy
+                          label="Lớp học"
+                          sortKey="name"
+                          currentSortKey={sortKey}
+                          sortDir={sortOrder}
+                          onSort={() => handleSort('name')}
+                          classCodes={filteredNormalClasses.map(cls => cls.name)}
+                          disabled={filteredNormalClasses.length === 0}
+                        />
                         <div className={`${styles.sortableCol} ${sortKey === 'teacher' ? styles.activeSort : ''}`} onClick={() => handleSort('teacher')}>Giáo viên <SortIcon col="teacher" sortKey={sortKey} sortDir={sortOrder} /></div>
                         <div className={`${styles.sortableCol} ${sortKey === 'progress' ? styles.activeSort : ''}`} onClick={() => handleSort('progress')}>Tiến độ <SortIcon col="progress" sortKey={sortKey} sortDir={sortOrder} /></div>
                         <div className={`${styles.sortableCol} ${sortKey === 'base' ? styles.activeSort : ''}`} onClick={() => handleSort('base')}>{LABELS.STUDENTS} <SortIcon col="base" sortKey={sortKey} sortDir={sortOrder} /></div>

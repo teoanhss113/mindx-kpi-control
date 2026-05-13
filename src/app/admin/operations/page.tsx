@@ -455,9 +455,6 @@ function ScheduleViewToggle({
 }
 
 function QualityExemptionRulesPanel({
-  maxSessions,
-  exemptedSessions,
-  onToggleExemptSession,
   exemptOneOnOneClasses,
   onExemptOneOnOneClassesChange,
   holidayPeriods,
@@ -465,9 +462,6 @@ function QualityExemptionRulesPanel({
   onRemoveHolidayPeriod,
   onResetDefaults,
 }: {
-  maxSessions: number;
-  exemptedSessions: number[];
-  onToggleExemptSession: (session: number) => void;
   exemptOneOnOneClasses: boolean;
   onExemptOneOnOneClassesChange: (checked: boolean) => void;
   holidayPeriods: HolidayPeriod[];
@@ -499,7 +493,7 @@ function QualityExemptionRulesPanel({
       <div className={styles.chartsSectionHeader} onClick={() => setShowRules(v => !v)} style={{ cursor: 'pointer' }}>
         <div className={styles.chartsSectionTitle}>
           <Icon.Settings />
-          Quy tắc miễn trừ
+          Quy tắc phân tích
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
           <button
@@ -524,30 +518,6 @@ function QualityExemptionRulesPanel({
         {showRules && (
           <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} style={{ overflow: 'hidden' }}>
             <div style={{ padding: 'var(--space-4)' }}>
-              <div style={{ marginBottom: 'var(--space-4)' }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 'var(--space-1)' }}>
-                  Miễn trừ nhận xét
-                </div>
-                <div style={{ color: 'var(--text-quaternary)', fontSize: 12, lineHeight: 1.5, marginBottom: 'var(--space-2)' }}>
-                  Học viên vắng ở các buổi được chọn sẽ không bắt buộc có nhận xét.
-                </div>
-                  <div className={styles.reasonList}>
-                    {Array.from({ length: maxSessions }, (_, i) => i + 1).map(session => (
-                      <label key={session} className={styles.reasonItem}>
-                        <input
-                          type="checkbox"
-                          className={styles.reasonCheckbox}
-                          checked={exemptedSessions.includes(session)}
-                          onChange={() => onToggleExemptSession(session)}
-                        />
-                        <div className={styles.reasonLabel}>
-                          <span>Buổi {session}</span>
-                        </div>
-                      </label>
-                    ))}
-                  </div>
-              </div>
-
               <div>
                 <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 'var(--space-1)' }}>
                   Miễn trừ lịch học
@@ -1436,15 +1406,15 @@ const CalendarGrid = memo(({
                                 if (slot.status === 'ABANDONED') {
                                   accentColor = 'var(--text-quaternary)';
                                   borderColor = 'var(--border-secondary)';
-                                } else if (slot.courseLine) {
-                                  const courseLineUpper = slot.courseLine.toUpperCase();
-                                  if (courseLineUpper.includes('ART') || courseLineUpper.includes('XART')) {
+                                } else {
+                                  const courseCategory = getCourseLineCategory(slot.courseLine, slot.className);
+                                  if (courseCategory === 'Art') {
                                     accentColor = isOfficeHour ? '#fbbf24' : '#b45309';
                                     borderColor = isOfficeHour ? '#fde68a' : 'var(--status-warning)';
-                                  } else if (courseLineUpper.includes('ROB')) {
+                                  } else if (courseCategory === 'Robotics') {
                                     accentColor = isOfficeHour ? '#60a5fa' : '#1e40af';
                                     borderColor = isOfficeHour ? 'rgba(94, 106, 210, 0.3)' : 'var(--brand-indigo)';
-                                  } else if (courseLineUpper.match(/C4K|C4T|JSA|JSI|PYA|WEB|GAME|PRO|CODING|PYTHON|CSB|CSI|1:1/)) {
+                                  } else if (courseCategory === 'Coding') {
                                     accentColor = isOfficeHour ? '#34d399' : '#047857';
                                     borderColor = isOfficeHour ? '#a7f3d0' : 'var(--status-emerald)';
                                   }
@@ -2253,20 +2223,18 @@ const ClassCard = memo(({ slot, onClick }: ClassCardProps) => {
   } else {
     const isOfficeHour = slot.type === 'office-hour';
     
-    if (slot.courseLine) {
-      const courseLineUpper = slot.courseLine.toUpperCase();
-      
-      // Increased contrast: class (darker/saturated), office-hour (much lighter/desaturated)
-      if (courseLineUpper.includes('ART') || courseLineUpper.includes('XART')) {
-        accentColor = isOfficeHour ? '#fbbf24' : '#b45309'; // Art: light amber vs dark amber
-        borderColor = isOfficeHour ? '#fde68a' : 'var(--status-warning)';
-      } else if (courseLineUpper.includes('ROB')) {
-        accentColor = isOfficeHour ? '#60a5fa' : '#1e40af'; // Robotics: light blue vs dark blue
-        borderColor = isOfficeHour ? 'rgba(94, 106, 210, 0.3)' : 'var(--brand-indigo)';
-      } else if (courseLineUpper.match(/C4K|C4T|JSA|JSI|PYA|WEB|GAME|PRO|CODING|PYTHON|CSB|CSI|1:1/)) {
-        accentColor = isOfficeHour ? '#34d399' : '#047857'; // Coding: light green vs dark green
-        borderColor = isOfficeHour ? '#a7f3d0' : 'var(--status-emerald)';
-      }
+    const courseCategory = getCourseLineCategory(slot.courseLine, slot.className);
+
+    // Increased contrast: class (darker/saturated), office-hour (much lighter/desaturated)
+    if (courseCategory === 'Art') {
+      accentColor = isOfficeHour ? '#fbbf24' : '#b45309'; // Art: light amber vs dark amber
+      borderColor = isOfficeHour ? '#fde68a' : 'var(--status-warning)';
+    } else if (courseCategory === 'Robotics') {
+      accentColor = isOfficeHour ? '#60a5fa' : '#1e40af'; // Robotics: light blue vs dark blue
+      borderColor = isOfficeHour ? 'rgba(94, 106, 210, 0.3)' : 'var(--brand-indigo)';
+    } else if (courseCategory === 'Coding') {
+      accentColor = isOfficeHour ? '#34d399' : '#047857'; // Coding: light green vs dark green
+      borderColor = isOfficeHour ? '#a7f3d0' : 'var(--status-emerald)';
     }
   }
   
@@ -2480,7 +2448,7 @@ export default function TeacherSchedulePage() {
   const [exemptedSessions, setExemptedSessions] = useState<number[]>(DEFAULT_EXEMPTED_SESSIONS);
   const [exemptOneOnOneClasses, setExemptOneOnOneClasses] = useState(true);
   const [holidayPeriods, setHolidayPeriods] = useState<HolidayPeriod[]>(DEFAULT_HOLIDAY_PERIODS);
-  const [showSummarySection, setShowSummarySection] = useState(true);
+  const [showSummarySection, setShowSummarySection] = useState(false);
   const [selectedSummaryCentre, setSelectedSummaryCentre] = useState<string>('all');
   const [summaryStatusFilter, setSummaryStatusFilter] = useState<string[]>([]);
   
@@ -3470,6 +3438,7 @@ export default function TeacherSchedulePage() {
           hasData={schedules.length > 0}
           onClearCache={() => {
             setSchedules([]);
+            setRawClasses([]);
             clearCache(CACHE_KEYS.TEACHER_SCHEDULE);
           }}
           showRegionQuickSelect={true}
@@ -3762,9 +3731,6 @@ export default function TeacherSchedulePage() {
                     }}
                   />
                   <QualityExemptionRulesPanel
-                    maxSessions={maxQualitySessions}
-                    exemptedSessions={exemptedSessions}
-                    onToggleExemptSession={handleToggleExemptSession}
                     exemptOneOnOneClasses={exemptOneOnOneClasses}
                     onExemptOneOnOneClassesChange={setExemptOneOnOneClasses}
                     holidayPeriods={holidayPeriods}
@@ -4041,20 +4007,41 @@ export default function TeacherSchedulePage() {
                             const sessionDate = new Date(stat.slot.date || stat.slot.startTime);
                             const isUpcoming = sessionDate.getTime() > Date.now();
                             const isActive = stat.sessionIndex === activeIndex;
+                            const totalIssues = stat.empty + stat.duplicate + stat.brief;
+                            const primaryIssueType = stat.empty > 0 ? 'empty' : stat.duplicate > 0 ? 'duplicate' : 'brief';
+                            const issueTitle = [
+                              stat.empty > 0 ? `${COMMENT_STATUS_GROUP_LABELS.emptyOrOverdue}: ${stat.empty}` : '',
+                              stat.duplicate > 0 ? `${COMMENT_STATUS_GROUP_LABELS.duplicate}: ${stat.duplicate}` : '',
+                              stat.brief > 0 ? `${COMMENT_STATUS_GROUP_LABELS.brief}: ${stat.brief}` : '',
+                            ].filter(Boolean).join(' • ');
                             return (
-                            <button
-                              key={stat.sessionIndex}
-                              onClick={() => setCommentModalSessionIndex(stat.sessionIndex)}
-                              className={[
-                                styles.sessionButton,
-                                isActive ? styles.sessionButtonActive : '',
-                                !isActive && stat.hasIssues ? styles.sessionButtonIssue : '',
-                                !isActive && isUpcoming ? styles.sessionButtonUpcoming : styles.sessionButtonPast,
-                              ].filter(Boolean).join(' ')}
-                            >
-                              <span className={styles.sessionButtonTitle}>B{stat.sessionIndex + 1}</span>
-                              <span className={styles.sessionButtonMeta}>{formatSessionDateLabel(stat.slot.date || stat.slot.startTime)}</span>
-                            </button>
+                              <button
+                                key={stat.sessionIndex}
+                                onClick={() => setCommentModalSessionIndex(stat.sessionIndex)}
+                                className={[
+                                  styles.sessionButton,
+                                  isActive ? styles.sessionButtonActive : '',
+                                  stat.hasIssues ? styles.sessionButtonIssue : '',
+                                  isUpcoming ? styles.sessionButtonUpcoming : styles.sessionButtonPast,
+                                ].filter(Boolean).join(' ')}
+                              >
+                                {stat.hasIssues && (
+                                  <span
+                                    className={[
+                                      styles.sessionIssueDot,
+                                      primaryIssueType === 'empty' ? styles.sessionIssueDotEmpty : '',
+                                      primaryIssueType === 'duplicate' ? styles.sessionIssueDotDuplicate : '',
+                                      primaryIssueType === 'brief' ? styles.sessionIssueDotBrief : '',
+                                    ].filter(Boolean).join(' ')}
+                                    aria-label={`Cảnh báo nhận xét: ${issueTitle}`}
+                                    title={issueTitle}
+                                  >
+                                    {totalIssues}
+                                  </span>
+                                )}
+                                <span className={styles.sessionButtonTitle}>B{stat.sessionIndex + 1}</span>
+                                <span className={styles.sessionButtonMeta}>{formatSessionDateLabel(stat.slot.date || stat.slot.startTime)}</span>
+                              </button>
                             );
                           })}
                         </div>

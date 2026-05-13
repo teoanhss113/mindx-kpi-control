@@ -14,6 +14,7 @@ import {
   FilterChip,
   MultiSelect,
   COMMENT_DETAIL_FILTER_OPTIONS,
+  CopyClassCodesButton,
 } from '@/components/ui';
 import { CLASS_QUALITY_LABELS, LABELS } from '@/constants';
 import styles from '@/app/dashboard.module.css';
@@ -36,7 +37,7 @@ function getActiveStudentCount(cls: AnalyzedClassForQuality['cls']): number {
 }
 
 type SortKey = 'name' | 'teacher' | 'studentCount' | 'progress' | 'commentIssues' | 'attendanceAlerts' | 'rescheduled' | 'cp';
-type QuickFilterKey = 'hasIssues' | 'commentIssues' | 'attendanceAlerts' | 'rescheduled';
+type QuickFilterKey = 'attendanceAlerts' | 'rescheduled';
 type CommentDetailFilter = (typeof COMMENT_DETAIL_FILTER_OPTIONS)[number]['value'];
 
 interface Props {
@@ -57,11 +58,25 @@ const ISSUE_VARIANT: Record<IssueTone, React.ComponentProps<typeof Badge>['varia
 };
 
 const QUICK_FILTERS: { key: QuickFilterKey; label: string }[] = [
-  { key: 'hasIssues', label: CLASS_QUALITY_LABELS.HAS_ISSUES },
-  { key: 'commentIssues', label: CLASS_QUALITY_LABELS.COMMENT_ISSUES },
   { key: 'attendanceAlerts', label: CLASS_QUALITY_LABELS.ATTENDANCE_ALERTS },
   { key: 'rescheduled', label: CLASS_QUALITY_LABELS.RESCHEDULED },
 ];
+
+function getLatestPassedSessionIndex(a: AnalyzedClassForQuality): number | null {
+  const latestIndex = a.commentAnalysis.passedSlots - 1;
+  return latestIndex >= 0 ? latestIndex : null;
+}
+
+function hasLatestSessionCommentStatus(a: AnalyzedClassForQuality, status: CommentDetailFilter): boolean {
+  const latestIndex = getLatestPassedSessionIndex(a);
+  if (latestIndex === null) return false;
+
+  return a.commentAnalysis.students.some(student =>
+    student.comments.some(comment =>
+      comment.sessionIndex === latestIndex && comment.status === status
+    )
+  );
+}
 
 function hasCommentStatus(a: AnalyzedClassForQuality, status: CommentDetailFilter): boolean {
   return a.commentAnalysis.students.some(student =>
@@ -84,27 +99,73 @@ export function ClassQualityUnifiedTable({ classes, search, onSearchChange, onRo
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [quickFilter, setQuickFilter] = useState<QuickFilterKey | null>(null);
   const [commentDetailFilters, setCommentDetailFilters] = useState<CommentDetailFilter[]>([]);
+  const [latestSessionCommentDetailFilters, setLatestSessionCommentDetailFilters] = useState<CommentDetailFilter[]>([]);
+  
+  // Basic table filters
+  const [selectedCentres, setSelectedCentres] = useState<string[]>([]);
+  const [selectedCourses, setSelectedCourses] = useState<string[]>([]);
+  const [selectedTeachers, setSelectedTeachers] = useState<string[]>([]);
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
     else { setSortKey(key); setSortDir('desc'); }
   };
 
+  // Extract unique filter options
+  const filterOptions = useMemo(() => {
+    const centres = new Set<string>();
+    const courses = new Set<string>();
+    const teachers = new Set<string>();
+
+    classes.forEach(a => {
+      if (a.cls.centre?.shortName) centres.add(a.cls.centre.shortName);
+      if (a.courseLineName) courses.add(a.courseLineName);
+      const teacher = getPrimaryTeacher(a.cls);
+      if (teacher && teacher !== 'Không rõ') teachers.add(teacher);
+    });
+
+    return {
+      centres: Array.from(centres).sort().map(c => ({ value: c, label: c })),
+      courses: Array.from(courses).sort().map(c => ({ value: c, label: c })),
+      teachers: Array.from(teachers).sort().map(t => ({ value: t, label: t })),
+    };
+  }, [classes]);
+
   const baseList = useMemo(() => {
     let list = classes;
+    
+    // Apply basic filters first
+    if (selectedCentres.length > 0) {
+      list = list.filter(a => a.cls.centre?.shortName && selectedCentres.includes(a.cls.centre.shortName));
+    }
+    if (selectedCourses.length > 0) {
+      list = list.filter(a => a.courseLineName && selectedCourses.includes(a.courseLineName));
+    }
+    if (selectedTeachers.length > 0) {
+      list = list.filter(a => selectedTeachers.includes(getPrimaryTeacher(a.cls)));
+    }
+    
+    // Then apply search
     if (search.trim()) {
       const q = search.toLowerCase();
       list = list.filter(a => a.cls.name.toLowerCase().includes(q) || a.cls.centre?.shortName?.toLowerCase().includes(q));
     }
     return list;
-  }, [classes, search]);
+  }, [classes, search, selectedCentres, selectedCourses, selectedTeachers]);
 
   const issueCounts = useMemo(() => {
-    let commentIssues = 0;
     let attendanceAlerts = 0;
     let rescheduled = 0;
-    let hasIssues = 0;
     const commentDetails: Record<CommentDetailFilter, number> = {
+      overdue: 0,
+      duplicate_other: 0,
+      template_exact: 0,
+      brief: 0,
+      empty: 0,
+      duplicate_self: 0,
+      template_modified: 0,
+    };
+    const latestSessionCommentDetails: Record<CommentDetailFilter, number> = {
       overdue: 0,
       duplicate_other: 0,
       template_exact: 0,
@@ -115,21 +176,16 @@ export function ClassQualityUnifiedTable({ classes, search, onSearchChange, onRo
     };
 
     baseList.forEach(a => {
-      const cIssues = a.commentAnalysis.emptyCount + a.commentAnalysis.briefCount + a.commentAnalysis.duplicateCount + a.commentAnalysis.overdueCount;
-      const hasCommentIssues = cIssues > 0;
-      const hasAttendanceAlerts = a.attendanceAnalysis.totalAlerts > 0;
-      const hasRescheduled = a.reschedulingAnalysis.rescheduledSessions > 0;
-
-      if (hasCommentIssues) commentIssues += 1;
-      if (hasAttendanceAlerts) attendanceAlerts += 1;
-      if (hasRescheduled) rescheduled += 1;
-      if (hasCommentIssues || hasAttendanceAlerts || hasRescheduled) hasIssues += 1;
+      if (a.attendanceAnalysis.totalAlerts > 0) attendanceAlerts += 1;
+      if (a.reschedulingAnalysis.rescheduledSessions > 0) rescheduled += 1;
+      
       COMMENT_DETAIL_FILTER_OPTIONS.forEach(option => {
         if (hasCommentStatus(a, option.value)) commentDetails[option.value] += 1;
+        if (hasLatestSessionCommentStatus(a, option.value)) latestSessionCommentDetails[option.value] += 1;
       });
     });
 
-    return { commentIssues, attendanceAlerts, rescheduled, hasIssues, commentDetails };
+    return { attendanceAlerts, rescheduled, commentDetails, latestSessionCommentDetails };
   }, [baseList]);
 
   const commentDetailOptions = useMemo(() => COMMENT_DETAIL_FILTER_OPTIONS.map(option => ({
@@ -137,28 +193,31 @@ export function ClassQualityUnifiedTable({ classes, search, onSearchChange, onRo
     label: `${option.label} (${issueCounts.commentDetails[option.value]})`,
   })), [issueCounts.commentDetails]);
 
-  const filtered = useMemo(() => {
+  const latestSessionCommentDetailOptions = useMemo(() => COMMENT_DETAIL_FILTER_OPTIONS.map(option => ({
+    ...option,
+    label: `${option.label} (${issueCounts.latestSessionCommentDetails[option.value]})`,
+  })), [issueCounts.latestSessionCommentDetails]);
+
+  const visibleClasses = useMemo(() => {
     let list = baseList;
-    if (quickFilter === 'commentIssues') {
-      list = list.filter(a => (a.commentAnalysis.emptyCount + a.commentAnalysis.briefCount + a.commentAnalysis.duplicateCount + a.commentAnalysis.overdueCount) > 0);
-    }
     if (quickFilter === 'attendanceAlerts') {
       list = list.filter(a => a.attendanceAnalysis.totalAlerts > 0);
     }
     if (quickFilter === 'rescheduled') {
       list = list.filter(a => a.reschedulingAnalysis.rescheduledSessions > 0);
     }
-    if (quickFilter === 'hasIssues') {
-      list = list.filter(a => {
-        const cIssues = a.commentAnalysis.emptyCount + a.commentAnalysis.briefCount + a.commentAnalysis.duplicateCount + a.commentAnalysis.overdueCount;
-        return cIssues > 0 || a.attendanceAnalysis.totalAlerts > 0 || a.reschedulingAnalysis.rescheduledSessions > 0;
-      });
-    }
     if (commentDetailFilters.length > 0) {
       list = list.filter(a => commentDetailFilters.some(status => hasCommentStatus(a, status)));
     }
+    if (latestSessionCommentDetailFilters.length > 0) {
+      list = list.filter(a => latestSessionCommentDetailFilters.some(status => hasLatestSessionCommentStatus(a, status)));
+    }
 
-    return [...list].sort((a, b) => {
+    return list;
+  }, [baseList, quickFilter, commentDetailFilters, latestSessionCommentDetailFilters]);
+
+  const filtered = useMemo(() => {
+    return [...visibleClasses].sort((a, b) => {
       const d = sortDir === 'asc' ? 1 : -1;
       const aCI = a.commentAnalysis.emptyCount + a.commentAnalysis.briefCount + a.commentAnalysis.duplicateCount + a.commentAnalysis.overdueCount;
       const bCI = b.commentAnalysis.emptyCount + b.commentAnalysis.briefCount + b.commentAnalysis.duplicateCount + b.commentAnalysis.overdueCount;
@@ -176,7 +235,9 @@ export function ClassQualityUnifiedTable({ classes, search, onSearchChange, onRo
       }
       return 0;
     });
-  }, [baseList, quickFilter, commentDetailFilters, sortKey, sortDir]);
+  }, [visibleClasses, sortKey, sortDir]);
+
+  const visibleClassCodes = useMemo(() => visibleClasses.map(a => a.cls.name), [visibleClasses]);
 
   return (
     <AdminTableSection
@@ -195,8 +256,6 @@ export function ClassQualityUnifiedTable({ classes, search, onSearchChange, onRo
                   key={f.key}
                   active={quickFilter === f.key}
                   count={
-                    f.key === 'hasIssues' ? issueCounts.hasIssues :
-                    f.key === 'commentIssues' ? issueCounts.commentIssues :
                     f.key === 'attendanceAlerts' ? issueCounts.attendanceAlerts :
                     issueCounts.rescheduled
                   }
@@ -214,13 +273,53 @@ export function ClassQualityUnifiedTable({ classes, search, onSearchChange, onRo
                 placeholder={commentDetailFilters.length > 0 ? CLASS_QUALITY_LABELS.COMMENT_DETAIL_FILTER : CLASS_QUALITY_LABELS.ALL_COMMENT_DETAILS}
                 maxDisplay={1}
               />
+              <MultiSelect
+                menuPosition="fixed"
+                options={latestSessionCommentDetailOptions}
+                selected={latestSessionCommentDetailFilters}
+                onChange={(values) => setLatestSessionCommentDetailFilters(values as CommentDetailFilter[])}
+                placeholder={latestSessionCommentDetailFilters.length > 0 ? 'Lỗi buổi gần nhất' : 'Tất cả lỗi buổi gần nhất'}
+                maxDisplay={1}
+              />
             </div>
           }
-          filterSlots={<span className={styles.metricText}>{filtered.length}/{classes.length} {CLASS_QUALITY_LABELS.VISIBLE_CLASS_COUNT_SUFFIX}</span>}
-          hasFilter={!!quickFilter || commentDetailFilters.length > 0 || !!search.trim()}
+          filterSlots={
+            <div className={styles.toolbarCluster}>
+              <MultiSelect
+                menuPosition="fixed"
+                options={filterOptions.centres}
+                selected={selectedCentres}
+                onChange={setSelectedCentres}
+                placeholder={selectedCentres.length > 0 ? `${LABELS.CENTRE} (${selectedCentres.length})` : LABELS.ALL_CENTRES}
+                maxDisplay={1}
+              />
+              <MultiSelect
+                menuPosition="fixed"
+                options={filterOptions.courses}
+                selected={selectedCourses}
+                onChange={setSelectedCourses}
+                placeholder={selectedCourses.length > 0 ? `Khoá học (${selectedCourses.length})` : 'Tất cả khoá học'}
+                maxDisplay={1}
+              />
+              <MultiSelect
+                menuPosition="fixed"
+                options={filterOptions.teachers}
+                selected={selectedTeachers}
+                onChange={setSelectedTeachers}
+                placeholder={selectedTeachers.length > 0 ? `${LABELS.TEACHER} (${selectedTeachers.length})` : 'Tất cả giáo viên'}
+                maxDisplay={1}
+              />
+              <span className={styles.metricText}>{filtered.length}/{classes.length} {CLASS_QUALITY_LABELS.VISIBLE_CLASS_COUNT_SUFFIX}</span>
+            </div>
+          }
+          hasFilter={!!quickFilter || commentDetailFilters.length > 0 || latestSessionCommentDetailFilters.length > 0 || selectedCentres.length > 0 || selectedCourses.length > 0 || selectedTeachers.length > 0 || !!search.trim()}
           onClearFilter={() => {
             setQuickFilter(null);
             setCommentDetailFilters([]);
+            setLatestSessionCommentDetailFilters([]);
+            setSelectedCentres([]);
+            setSelectedCourses([]);
+            setSelectedTeachers([]);
             onSearchChange('');
           }}
         />
@@ -231,7 +330,44 @@ export function ClassQualityUnifiedTable({ classes, search, onSearchChange, onRo
           <table className={`${styles.studentTable} ${styles.tableSm}`}>
           <thead>
             <tr>
-              <SortableHeader label={LABELS.CLASS_NAME} sortKey="name" currentSortKey={sortKey} sortOrder={sortDir} onSort={(key) => handleSort(key as SortKey)} />
+              <th>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-1)' }}>
+                  <button
+                    type="button"
+                    onClick={() => handleSort('name')}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      padding: 0,
+                      cursor: 'pointer',
+                      font: 'inherit',
+                      color: 'inherit',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 'var(--space-1)',
+                    }}
+                  >
+                    <span>{LABELS.CLASS_NAME}</span>
+                    {sortKey === 'name' ? (
+                      sortDir === 'asc' ? (
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <polyline points="18 15 12 9 6 15" />
+                        </svg>
+                      ) : (
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <polyline points="6 9 12 15 18 9" />
+                        </svg>
+                      )
+                    ) : (
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ opacity: 0.3 }}>
+                        <polyline points="18 15 12 9 6 15" />
+                        <polyline points="6 9 12 15 18 9" />
+                      </svg>
+                    )}
+                  </button>
+                  <CopyClassCodesButton classCodes={visibleClassCodes} disabled={filtered.length === 0} />
+                </div>
+              </th>
               <SortableHeader label={LABELS.TEACHER} sortKey="teacher" currentSortKey={sortKey} sortOrder={sortDir} onSort={(key) => handleSort(key as SortKey)} />
               <SortableHeader label={CLASS_QUALITY_LABELS.STUDENT_COUNT} sortKey="studentCount" currentSortKey={sortKey} sortOrder={sortDir} onSort={(key) => handleSort(key as SortKey)} className={styles.centerCell} />
               <SortableHeader label={LABELS.PROGRESS} sortKey="progress" currentSortKey={sortKey} sortOrder={sortDir} onSort={(key) => handleSort(key as SortKey)} className={styles.centerCell} />

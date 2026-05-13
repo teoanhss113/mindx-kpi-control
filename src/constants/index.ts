@@ -28,7 +28,7 @@ export const CACHE_KEYS = {
 export const TEACHER_SCHEDULE_CACHE_VERSION = 9;
 
 /**
- * COLUMN LABELS — Standardized Vietnamese labels
+ * COLUMN LABELS — Standardized Vietnamese labelsconstant
  * Use these everywhere for consistency
  */
 export const LABELS = {
@@ -87,7 +87,9 @@ export const LABELS = {
   CLOSE: 'Đóng',
   SAVE: 'Lưu',
   CANCEL: 'Huỷ',
-  
+  COPY: 'Sao chép',
+  COPY_CLASS_CODE: 'Sao chép mã lớp',
+  COPIED: 'Đã sao chép',
   // CRUD Actions (Admin)
   CREATE: 'Tạo',           // Create new entity
   EDIT: 'Chỉnh sửa',       // Edit existing entity
@@ -217,9 +219,20 @@ export const COMMENT_SLA_HOURS = {
 export const COURSE_CHECKPOINT_SESSIONS = {
   Coding: [5, 9],
   Robotics: [4, 8],
-  Art: [],
+  Art: [5, 9],
   Others: [5, 9],
 } as const;
+
+/**
+ * Special checkpoint sessions for specific course codes
+ * These override the category-level defaults
+ */
+export const COURSE_CODE_CHECKPOINT_SESSIONS: Record<string, number[]> = {
+  // Robotics 4+ courses have checkpoints at sessions 5 and 9 instead of 4 and 8
+  ROB4B: [5, 9],
+  ROB4A: [5, 9],
+  ROB4I: [5, 9],
+};
 
 export const TICKET_LABELS = {
   PAGE_TITLE: 'Phiếu Đánh giá',

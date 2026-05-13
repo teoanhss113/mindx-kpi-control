@@ -184,6 +184,60 @@ function UsageTrendChart({
   );
 }
 
+function RetentionChart({
+  items,
+  metric,
+  onMetricChange,
+}: {
+  items: Array<{ name: string; count: number }>;
+  metric: TrendMetric;
+  onMetricChange: (value: TrendMetric) => void;
+}) {
+  const label = metric === 'daily' ? 'Người dùng hoạt động theo ngày' : 'Người dùng hoạt động theo tuần';
+
+  return (
+    <ChartCard title="Mức độ quay lại của người dùng">
+      <div style={{ padding: 'var(--space-4) var(--space-4) 0' }}>
+        <ViewTabs
+          value={metric}
+          onChange={onMetricChange}
+          options={[
+            { value: 'daily', label: 'Theo ngày' },
+            { value: 'weekly', label: 'Theo tuần' },
+          ]}
+        />
+      </div>
+      <div style={{ padding: 'var(--space-4)', height: 280 }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart data={items} margin={{ top: 8, right: 16, left: 0, bottom: 8 }}>
+            <defs>
+              <linearGradient id="retentionFill" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="var(--status-success)" stopOpacity={0.16} />
+                <stop offset="95%" stopColor="var(--status-success)" stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" vertical={false} />
+            <XAxis dataKey="name" tick={{ fontSize: 11, fill: 'var(--text-quaternary)' }} axisLine={false} tickLine={false} />
+            <YAxis tick={{ fontSize: 11, fill: 'var(--text-quaternary)' }} axisLine={false} tickLine={false} width={36} />
+            <ReTooltip content={<CustomTooltip />} />
+            <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
+            <Area
+              type="monotone"
+              dataKey="count"
+              name={label}
+              stroke="var(--status-success)"
+              strokeWidth={2}
+              fill="url(#retentionFill)"
+              dot={{ r: 3, fill: 'var(--status-success)', strokeWidth: 0 }}
+              activeDot={{ r: 5 }}
+            />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+    </ChartCard>
+  );
+}
+
 function EnvironmentChartPanel({
   items,
   value,
@@ -334,6 +388,7 @@ export default function UsageAnalyticsPage() {
   const [selectedUserEmail, setSelectedUserEmail] = useState<string | null>(null);
   const [selectedEnvironmentGroup, setSelectedEnvironmentGroup] = useState<string | null>(null);
   const [trendMetric, setTrendMetric] = useState<TrendMetric>('hourly');
+  const [retentionMetric, setRetentionMetric] = useState<TrendMetric>('daily');
   const [environmentMetric, setEnvironmentMetric] = useState<EnvironmentMetric>('devices');
 
   const loadData = useCallback(async () => {
@@ -468,6 +523,22 @@ export default function UsageAnalyticsPage() {
       ? weeklyChartItems
       : hourlyChartItems;
 
+  const dailyRetentionItems = useMemo(() => (
+    data?.dailyActiveTrend.map(item => ({
+      name: new Date(item.date).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' }),
+      count: item.count,
+    })) || []
+  ), [data]);
+
+  const weeklyRetentionItems = useMemo(() => (
+    data?.weeklyActiveTrend.map(item => ({
+      name: `Tuần ${new Date(item.weekStart).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })}`,
+      count: item.count,
+    })) || []
+  ), [data]);
+
+  const retentionChartItems = retentionMetric === 'daily' ? dailyRetentionItems : weeklyRetentionItems;
+
   const environmentItems = useMemo(() => {
     if (!data) return [];
     if (environmentMetric === 'devices') return data.devices;
@@ -530,6 +601,12 @@ export default function UsageAnalyticsPage() {
               items={trendChartItems}
               metric={trendMetric}
               onMetricChange={setTrendMetric}
+            />
+
+            <RetentionChart
+              items={retentionChartItems}
+              metric={retentionMetric}
+              onMetricChange={setRetentionMetric}
             />
 
             <TopPagesChart items={data.topPages} />

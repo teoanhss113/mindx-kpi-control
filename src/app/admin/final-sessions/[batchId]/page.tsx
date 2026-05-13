@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { PageLayout } from '@/components/PageLayout';
-import { BatchStatusBadge, Badge, CourseCategoryBadge, DateMarkerBadge, JudgeRequestStatusBadge, useToast, ToastContainer, Modal, ModalHeader, ModalFooter, EmptyState, Toolbar, SortIcon, TableGroupHeader, UserSearchInput, ShiftRequestSuggestions, type ShiftRequest, type UserSearchResult, Icon, TableActionButton, TableActionGroup, DetailGrid, DetailField, DetailText } from '@/components/ui';
+import { BatchStatusBadge, Badge, CourseCategoryBadge, DateMarkerBadge, JudgeRequestStatusBadge, useToast, ToastContainer, Modal, ModalHeader, ModalFooter, EmptyState, Toolbar, SortIcon, TableGroupHeader, UserSearchInput, ShiftRequestSuggestions, type ShiftRequest, type UserSearchResult, Icon, TableActionButton, TableActionGroup, DetailGrid, DetailField, DetailText, SortableColumnWithCopy } from '@/components/ui';
 import { motion, AnimatePresence } from 'framer-motion';
 import { authFetch } from '@/lib/auth/clientAuth';
 import { dateRangeToUtcRange, fetchAllClasses } from '@/services/classesService';
@@ -631,6 +631,7 @@ export default function BatchDetailPage() {
             count={sortedSessions.length}
             isExpanded={true}
             onToggle={() => {}}
+            actionSlot={undefined}
           />
           <div className={styles.tableScrollWrapper}>
             {/* Header */}
@@ -638,7 +639,15 @@ export default function BatchDetailPage() {
               <div className={`${styles.sortableCol} ${sortKey === 'date' ? styles.activeSort : ''}`} onClick={() => handleSort('date')}>{LABELS.DATE} <SortIcon col="date" sortKey={sortKey} sortDir={sortDir} /></div>
               <div className={`${styles.sortableCol} ${sortKey === 'centre' ? styles.activeSort : ''}`} onClick={() => handleSort('centre')}>{LABELS.CENTRE} <SortIcon col="centre" sortKey={sortKey} sortDir={sortDir} /></div>
               <div className={`${styles.sortableCol} ${sortKey === 'category' ? styles.activeSort : ''}`} onClick={() => handleSort('category')}>{LABELS.COURSE_LINE} <SortIcon col="category" sortKey={sortKey} sortDir={sortDir} /></div>
-              <div className={`${styles.sortableCol} ${sortKey === 'name' ? styles.activeSort : ''}`} onClick={() => handleSort('name')}>{LABELS.CLASS_TITLE} <SortIcon col="name" sortKey={sortKey} sortDir={sortDir} /></div>
+              <SortableColumnWithCopy
+                label={LABELS.CLASS_TITLE}
+                sortKey="name"
+                currentSortKey={sortKey}
+                sortDir={sortDir}
+                onSort={() => handleSort('name')}
+                classCodes={sortedSessions.map(s => s.class_name)}
+                disabled={sortedSessions.length === 0}
+              />
               <div>Giờ</div>
               <div className={`${styles.sortableCol} ${sortKey === 'teacher' ? styles.activeSort : ''}`} onClick={() => handleSort('teacher')}>{LABELS.MAIN_TEACHER} <SortIcon col="teacher" sortKey={sortKey} sortDir={sortDir} /></div>
               <div className={`${styles.sortableCol} ${sortKey === 'students' ? styles.activeSort : ''}`} onClick={() => handleSort('students')} style={{ justifyContent: 'center' }}>{LABELS.STUDENTS} <SortIcon col="students" sortKey={sortKey} sortDir={sortDir} /></div>

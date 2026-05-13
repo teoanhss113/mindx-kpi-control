@@ -27,7 +27,7 @@ import {
   KPIBarChart, KPIChartCard, getKPILegendItems, getPaddedPercentDomain, getSharedChartLayout,
   SortableColumn, SortableHeader,
   CentreSelect, QuickFilterChips, ExportButton, KPIThresholdSuggestions,
-  CSVExportSettings, RoleBadge as SharedRoleBadge, TeacherAssignmentStatusBadge, FilterChip, CourseCategoryBadge, CentreBadge, type CSVColumnConfig,
+  CSVExportSettings, RoleBadge as SharedRoleBadge, TeacherAssignmentStatusBadge, FilterChip, CourseCategoryBadge, CentreBadge, SortableColumnWithCopy, type CSVColumnConfig,
 } from '@/components/ui';
 import { PageLayout } from '@/components/PageLayout';
 import { useTableSort } from '@/hooks/useTableSort';
@@ -732,12 +732,14 @@ export default function TeacherChangePage() {
               isExpanded={showActiveTable}
               onToggle={() => setShowActiveTable(p => !p)}
               actionSlot={
-                <ExportButton
-                  onClick={handleExportCSV}
-                  onSettingsClick={() => setShowCSVSettings(true)}
-                  disabled={filteredClasses.length === 0}
-                  count={filteredClasses.length}
-                />
+                <>
+                  <ExportButton
+                    onClick={handleExportCSV}
+                    onSettingsClick={() => setShowCSVSettings(true)}
+                    disabled={filteredClasses.length === 0}
+                    count={filteredClasses.length}
+                  />
+                </>
               }
               toolbarSlot={
                 <TableToolbar
@@ -803,14 +805,23 @@ export default function TeacherChangePage() {
                         letterSpacing: '0.04em', textTransform: 'uppercase',
                         background: 'var(--bg-elevated)',
                       }}>
-                        {(['name', 'status', 'progress', 'teachers'] as const).map((col, i) => {
+                        <SortableColumnWithCopy
+                          label="Lớp học"
+                          sortKey="name"
+                          currentSortKey={sortKey}
+                          sortDir={sortDir}
+                          onSort={() => handleSort('name')}
+                          classCodes={filteredClasses.map(a => a.cls.name)}
+                          disabled={filteredClasses.length === 0}
+                        />
+                        {(['status', 'progress', 'teachers'] as const).map((col, i) => {
                           const isSortable = true; // All columns are now sortable
                           return (
                             <div key={col}
                               className={isSortable ? `${styles.sortableCol} ${sortKey === col ? styles.activeSort : ''}` : ''}
                               style={isSortable ? { display: 'flex', alignItems: 'center', gap: 'var(--space-1)', userSelect: 'none' } : { display: 'flex', alignItems: 'center', userSelect: 'none' }}
                               onClick={() => isSortable && handleSort(col)}>
-                              {['Lớp học', 'Trạng thái', 'Tiến độ', 'Số GV (LEC+SUP)'][i]}
+                              {['Trạng thái', 'Tiến độ', 'Số GV (LEC+SUP)'][i]}
                               {isSortable && <SortIcon col={col} sortKey={sortKey} sortDir={sortDir} />}
                             </div>
                           );
