@@ -204,6 +204,21 @@ export const CLASS_QUALITY_LABELS = {
   CHECKPOINT_DEMO_SCORES: 'Điểm Checkpoint / Demo',
   RESCHEDULED_SESSIONS: 'Buổi dời',
   STUDENT_COUNT: 'Số lượng học viên',
+  COMMENT_DETAIL_FILTER: 'Lọc lỗi nhận xét',
+  ALL_COMMENT_DETAILS: 'Tất cả lỗi nhận xét',
+  VISIBLE_CLASS_COUNT_SUFFIX: 'lớp',
+} as const;
+
+export const COMMENT_SLA_HOURS = {
+  REGULAR: 48,
+  CHECKPOINT_OR_FINAL: 72,
+} as const;
+
+export const COURSE_CHECKPOINT_SESSIONS = {
+  Coding: [5, 9],
+  Robotics: [4, 8],
+  Art: [],
+  Others: [5, 9],
 } as const;
 
 export const TICKET_LABELS = {

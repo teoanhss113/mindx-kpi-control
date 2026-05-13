@@ -1,5 +1,6 @@
 import { Class, Session, CommentAreaDef } from '@/types/classes';
 import { getCourseCategory } from '@/lib/courseCategories';
+import { COMMENT_SLA_HOURS, COURSE_CHECKPOINT_SESSIONS } from '@/constants';
 import { computeTBCK, determineRank } from '@/lib/courseGrading';
 import {
   getStudentAttendanceCommentContent,
@@ -22,18 +23,31 @@ import {
   StudentDemoScore
 } from '@/types/classQuality';
 
-// Checkpoint sessions where comments are required even if student is absent
-const CHECKPOINT_SESSIONS = [5, 9, 14]; // 1-indexed: session 5, 9, 14
+function getCheckpointSessionsForClass(cls: Class): readonly number[] {
+  return (COURSE_CHECKPOINT_SESSIONS[getCourseCategory(cls)] ?? COURSE_CHECKPOINT_SESSIONS.Others) as readonly number[];
+}
+
+function getFinalSessionNumber(cls: Class, slots: Session[]): number {
+  return Math.max(1, cls.numberOfSessions || slots.length || 1);
+}
+
+function getCommentDeadlineHours(cls: Class, sessionNumber: number, slots: Session[]): number {
+  const checkpointSessions = getCheckpointSessionsForClass(cls);
+  const finalSessionNumber = getFinalSessionNumber(cls, slots);
+
+  return checkpointSessions.includes(sessionNumber) || sessionNumber === finalSessionNumber
+    ? COMMENT_SLA_HOURS.CHECKPOINT_OR_FINAL
+    : COMMENT_SLA_HOURS.REGULAR;
+}
 
 /**
- * Default exempted sessions — all sessions 1-30 EXCEPT checkpoints (5, 9, 14).
- * A student absent on an exempted session is NOT required to have a teacher comment.
- * A student absent on a non-exempted (checkpoint) session IS still required to have a comment.
+ * Backward-compatible default for pages that expose manual absent-comment exemption.
+ * Runtime analysis now derives checkpoint/final sessions per class/course category.
  */
 export const DEFAULT_EXEMPTED_SESSIONS: number[] = Array.from(
   { length: 30 },
   (_, i) => i + 1
-).filter(s => !CHECKPOINT_SESSIONS.includes(s));
+).filter(s => !(COURSE_CHECKPOINT_SESSIONS.Others as readonly number[]).includes(s));
 
 function summarizeTemplateMatch(parsedAreas: ReturnType<typeof parseCommentByAreasStructured>): TemplateMatch | undefined {
   const matches = parsedAreas
@@ -87,8 +101,15 @@ export function analyzeComments(
 
   for (let sessionIndex = 0; sessionIndex < slots.length; sessionIndex++) {
     const slot = slots[sessionIndex];
-    const slotDate = new Date(slot.date);
+    const slotDate = new Date(slot.endTime || slot.date);
     const isPast = slotDate.getTime() < Date.now();
+    const sessionNumber = sessionIndex + 1;
+    const checkpointSessions = getCheckpointSessionsForClass(cls);
+    const finalSessionNumber = getFinalSessionNumber(cls, slots);
+    const isCheckpoint = checkpointSessions.includes(sessionNumber);
+    const isFinalSession = sessionNumber === finalSessionNumber;
+    const isCommentRequiredForAbsent = isCheckpoint || isFinalSession || !exemptedSessions.includes(sessionNumber);
+    const commentDeadlineHours = getCommentDeadlineHours(cls, sessionNumber, slots);
     
     // Find teacher
     let teacherName = 'Không rõ';
@@ -113,10 +134,9 @@ export function analyzeComments(
 
        const studentStatus = sa.status?.toUpperCase() || '';
        const isAbsent = ['ABSENT', 'ABSENT_UNEXCUSED', 'ABSENT_WITH_NOTICE'].includes(studentStatus);
-       const isCheckpoint = !exemptedSessions.includes(sessionIndex + 1); // sessionIndex is 0-based, sessions are 1-based
-       
-       // Skip comment check if student is absent on non-checkpoint sessions
-       if (isAbsent && !isCheckpoint) {
+
+       // Skip comment check if student is absent on sessions that do not require absent comments.
+       if (isAbsent && !isCommentRequiredForAbsent) {
          return;
        }
 
@@ -156,11 +176,11 @@ export function analyzeComments(
 
        if (isPast && !text) {
            const hoursPassed = (Date.now() - slotDate.getTime()) / (1000 * 60 * 60);
-           if (hoursPassed > 48) {
-               status = 'overdue';
-               isOverdue = true;
-               overdueHours = hoursPassed;
-           }
+            if (hoursPassed > commentDeadlineHours) {
+                status = 'overdue';
+                isOverdue = true;
+                overdueHours = hoursPassed;
+            }
        }
 
        if (status === 'empty') { st.emptyCount++; emptyCount++; }
@@ -178,6 +198,9 @@ export function analyzeComments(
          templateMatch,
          isOverdue,
          overdueHours: isOverdue ? Math.floor(overdueHours) : undefined,
+         commentDeadlineHours,
+         isCheckpointSession: isCheckpoint,
+         isFinalSession,
          parsedAreas,
        });
     });

@@ -23,6 +23,9 @@ export interface StudentCommentStatus {
     templateMatch?: TemplateMatch;
     isOverdue: boolean;
     overdueHours?: number;
+    commentDeadlineHours?: number;
+    isCheckpointSession?: boolean;
+    isFinalSession?: boolean;
     parsedAreas?: ParsedArea[];
   }[];
 }

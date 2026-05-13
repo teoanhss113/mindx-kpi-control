@@ -77,6 +77,7 @@ export {
 } from './AttendanceStatus'
 export type { AttendanceStatusKind, AttendanceStatusMeta } from './AttendanceStatus'
 export {
+  COMMENT_DETAIL_FILTER_OPTIONS,
   COMMENT_STATUS_COUNT_LABELS,
   COMMENT_STATUS_GROUP_LABELS,
   COMMENT_STATUS_LABELS,

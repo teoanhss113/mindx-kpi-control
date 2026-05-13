@@ -12,6 +12,8 @@ import {
   AdminTableSection,
   EmptyState,
   FilterChip,
+  MultiSelect,
+  COMMENT_DETAIL_FILTER_OPTIONS,
 } from '@/components/ui';
 import { CLASS_QUALITY_LABELS, LABELS } from '@/constants';
 import styles from '@/app/dashboard.module.css';
@@ -34,6 +36,8 @@ function getActiveStudentCount(cls: AnalyzedClassForQuality['cls']): number {
 }
 
 type SortKey = 'name' | 'teacher' | 'studentCount' | 'progress' | 'commentIssues' | 'attendanceAlerts' | 'rescheduled' | 'cp';
+type QuickFilterKey = 'hasIssues' | 'commentIssues' | 'attendanceAlerts' | 'rescheduled';
+type CommentDetailFilter = (typeof COMMENT_DETAIL_FILTER_OPTIONS)[number]['value'];
 
 interface Props {
   classes: AnalyzedClassForQuality[];
@@ -52,6 +56,19 @@ const ISSUE_VARIANT: Record<IssueTone, React.ComponentProps<typeof Badge>['varia
   default: 'default',
 };
 
+const QUICK_FILTERS: { key: QuickFilterKey; label: string }[] = [
+  { key: 'hasIssues', label: CLASS_QUALITY_LABELS.HAS_ISSUES },
+  { key: 'commentIssues', label: CLASS_QUALITY_LABELS.COMMENT_ISSUES },
+  { key: 'attendanceAlerts', label: CLASS_QUALITY_LABELS.ATTENDANCE_ALERTS },
+  { key: 'rescheduled', label: CLASS_QUALITY_LABELS.RESCHEDULED },
+];
+
+function hasCommentStatus(a: AnalyzedClassForQuality, status: CommentDetailFilter): boolean {
+  return a.commentAnalysis.students.some(student =>
+    student.comments.some(comment => comment.status === status)
+  );
+}
+
 function IssueChip({ label, count, tone }: { label: string; count: number; tone: IssueTone }) {
   if (count === 0) return null;
   return (
@@ -65,7 +82,8 @@ function IssueChip({ label, count, tone }: { label: string; count: number; tone:
 export function ClassQualityUnifiedTable({ classes, search, onSearchChange, onRowClick }: Props) {
   const [sortKey, setSortKey] = useState<SortKey>('commentIssues');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
-  const [quickFilter, setQuickFilter] = useState<string | null>(null);
+  const [quickFilter, setQuickFilter] = useState<QuickFilterKey | null>(null);
+  const [commentDetailFilters, setCommentDetailFilters] = useState<CommentDetailFilter[]>([]);
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -86,6 +104,15 @@ export function ClassQualityUnifiedTable({ classes, search, onSearchChange, onRo
     let attendanceAlerts = 0;
     let rescheduled = 0;
     let hasIssues = 0;
+    const commentDetails: Record<CommentDetailFilter, number> = {
+      overdue: 0,
+      duplicate_other: 0,
+      template_exact: 0,
+      brief: 0,
+      empty: 0,
+      duplicate_self: 0,
+      template_modified: 0,
+    };
 
     baseList.forEach(a => {
       const cIssues = a.commentAnalysis.emptyCount + a.commentAnalysis.briefCount + a.commentAnalysis.duplicateCount + a.commentAnalysis.overdueCount;
@@ -97,10 +124,18 @@ export function ClassQualityUnifiedTable({ classes, search, onSearchChange, onRo
       if (hasAttendanceAlerts) attendanceAlerts += 1;
       if (hasRescheduled) rescheduled += 1;
       if (hasCommentIssues || hasAttendanceAlerts || hasRescheduled) hasIssues += 1;
+      COMMENT_DETAIL_FILTER_OPTIONS.forEach(option => {
+        if (hasCommentStatus(a, option.value)) commentDetails[option.value] += 1;
+      });
     });
 
-    return { commentIssues, attendanceAlerts, rescheduled, hasIssues };
+    return { commentIssues, attendanceAlerts, rescheduled, hasIssues, commentDetails };
   }, [baseList]);
+
+  const commentDetailOptions = useMemo(() => COMMENT_DETAIL_FILTER_OPTIONS.map(option => ({
+    ...option,
+    label: `${option.label} (${issueCounts.commentDetails[option.value]})`,
+  })), [issueCounts.commentDetails]);
 
   const filtered = useMemo(() => {
     let list = baseList;
@@ -118,6 +153,9 @@ export function ClassQualityUnifiedTable({ classes, search, onSearchChange, onRo
         const cIssues = a.commentAnalysis.emptyCount + a.commentAnalysis.briefCount + a.commentAnalysis.duplicateCount + a.commentAnalysis.overdueCount;
         return cIssues > 0 || a.attendanceAnalysis.totalAlerts > 0 || a.reschedulingAnalysis.rescheduledSessions > 0;
       });
+    }
+    if (commentDetailFilters.length > 0) {
+      list = list.filter(a => commentDetailFilters.some(status => hasCommentStatus(a, status)));
     }
 
     return [...list].sort((a, b) => {
@@ -138,7 +176,7 @@ export function ClassQualityUnifiedTable({ classes, search, onSearchChange, onRo
       }
       return 0;
     });
-  }, [baseList, quickFilter, sortKey, sortDir]);
+  }, [baseList, quickFilter, commentDetailFilters, sortKey, sortDir]);
 
   return (
     <AdminTableSection
@@ -152,12 +190,7 @@ export function ClassQualityUnifiedTable({ classes, search, onSearchChange, onRo
           searchPlaceholder={`${LABELS.SEARCH_CLASS.replace('...', '')}, ${LABELS.CENTRE.toLowerCase()}...`}
           quickFilterSlots={
             <div className={styles.toolbarCluster}>
-              {[
-                { key: 'hasIssues', label: CLASS_QUALITY_LABELS.HAS_ISSUES },
-                { key: 'commentIssues', label: CLASS_QUALITY_LABELS.COMMENT_ISSUES },
-                { key: 'attendanceAlerts', label: CLASS_QUALITY_LABELS.ATTENDANCE_ALERTS },
-                { key: 'rescheduled', label: CLASS_QUALITY_LABELS.RESCHEDULED },
-              ].map(f => (
+              {QUICK_FILTERS.map(f => (
                 <FilterChip
                   key={f.key}
                   active={quickFilter === f.key}
@@ -173,12 +206,21 @@ export function ClassQualityUnifiedTable({ classes, search, onSearchChange, onRo
                   {f.label}
                 </FilterChip>
               ))}
+              <MultiSelect
+                menuPosition="fixed"
+                options={commentDetailOptions}
+                selected={commentDetailFilters}
+                onChange={(values) => setCommentDetailFilters(values as CommentDetailFilter[])}
+                placeholder={commentDetailFilters.length > 0 ? CLASS_QUALITY_LABELS.COMMENT_DETAIL_FILTER : CLASS_QUALITY_LABELS.ALL_COMMENT_DETAILS}
+                maxDisplay={1}
+              />
             </div>
           }
-          filterSlots={<span className={styles.metricText}>{filtered.length}/{classes.length} lớp</span>}
-          hasFilter={!!quickFilter || !!search.trim()}
+          filterSlots={<span className={styles.metricText}>{filtered.length}/{classes.length} {CLASS_QUALITY_LABELS.VISIBLE_CLASS_COUNT_SUFFIX}</span>}
+          hasFilter={!!quickFilter || commentDetailFilters.length > 0 || !!search.trim()}
           onClearFilter={() => {
             setQuickFilter(null);
+            setCommentDetailFilters([]);
             onSearchChange('');
           }}
         />

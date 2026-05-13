@@ -3802,8 +3802,8 @@ export default function TeacherSchedulePage() {
           setClassQualityData(null);
         }}>
           <ModalHeader
-            title={selectedSlot ? "Tìm giáo viên thay thế" : "Tìm giáo viên rảnh"}
-            subtitle={selectedSlot ? `Đề xuất giáo viên cho: ${selectedSlot.className}` : "Nhập thông tin ca cần điều phối"}
+            title={selectedSlot ? "Quản lý ca học" : "Tìm giáo viên rảnh"}
+            subtitle={selectedSlot ? `${selectedSlot.className} - Buổi ${selectedSlot.sessionNumber || 'N/A'}` : "Nhập thông tin ca cần điều phối"}
             onClose={() => {
               setShowCoordinationPanel(false);
               setSelectedSlot(null);
