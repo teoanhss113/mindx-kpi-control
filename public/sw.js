@@ -21,7 +21,7 @@ self.addEventListener('push', (event) => {
   console.log('[SW] Push received');
 
   // Defaults — shown if payload parse fails
-  let title = 'MindX KPI Dashboard';
+  let title = 'MindX Teaching Hub HCM1&4';
   let options = {
     body: 'Bạn có thông báo mới',
     icon: '/logo/logo.svg',

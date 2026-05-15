@@ -135,8 +135,8 @@ function LoginForm() {
             <img src="/logo/logo.svg" alt="MindX" width={36} height={36} style={{ objectFit: 'contain', display: 'block' }} />
           </div>
           <div>
-            <div className={styles.brandName}>KPI Control</div>
-            <div className={styles.brandSub}>MindX Teacher Control</div>
+            <div className={styles.brandName}>MindX Teaching Hub HCM1&4</div>
+            <div className={styles.brandSub}>Teacher Operations</div>
           </div>
         </div>
 
@@ -255,4 +255,3 @@ export default function LoginPage() {
     </Suspense>
   );
 }
-

@@ -3565,6 +3565,7 @@ export default function TeacherSchedulePage() {
                         onChange={(ids) => startTransition(() => setSelectedTeachers(ids))}
                         placeholder="Tất cả giáo viên"
                         searchable
+                        searchPlaceholder="Tìm giáo viên..."
                         maxDisplay={1}
                       />
                     </>

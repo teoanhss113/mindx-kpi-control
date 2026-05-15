@@ -756,7 +756,11 @@ function pageLabel(event: UsageEvent) {
     return USAGE_PAGE_LABELS[event.page_key];
   }
 
-  if (event.page_title && event.page_title !== 'MindX KPI Control — Tổng quan Quản trị') {
+  if (
+    event.page_title &&
+    event.page_title !== 'MindX KPI Control — Tổng quan Quản trị' &&
+    event.page_title !== 'MindX Teaching Hub HCM1&4'
+  ) {
     return event.page_title;
   }
 

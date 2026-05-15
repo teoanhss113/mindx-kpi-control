@@ -441,7 +441,8 @@ export function MultiSelect({
   onChange,
   placeholder,
   maxDisplay = 2,
-  searchable = false,
+  searchable = true,
+  searchPlaceholder = 'Tìm kiếm...',
   displayFormat = 'text',
   menuPosition = 'bottom',
 }: {
@@ -451,6 +452,7 @@ export function MultiSelect({
   placeholder: string
   maxDisplay?: number
   searchable?: boolean
+  searchPlaceholder?: string
   displayFormat?: 'text' | 'chip'
   menuPosition?: 'bottom' | 'top' | 'fixed'
 }) {
@@ -576,7 +578,7 @@ export function MultiSelect({
                 ref={searchRef}
                 type="text"
                 className={styles.dropdownSearchInput}
-                placeholder="Tìm kiếm..."
+                placeholder={searchPlaceholder}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 onClick={(e) => e.stopPropagation()}

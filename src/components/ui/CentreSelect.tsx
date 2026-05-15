@@ -240,8 +240,8 @@ export function CentreSelect({
       placeholder={placeholder}
       maxDisplay={maxDisplay}
       searchable={searchable}
+      searchPlaceholder="Tìm cơ sở..."
       menuPosition={menuPosition}
     />
   );
 }
-

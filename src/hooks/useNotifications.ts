@@ -242,7 +242,7 @@ export function useNotifications(): UseNotificationsReturn {
 
     try {
       await showLocalNotification('Test Notification', {
-        body: 'Đây là thông báo thử nghiệm từ MindX KPI Dashboard',
+        body: 'Đây là thông báo thử nghiệm từ MindX Teaching Hub HCM1&4',
         tag: 'test-notification',
         requireInteraction: false
       });

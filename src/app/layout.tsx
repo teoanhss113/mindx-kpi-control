@@ -5,8 +5,8 @@ import { PermissionsProvider } from '@/lib/PermissionsContext';
 import { ActivityTracker } from '@/components/ActivityTracker';
 
 export const metadata: Metadata = {
-  title: 'MindX KPI Control — Tổng quan Quản trị',
-  description: 'Hệ thống theo dõi Tỷ lệ Hoàn thành và Hiệu suất Lớp học — MindX Education. Thiết kế lấy cảm hứng từ Linear với Inter Variable và OpenType features.',
+  title: 'MindX Teaching Hub HCM1&4',
+  description: 'Trung tâm vận hành lớp học, giáo viên và chất lượng đào tạo cho MindX HCM1&4.',
   icons: {
     icon: '/logo/logo.svg',
     apple: '/logo/logo.svg',
