@@ -7,7 +7,7 @@ import { usePermissionsContext } from '@/lib/PermissionsContext';
 
 interface ProtectedPageProps {
   children: React.ReactNode;
-  pageKey: string;
+  pageKey: string | string[];
   requireEdit?: boolean;
 }
 
@@ -16,7 +16,8 @@ export function ProtectedPage({ children, pageKey, requireEdit = false }: Protec
   const { loading, canView, canEdit } = usePermissionsContext();
   const router = useRouter();
 
-  const hasAccess = !loading && (requireEdit ? canEdit(pageKey) : canView(pageKey));
+  const pageKeys = Array.isArray(pageKey) ? pageKey : [pageKey];
+  const hasAccess = !loading && pageKeys.some(key => requireEdit ? canEdit(key) : canView(key));
 
   // Redirect to login when not authenticated (preserve current URL as callbackUrl)
   useEffect(() => {

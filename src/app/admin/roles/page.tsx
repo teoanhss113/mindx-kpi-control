@@ -15,18 +15,12 @@ import {
   deleteRole
 } from '@/lib/admin-actions';
 import { USER_PAGE_KEYS } from '@/lib/pageGroups';
-import { getAuthToken } from '@/lib/auth/clientAuth';
+import { authFetch, getAuthToken } from '@/lib/auth/clientAuth';
 import type { Role, Page, RolePermission } from '@/lib/supabase/types';
 import styles from '@/app/dashboard.module.css';
 
 interface RoleWithPermissions extends Role {
   role_permissions: (RolePermission & { pages: Page })[];
-}
-
-interface PageOption {
-  id: string;
-  label: string;
-  value: string;
 }
 
 interface PagePermission {
@@ -85,7 +79,7 @@ export default function RolesPage() {
     setLoading(true);
     try {
       // Ensure all pages exist in DB before loading
-      await fetch('/api/admin/sync-pages', { method: 'POST' });
+      await authFetch('/api/admin/sync-pages', { method: 'POST' });
 
       const token = await getAuthToken();
       const [rolesResult, pagesResult] = await Promise.all([
@@ -108,7 +102,10 @@ export default function RolesPage() {
   };
 
   useEffect(() => {
-    loadData();
+    const timer = window.setTimeout(() => {
+      loadData();
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
   // Filter roles
@@ -116,13 +113,6 @@ export default function RolesPage() {
     role.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     (role.description && role.description.toLowerCase().includes(searchTerm.toLowerCase()))
   );
-
-  // Page options for MultiSelect
-  const pageOptions: PageOption[] = pages.map(page => ({
-    id: page.id,
-    label: page.page_name,
-    value: page.id,
-  }));
 
   // Handle form
   const resetForm = () => {

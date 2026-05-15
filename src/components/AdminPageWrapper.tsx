@@ -8,7 +8,7 @@ import { useAuth } from '@/lib/AuthContext';
 interface AdminPageWrapperProps {
   children: ReactNode;
   title: string;
-  activePage?: 'admin-users' | 'admin-regions' | 'admin-roles' | 'admin-usage-analytics';
+  activePage?: 'admin-users' | 'admin-regions' | 'admin-roles' | 'admin-usage-analytics' | 'admin-manager-schedules';
 }
 
 export function AdminPageWrapper({ children, title, activePage = 'admin-users' }: AdminPageWrapperProps) {

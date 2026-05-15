@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useCallback, useMemo, useState, useEffect } from 'react';
 import { MultiSelect, type SelectOption } from './index';
 
 export interface Centre {
@@ -32,6 +32,8 @@ interface CentreSelectProps {
   showRegionQuickSelect?: boolean;
   /** Position of the menu */
   menuPosition?: 'bottom' | 'top' | 'fixed';
+  /** Show the bulk "Tất cả" option. Disable for single-centre picking. */
+  showSelectAll?: boolean;
 }
 
 /**
@@ -78,23 +80,14 @@ export function CentreSelect({
   filterToIds,
   showRegionQuickSelect = false,
   menuPosition = 'bottom',
+  showSelectAll = true,
 }: CentreSelectProps) {
   const [regions, setRegions] = useState<Region[]>([]);
-  const [loadingRegions, setLoadingRegions] = useState(false);
 
-  // Load regions if showRegionQuickSelect is enabled
-  useEffect(() => {
-    if (!showRegionQuickSelect) return;
-    
-    loadRegions();
-  }, [showRegionQuickSelect, filterToIds]);
-
-  async function loadRegions() {
-    setLoadingRegions(true);
+  const loadRegions = useCallback(async () => {
     try {
       const { supabase } = await import('@/lib/supabase/client');
-      
-      // Fetch regions with their centres
+
       const { data: regionsData, error: regionsError } = await supabase
         .from('regions')
         .select('id, name, is_active')
@@ -106,7 +99,6 @@ export function CentreSelect({
         return;
       }
 
-      // Fetch region_centres mapping
       const { data: regionCentresData, error: rcError } = await supabase
         .from('region_centres')
         .select('region_id, centre_id')
@@ -117,12 +109,10 @@ export function CentreSelect({
         return;
       }
 
-      // Group centres by region
       const regionsWithCentres: Region[] = regionsData.map(region => {
         const centreMappings = regionCentresData?.filter(rc => rc.region_id === region.id) || [];
         const centreIds = centreMappings.map(rc => rc.centre_id);
-        
-        // Filter by filterToIds if provided
+
         const filteredCentreIds = filterToIds
           ? centreIds.filter(id => filterToIds.includes(id))
           : centreIds;
@@ -134,16 +124,20 @@ export function CentreSelect({
         };
       });
 
-      // Only show regions that have centres (after filtering)
       const nonEmptyRegions = regionsWithCentres.filter(r => r.centre_ids.length > 0);
       setRegions(nonEmptyRegions);
     } catch (error) {
       console.error('Failed to load regions:', error);
       setRegions([]);
-    } finally {
-      setLoadingRegions(false);
     }
-  }
+  }, [filterToIds]);
+
+  // Load regions if showRegionQuickSelect is enabled
+  useEffect(() => {
+    if (!showRegionQuickSelect) return;
+    const timer = window.setTimeout(() => void loadRegions(), 0);
+    return () => window.clearTimeout(timer);
+  }, [showRegionQuickSelect, loadRegions]);
 
   const options: SelectOption[] = useMemo(() => {
     // Filter centres if filterToIds is provided
@@ -175,15 +169,10 @@ export function CentreSelect({
 
   // Custom onChange handler to handle region selection
   function handleChange(selectedValues: string[]) {
-    console.log('[CentreSelect] handleChange called with:', selectedValues);
-    console.log('[CentreSelect] Current selected:', selected);
-    
     // Check if any region was selected (newly added)
     const regionSelections = selectedValues.filter(v => v.startsWith('region:'));
     
     if (regionSelections.length > 0) {
-      console.log('[CentreSelect] Region selections detected:', regionSelections);
-      
       // Get centre-only values (not regions) from selectedValues
       const centreOnlyValues = selectedValues.filter(v => !v.startsWith('region:'));
       
@@ -193,25 +182,18 @@ export function CentreSelect({
       regionSelections.forEach(regionValue => {
         const regionId = regionValue.replace('region:', '');
         const region = regions.find(r => r.id === regionId);
-        console.log('[CentreSelect] Processing region:', regionId, region);
         
         if (region) {
-          console.log('[CentreSelect] Region centre_ids:', region.centre_ids);
-          
           // Check if ALL centres in this region are already selected
           const allCentresSelected = region.centre_ids.every(centreId => 
             selected.includes(centreId)
           );
-          
-          console.log('[CentreSelect] All centres in region selected?', allCentresSelected);
-          
+
           if (allCentresSelected) {
             // DESELECT: Remove all centres from this region
-            console.log('[CentreSelect] Deselecting all centres in region');
             finalSelection = finalSelection.filter(id => !region.centre_ids.includes(id));
           } else {
             // SELECT: Add all centres from this region
-            console.log('[CentreSelect] Selecting all centres in region');
             region.centre_ids.forEach(centreId => {
               if (!finalSelection.includes(centreId)) {
                 finalSelection.push(centreId);
@@ -220,14 +202,11 @@ export function CentreSelect({
           }
         }
       });
-      
-      console.log('[CentreSelect] Final selection:', finalSelection);
-      
+
       // Call onChange with only centre IDs (no region values)
       onChange(finalSelection);
     } else {
       // Normal centre selection (no regions involved)
-      console.log('[CentreSelect] Normal centre selection');
       onChange(selectedValues);
     }
   }
@@ -242,6 +221,7 @@ export function CentreSelect({
       searchable={searchable}
       searchPlaceholder="Tìm cơ sở..."
       menuPosition={menuPosition}
+      showSelectAll={showSelectAll}
     />
   );
 }

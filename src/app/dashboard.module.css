@@ -1080,6 +1080,10 @@
   padding: var(--space-3) var(--space-4);
 }
 
+.adminTableToolbarPanel {
+  padding-bottom: var(--space-3);
+}
+
 /* Container for table and its toolbar within AdminTableSection */
 .adminTableContent {
   display: flex;
@@ -1421,13 +1425,14 @@
 ══════════════════════════════════════════════════════════════════════════════ */
 .multiDropdown { 
   position: relative;
-  /* Remove width: 100% to allow fit-content behavior */
   min-width: 0;
   box-sizing: border-box;
 }
 
 .multiDropdownTrigger {
   display: flex; align-items: center; gap: var(--space-2);
+  width: 100%;
+  max-width: 100%;
   background: rgba(0, 0, 0, 0.02); border: 1px solid var(--border-input);
   color: var(--text-secondary); padding: var(--space-2);
   border-radius: var(--radius-comfortable);
@@ -1436,7 +1441,6 @@
   transition: border-color 0.15s ease, background 0.15s ease;
   white-space: nowrap;
   box-sizing: border-box;
-  min-width: 0;
   min-width: 120px;
   text-align: left; /* Force consistent left alignment overriding button default */
 }
@@ -1475,6 +1479,7 @@
 .dropdownItemLabel {
   font-size: 13px; color: var(--text-secondary); font-weight: 400;
   letter-spacing: -0.13px; user-select: none;
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .dropdownSectionLabel {
   font-size: 11px; font-weight: 590; color: var(--text-tertiary);
@@ -1582,6 +1587,167 @@
   -webkit-overflow-scrolling: touch;
   /* Also clip vertically so rounded corners of tableSection apply correctly */
   overflow-y: visible;
+}
+
+.managerScheduleCalendarContent {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-4) var(--space-5);
+  background: var(--bg-surface);
+  box-sizing: border-box;
+  min-width: 100%;
+  width: max-content;
+}
+
+.managerScheduleWeekTitle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 590;
+}
+
+.managerScheduleSearchWrap {
+  position: relative;
+}
+
+.managerScheduleSearchIcon {
+  position: absolute;
+  left: 10px;
+  top: 10px;
+}
+
+.managerScheduleSearchInput {
+  width: 100%;
+  padding-left: 32px;
+}
+
+.managerScheduleCalendarGrid {
+  min-width: 1220px;
+  display: grid;
+  grid-template-columns: 104px repeat(7, minmax(158px, 1fr));
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-comfortable);
+  overflow: hidden;
+}
+
+.managerScheduleHeaderCell {
+  padding: var(--space-2);
+  background: var(--bg-elevated);
+  border-right: 1px solid var(--border-primary);
+}
+
+.managerScheduleHeaderCellRequired {
+  background: rgba(245, 158, 11, 0.08);
+  border-top: 2px solid var(--status-warning);
+}
+
+.managerScheduleHeaderLabel {
+  font-size: 12px;
+  font-weight: 590;
+  color: var(--text-secondary);
+}
+
+.managerScheduleHeaderLabelRequired {
+  color: var(--status-warning);
+}
+
+.managerScheduleHeaderDate {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  margin-top: 2px;
+}
+
+.managerScheduleSessionCell {
+  padding: var(--space-3);
+  border-top: 1px solid var(--border-primary);
+  border-right: 1px solid var(--border-primary);
+  background: var(--bg-surface);
+}
+
+.managerScheduleSessionLabel {
+  font-size: 13px;
+  font-weight: 590;
+  color: var(--text-primary);
+}
+
+.managerScheduleSessionTime {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  margin-top: 2px;
+}
+
+.managerScheduleSlotCell {
+  min-width: 0;
+  min-height: 132px;
+  padding: var(--space-2);
+  border-top: 1px solid var(--border-primary);
+  border-right: 1px solid var(--border-primary);
+  background: var(--bg-surface);
+}
+
+.managerScheduleSlotCellRequired {
+  background: rgba(245, 158, 11, 0.04);
+}
+
+.managerScheduleEmptySlot {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.managerScheduleSlotStack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.managerScheduleCentreGroup {
+  min-width: 0;
+  padding: var(--space-2);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-comfortable);
+  background: var(--bg-elevated);
+}
+
+.managerScheduleCentreHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.managerScheduleMemberList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 6px;
+  min-width: 0;
+}
+
+.managerScheduleMemberRow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.managerScheduleMemberName {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--text-secondary);
+}
+
+.managerScheduleDeleteButton {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
 }
 
 .classItemHeader {

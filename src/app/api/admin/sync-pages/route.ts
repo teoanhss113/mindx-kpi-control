@@ -10,9 +10,6 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-// All pages required by the application
-import { USER_PAGE_KEYS } from '@/lib/pageGroups';
-
 const REQUIRED_PAGES = [
   // ── Trang người dùng ──
   {
@@ -35,6 +32,13 @@ const REQUIRED_PAGES = [
     path: '/judge-requests',
     description: 'Yêu cầu làm giám khảo cho buổi cuối khoá',
     display_order: 3,
+  },
+  {
+    key: 'manager-schedules',
+    page_name: 'Đăng ký lịch Quản lý',
+    path: '/admin/schedule',
+    description: 'Quản lý đăng ký lịch làm việc hằng tuần theo cơ sở và buổi',
+    display_order: 10,
   },
   // ── Trang quản trị ──
   {
@@ -80,46 +84,53 @@ const REQUIRED_PAGES = [
     display_order: 9,
   },
   {
+    key: 'admin-manager-schedules',
+    page_name: 'Quản trị lịch Quản lý',
+    path: '/admin/manager-schedules',
+    description: 'Admin theo dõi lịch làm việc của quản lý theo thời gian và cơ sở',
+    display_order: 11,
+  },
+  {
     key: 'final-sessions',
     page_name: 'Giám khảo Cuối khoá',
     path: '/admin/final-sessions',
     description: 'Quản lý batch giám khảo và chia sẻ link cho giáo viên JUDGE',
-    display_order: 10,
+    display_order: 12,
   },
   {
     key: 'teachers',
     page_name: 'Quản lý Giáo viên',
     path: '/admin/teachers',
     description: 'Trang quản lý thông tin giáo viên',
-    display_order: 11,
+    display_order: 13,
   },
   {
     key: 'admin-users',
     page_name: 'Quản lý Tài khoản',
     path: '/admin/users',
     description: 'Trang quản lý tài khoản người dùng hệ thống',
-    display_order: 12,
+    display_order: 14,
   },
   {
     key: 'admin-regions',
     page_name: 'Quản lý Khu vực',
     path: '/admin/regions',
     description: 'Trang quản lý khu vực và cơ sở',
-    display_order: 13,
+    display_order: 15,
   },
   {
     key: 'admin-roles',
     page_name: 'Quản lý Vai trò',
     path: '/admin/roles',
     description: 'Trang quản lý vai trò và phân quyền',
-    display_order: 14,
+    display_order: 16,
   },
   {
     key: 'admin-usage-analytics',
     page_name: 'Phân tích Sử dụng',
     path: '/admin/usage-analytics',
     description: 'Theo dõi tần suất sử dụng, nhu cầu, thiết bị và tải hệ thống',
-    display_order: 15,
+    display_order: 17,
   },
 ];
 
@@ -142,7 +153,7 @@ export async function POST(request: NextRequest) {
     // Upsert each page
     for (const page of REQUIRED_PAGES) {
       try {
-        const { data, error } = await supabase
+        const { error } = await supabase
           .from('pages')
           .upsert(
             {
@@ -169,8 +180,8 @@ export async function POST(request: NextRequest) {
             results.created.push(page.key);
           }
         }
-      } catch (err: any) {
-        results.errors.push(`${page.key}: ${err.message}`);
+      } catch (err: unknown) {
+        results.errors.push(`${page.key}: ${err instanceof Error ? err.message : 'Unknown error'}`);
       }
     }
 
@@ -208,7 +219,7 @@ export async function POST(request: NextRequest) {
       },
       details: results,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     return authErrorResponse(error);
   }
 }
@@ -238,7 +249,7 @@ export async function GET(request: NextRequest) {
       missing: missingKeys,
       needsSync: missingKeys.length > 0,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     return authErrorResponse(error);
   }
 }

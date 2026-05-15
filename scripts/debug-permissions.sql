@@ -95,6 +95,8 @@ Required page keys:
 - tickets (Phiếu Đánh giá)
 - class-quality (Chất lượng Lớp học)
 - office-hours (Ca Trải nghiệm)
+- manager-schedules (Đăng ký lịch Quản lý)
+- admin-manager-schedules (Quản trị lịch Quản lý)
 - teacher-schedule (Điều phối Giáo viên)
 - teachers (Quản lý Giáo viên)
 - admin-users (Quản lý Tài khoản)
@@ -110,6 +112,8 @@ INSERT INTO pages (key, page_name, description, created_at) VALUES
   ('tickets', 'Phiếu Đánh giá', 'Trang phiếu đánh giá', NOW()),
   ('class-quality', 'Chất lượng Lớp học', 'Trang chất lượng lớp học', NOW()),
   ('office-hours', 'Ca Trải nghiệm', 'Trang ca trải nghiệm', NOW()),
+  ('manager-schedules', 'Đăng ký lịch Quản lý', 'Trang đăng ký lịch làm việc quản lý', NOW()),
+  ('admin-manager-schedules', 'Quản trị lịch Quản lý', 'Trang quản trị lịch làm việc quản lý', NOW()),
   ('teacher-schedule', 'Điều phối Giáo viên', 'Trang điều phối giáo viên', NOW()),
   ('teachers', 'Quản lý Giáo viên', 'Trang quản lý giáo viên', NOW()),
   ('admin-users', 'Quản lý Tài khoản', 'Trang quản lý tài khoản', NOW()),

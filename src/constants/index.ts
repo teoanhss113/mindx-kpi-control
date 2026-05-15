@@ -22,6 +22,7 @@ export const CACHE_KEYS = {
   TICKETS: 'mindx_tickets_v1',
   CLASS_QUALITY: 'mindx_class_quality_v1',
   OFFICE_HOURS: 'mindx_office_hours_v1',
+  MANAGER_SCHEDULES: 'mindx_manager_schedules_v1',
   FILTER_STATE: 'mindx_filter_state_v1', // Shared filter state across pages
 } as const;
 
@@ -215,6 +216,80 @@ export const DATE_RANGE_PRESET_LABELS = [
 export const TEACHER_SCHEDULE_VIEW_OPTIONS = [
   { value: 'calendar', label: TEACHER_SCHEDULE_LABELS.CALENDAR_VIEW },
   { value: 'quality-table', label: TEACHER_SCHEDULE_LABELS.QUALITY_VIEW },
+] as const;
+
+export const MANAGER_SCHEDULE_LABELS = {
+  PAGE_TITLE: 'Lịch làm việc Quản lý',
+  REGISTER_SECTION: 'Đăng ký lịch tuần',
+  REGISTER_GRID_TITLE: 'Đăng ký theo từng buổi và cơ sở',
+  STATS_SECTION: 'Thống kê lịch làm việc',
+  TABLE_SECTION: 'Danh sách đăng ký',
+  CALENDAR_SECTION: 'Lịch đăng ký theo ngày và buổi',
+  MANAGER: 'Quản lý',
+  MANAGER_REGION: 'Khu vực quản lý',
+  ROLE: 'Vai trò',
+  WEEK_START: 'Tuần bắt đầu',
+  WORK_SESSION: 'Buổi làm việc',
+  SESSION_COLUMN: 'Buổi',
+  SELECTED_SLOTS: 'Buổi đã chọn',
+  TOTAL_REGISTRATIONS: 'Lượt đăng ký',
+  TOTAL_SHIFTS: 'Tổng số buổi',
+  ACTIVE_MANAGERS: 'Quản lý có lịch',
+  BUSIEST_CENTRE: 'Cơ sở nhiều lịch nhất',
+  WEEKEND_REQUIRED: 'Ngày bắt buộc',
+  WEEKEND_MISSING: 'Thiếu lịch cuối tuần',
+  WEEKEND_MISSING_SECTION: 'Quản lý chưa đăng ký ngày bắt buộc',
+  WEEKEND_MISSING_DESC: 'Thứ 7/Chủ nhật cần tối thiểu 1 buổi/ngày',
+  WEEKEND_REQUIRED_DAYS: 'Ngày bắt buộc trong kỳ',
+  WEEKEND_COMPLIANT_MANAGERS: 'Quản lý đủ lịch',
+  WEEKEND_MISSING_TABLE: 'Danh sách thiếu lịch cuối tuần',
+  MANAGERS_BY_SHIFT_COUNT: 'Quản lý nhiều buổi nhất',
+  LOW_MOBILITY: 'Ít luân chuyển cơ sở',
+  LOW_MOBILITY_TABLE: 'Quản lý đăng ký lặp lại cùng cơ sở nhiều tuần',
+  LOW_MOBILITY_DESC: 'Theo dõi quản lý ít thay đổi cơ sở làm việc qua các tuần',
+  LOW_MOBILITY_EMPTY: 'Chưa có dấu hiệu lặp cơ sở qua nhiều tuần',
+  REPEATED_CENTRE: 'Cơ sở lặp lại',
+  REPEATED_PATTERN: 'Ngày/buổi lặp lại',
+  REPEATED_PATTERNS: 'Các mẫu lặp',
+  REPEATED_WEEKS: 'Số tuần lặp',
+  REGISTERED_WEEKS: 'Tuần có lịch',
+  REPEAT_RATE: 'Tỷ lệ lặp',
+  MISSING_DATES: 'Ngày còn thiếu',
+  REQUIRED_DATE: 'Ngày bắt buộc',
+  MISSING_STATUS: 'Thiếu đăng ký',
+  ALL_WEEKEND_REGISTERED: 'Tất cả quản lý đã đăng ký đủ ngày bắt buộc',
+  REQUIRED_WEEKEND_BADGE: 'Bắt buộc',
+  EMPTY_TITLE: 'Chưa có lịch làm việc',
+  EMPTY_SUBTITLE: 'Chọn quản lý, cơ sở và các buổi trong tuần để tạo lịch',
+  SEARCH_MANAGER: 'Tìm quản lý theo tên hoặc email...',
+  ADD_SCHEDULE: 'Thêm lịch',
+  CLEAR_SLOTS: 'Bỏ chọn',
+  PREVIOUS_WEEK: 'Tuần trước',
+  NEXT_WEEK: 'Tuần sau',
+  REFRESH: 'Làm mới',
+  CENTRE_PLACEHOLDER: 'Chọn cơ sở',
+  SAVING_SLOT: 'Đang lưu...',
+  EMPTY_SLOT: 'Chưa có ai đăng ký',
+  SAVE_SUCCESS: 'Đã lưu lịch làm việc',
+  DELETE_SUCCESS: 'Đã xoá lịch làm việc',
+} as const;
+
+export const MANAGER_REQUIRED_WEEKDAYS = [6, 0] as const;
+
+export const MANAGER_WORK_SESSIONS = [
+  { value: 'morning', label: 'Sáng', shortLabel: 'S', time: '08:00-12:00' },
+  { value: 'afternoon', label: 'Chiều', shortLabel: 'C', time: '13:00-17:00' },
+  { value: 'evening', label: 'Tối', shortLabel: 'T', time: '18:00-21:00' },
+] as const;
+
+export const WEEKDAY_OPTIONS = [
+  { value: 1, label: 'Thứ 2' },
+  { value: 2, label: 'Thứ 3' },
+  { value: 3, label: 'Thứ 4' },
+  { value: 4, label: 'Thứ 5' },
+  { value: 5, label: 'Thứ 6' },
+  { value: 6, label: 'Thứ 7' },
+  { value: 0, label: 'Chủ nhật' },
 ] as const;
 
 export const CLASS_QUALITY_LABELS = {

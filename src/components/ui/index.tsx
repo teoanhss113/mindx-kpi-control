@@ -445,6 +445,7 @@ export function MultiSelect({
   searchPlaceholder = 'Tìm kiếm...',
   displayFormat = 'text',
   menuPosition = 'bottom',
+  showSelectAll = true,
 }: {
   options: SelectOption[]
   selected?: string[]
@@ -455,6 +456,7 @@ export function MultiSelect({
   searchPlaceholder?: string
   displayFormat?: 'text' | 'chip'
   menuPosition?: 'bottom' | 'top' | 'fixed'
+  showSelectAll?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -523,7 +525,7 @@ export function MultiSelect({
     )
 
   const leafOptions = options.filter((o) => !o.isRegion)
-  const isAll = leafOptions.length > 0 && leafOptions.every((o) => selected.includes(o.value))
+  const isAll = showSelectAll && leafOptions.length > 0 && leafOptions.every((o) => selected.includes(o.value))
   const selectAll = () => {
     if (isAll) {
       onChange([])
@@ -545,6 +547,7 @@ export function MultiSelect({
 
   const selectedItems = filtered.filter((opt) => selected.includes(opt.value))
   const unselectedItems = filtered.filter((opt) => !selected.includes(opt.value))
+  const triggerActive = showSelectAll ? !isAll : selected.length > 0
 
   const menuContent = (
     <AnimatePresence>
@@ -594,7 +597,7 @@ export function MultiSelect({
             </div>
           )}
 
-          {!query.trim() && (
+          {showSelectAll && !query.trim() && (
             <>
               <label className={styles.dropdownItem}>
                 <input
@@ -685,7 +688,7 @@ export function MultiSelect({
       <button
         ref={buttonRef}
         type="button"
-        className={`${styles.multiDropdownTrigger} ${!isAll ? styles.triggerActive : ''}`}
+        className={`${styles.multiDropdownTrigger} ${triggerActive ? styles.triggerActive : ''}`}
         onClick={() => setOpen((p) => !p)}
       >
         <div className={styles.triggerLabelWrapper}>
@@ -1996,7 +1999,7 @@ export function AdminTableSection({
             ) : (
               <div className={styles.adminTableContent}>
                 {toolbarSlot && (
-                  <div className={styles.tablePanelBody} style={{ paddingBottom: 0 }}>
+                  <div className={`${styles.tablePanelBody} ${styles.adminTableToolbarPanel}`}>
                     {toolbarSlot}
                   </div>
                 )}
