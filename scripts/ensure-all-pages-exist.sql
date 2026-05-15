@@ -10,7 +10,7 @@ INSERT INTO pages (key, page_name, description, created_at) VALUES
   ('class-quality', 'Chất lượng Lớp học', 'Trang kiểm soát chất lượng lớp học', NOW()),
   ('office-hours', 'Ca Trải nghiệm', 'Trang quản lý ca trải nghiệm và tỷ lệ chuyển đổi', NOW()),
   ('manager-schedules', 'Đăng ký lịch Quản lý', 'Quản lý đăng ký lịch làm việc hằng tuần theo cơ sở và buổi', NOW()),
-  ('admin-manager-schedules', 'Quản trị lịch Quản lý', 'Admin theo dõi lịch làm việc của quản lý theo thời gian và cơ sở', NOW()),
+  ('admin-manager-schedules', 'Lịch làm việc Quản lý', 'Admin theo dõi lịch làm việc của quản lý theo thời gian và cơ sở', NOW()),
   ('teacher-schedule', 'Điều phối Giáo viên', 'Trang điều phối lịch giảng dạy của giáo viên', NOW()),
   ('teachers', 'Quản lý Giáo viên', 'Trang quản lý thông tin giáo viên', NOW()),
   ('admin-users', 'Quản lý Tài khoản', 'Trang quản lý tài khoản người dùng hệ thống', NOW()),
@@ -36,12 +36,12 @@ ORDER BY
     WHEN 'class-quality' THEN 5
     WHEN 'office-hours' THEN 6
     WHEN 'manager-schedules' THEN 7
-    WHEN 'admin-manager-schedules' THEN 8
-    WHEN 'teacher-schedule' THEN 9
-    WHEN 'teachers' THEN 10
-    WHEN 'admin-users' THEN 11
-    WHEN 'admin-regions' THEN 12
-    WHEN 'admin-roles' THEN 13
+    WHEN 'teacher-schedule' THEN 8
+    WHEN 'teachers' THEN 9
+    WHEN 'admin-users' THEN 10
+    WHEN 'admin-regions' THEN 11
+    WHEN 'admin-roles' THEN 12
+    WHEN 'admin-manager-schedules' THEN 13
     ELSE 99
   END;
 

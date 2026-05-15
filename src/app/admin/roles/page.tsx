@@ -6,7 +6,7 @@ import { ErrorBanner } from '@/components/ErrorBanner';
 import { AdminPageWrapper } from '@/components/AdminPageWrapper';
 import { ActiveStatusBadge, AdminToolbar, AdminTableSection, Icon, SortableHeader, EmptyState, ConfirmDialog, useToast, ToastContainer, TableActionButton, TableActionGroup } from '@/components/ui';
 import { useTableSort } from '@/hooks/useTableSort';
-import { LABELS, MESSAGES, ENTITIES } from '@/constants';
+import { LABELS, MESSAGES, ENTITIES, SYSTEM_ADMIN_LABELS } from '@/constants';
 import {
   getRoles,
   getPages,
@@ -380,7 +380,7 @@ export default function RolesPage() {
 
   return (
     <ProtectedPage pageKey="admin-roles">
-      <AdminPageWrapper title="Quản lý Vai trò" activePage="admin-roles">
+      <AdminPageWrapper title={SYSTEM_ADMIN_LABELS.ROLES_TITLE} activePage="admin-roles">
         <AdminToolbar
           search={searchTerm}
           onSearchChange={setSearchTerm}

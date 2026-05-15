@@ -9,7 +9,7 @@ import { searchUsers } from '@/services/ticketService';
 import { AdminPageWrapper } from '@/components/AdminPageWrapper';
 import { useTableSort } from '@/hooks/useTableSort';
 import { SortableHeader, AdminToolbar, AdminTableSection, Icon, Spinner, MultiSelect, EmptyState, UserSearchInput, type UserSearchResult, ModalFooter, Modal, ModalHeader, ConfirmDialog, useToast, ToastContainer, ActiveStatusBadge, CompactSelect, TableActionButton, TableActionGroup, Badge } from '@/components/ui';
-import { COURSES, LABELS, MESSAGES, ENTITIES } from '@/constants';
+import { COURSES, LABELS, MESSAGES, ENTITIES, SYSTEM_ADMIN_LABELS } from '@/constants';
 import styles from '@/app/dashboard.module.css';
 import type { Role } from '@/lib/supabase/types';
 
@@ -434,7 +434,7 @@ export default function UsersPage() {
 
   return (
     <ProtectedPage pageKey="admin-users">
-      <AdminPageWrapper title="Quản lý phân quyền" activePage="admin-users">
+      <AdminPageWrapper title={SYSTEM_ADMIN_LABELS.USERS_TITLE} activePage="admin-users">
         {/* Toolbar */}
         <AdminToolbar
           search={searchTerm}

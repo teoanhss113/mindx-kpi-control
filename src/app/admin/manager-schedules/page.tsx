@@ -416,7 +416,7 @@ function ManagerSchedulesAdminPageInner() {
   return (
     <ProtectedPage pageKey={['admin-manager-schedules', 'admin-users']}>
       <PageLayout
-        title={MANAGER_SCHEDULE_LABELS.STATS_SECTION}
+        title={MANAGER_SCHEDULE_LABELS.ADMIN_PAGE_TITLE}
         activePage="admin-manager-schedules"
         sidebarOpen={sidebarOpen}
         onSidebarToggle={setSidebarOpen}

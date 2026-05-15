@@ -33,7 +33,7 @@ import {
   ViewModeToggle,
 } from '@/components/ui';
 import { CustomTooltip } from '@/components/ui/ChartComponents';
-import { LABELS } from '@/constants';
+import { LABELS, SYSTEM_ADMIN_LABELS } from '@/constants';
 import { useSharedDateRange } from '@/hooks/useSharedFilterState';
 import { getUsageAnalytics } from '@/lib/admin-actions';
 import { getAuthToken } from '@/lib/auth/clientAuth';
@@ -714,8 +714,8 @@ export default function UsageAnalyticsPage() {
   const selectedHourTotalEvents = selectedHourUsers.reduce((sum, user) => sum + user.totalEvents, 0);
 
   return (
-    <ProtectedPage pageKey="admin-users">
-      <AdminPageWrapper title="Phân tích sử dụng" activePage="admin-usage-analytics">
+    <ProtectedPage pageKey={['admin-usage-analytics', 'admin-users']}>
+      <AdminPageWrapper title={SYSTEM_ADMIN_LABELS.USAGE_TITLE} activePage="admin-usage-analytics">
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
           <div className={styles.toolbar} style={{ marginBottom: 0 }}>
             <div className={styles.toolbarRow}>

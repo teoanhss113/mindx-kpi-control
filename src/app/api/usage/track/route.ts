@@ -6,6 +6,7 @@ import {
   extractBearer,
   verifyFirebaseIdToken,
 } from '@/lib/auth/serverAuth';
+import { MANAGER_SCHEDULE_LABELS, SYSTEM_ADMIN_LABELS } from '@/constants';
 
 type UsageEventType = 'page_view' | 'heartbeat';
 
@@ -19,10 +20,12 @@ const PAGE_LABELS: Record<string, string> = {
   'office-hours': 'Ca Trải nghiệm',
   'final-sessions': 'Giám khảo Cuối khoá',
   teachers: 'Quản lý Giáo viên',
-  'admin-users': 'Quản lý Tài khoản',
-  'admin-regions': 'Quản lý Khu vực',
-  'admin-roles': 'Quản lý Vai trò',
-  'admin-usage-analytics': 'Phân tích Sử dụng',
+  'manager-schedules': MANAGER_SCHEDULE_LABELS.PAGE_TITLE,
+  'admin-users': SYSTEM_ADMIN_LABELS.USERS_TITLE,
+  'admin-regions': SYSTEM_ADMIN_LABELS.REGIONS_TITLE,
+  'admin-roles': SYSTEM_ADMIN_LABELS.ROLES_TITLE,
+  'admin-usage-analytics': SYSTEM_ADMIN_LABELS.USAGE_TITLE,
+  'admin-manager-schedules': MANAGER_SCHEDULE_LABELS.ADMIN_PAGE_TITLE,
   'available-shifts': 'Ca trực khả dụng',
   'judge-requests': 'Giám khảo cuối khoá',
 };
@@ -37,10 +40,12 @@ function inferPageKey(path: string) {
   if (path.startsWith('/admin/office-hours')) return 'office-hours';
   if (path.startsWith('/admin/final-sessions')) return 'final-sessions';
   if (path.startsWith('/admin/teachers')) return 'teachers';
+  if (path.startsWith('/admin/schedule')) return 'manager-schedules';
   if (path.startsWith('/admin/users')) return 'admin-users';
   if (path.startsWith('/admin/regions')) return 'admin-regions';
   if (path.startsWith('/admin/roles')) return 'admin-roles';
   if (path.startsWith('/admin/usage-analytics')) return 'admin-usage-analytics';
+  if (path.startsWith('/admin/manager-schedules')) return 'admin-manager-schedules';
   if (path.startsWith('/available-shifts')) return 'available-shifts';
   if (path.startsWith('/judge-requests')) return 'judge-requests';
   return path.replace(/^\/+/, '').split('/')[0] || 'unknown';

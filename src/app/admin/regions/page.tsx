@@ -10,7 +10,7 @@ import { useTableSort } from '@/hooks/useTableSort';
 import { ActiveStatusBadge, SortableHeader, AdminToolbar, AdminTableSection, Icon, Spinner, EmptyState, CentreSelect, TableActionButton, TableActionGroup, Badge } from '@/components/ui';
 import { fetchAllCentres, type Centre } from '@/services/centresService';
 import { getCache, setCache } from '@/lib/idb';
-import { LABELS, MESSAGES, ENTITIES, CACHE_KEYS } from '@/constants';
+import { LABELS, MESSAGES, ENTITIES, CACHE_KEYS, SYSTEM_ADMIN_LABELS } from '@/constants';
 import styles from '@/app/dashboard.module.css';
 
 interface Region {
@@ -240,7 +240,7 @@ export default function RegionsPage() {
 
   return (
     <ProtectedPage pageKey="admin-regions">
-      <AdminPageWrapper title="Quản lý khu vực" activePage="admin-regions">
+      <AdminPageWrapper title={SYSTEM_ADMIN_LABELS.REGIONS_TITLE} activePage="admin-regions">
         {/* Error Banner */}
         {error && <ErrorBanner message={error} />}
 

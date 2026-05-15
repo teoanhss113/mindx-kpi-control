@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { requireAdmin, authErrorResponse } from '@/lib/auth/serverAuth';
+import { MANAGER_SCHEDULE_LABELS, SYSTEM_ADMIN_LABELS } from '@/constants';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -35,7 +36,7 @@ const REQUIRED_PAGES = [
   },
   {
     key: 'manager-schedules',
-    page_name: 'Đăng ký lịch Quản lý',
+    page_name: MANAGER_SCHEDULE_LABELS.PAGE_TITLE,
     path: '/admin/schedule',
     description: 'Quản lý đăng ký lịch làm việc hằng tuần theo cơ sở và buổi',
     display_order: 10,
@@ -84,52 +85,52 @@ const REQUIRED_PAGES = [
     display_order: 9,
   },
   {
-    key: 'admin-manager-schedules',
-    page_name: 'Quản trị lịch Quản lý',
-    path: '/admin/manager-schedules',
-    description: 'Admin theo dõi lịch làm việc của quản lý theo thời gian và cơ sở',
-    display_order: 11,
-  },
-  {
     key: 'final-sessions',
     page_name: 'Giám khảo Cuối khoá',
     path: '/admin/final-sessions',
     description: 'Quản lý batch giám khảo và chia sẻ link cho giáo viên JUDGE',
-    display_order: 12,
+    display_order: 11,
   },
   {
     key: 'teachers',
     page_name: 'Quản lý Giáo viên',
     path: '/admin/teachers',
     description: 'Trang quản lý thông tin giáo viên',
-    display_order: 13,
+    display_order: 12,
   },
   {
     key: 'admin-users',
-    page_name: 'Quản lý Tài khoản',
+    page_name: SYSTEM_ADMIN_LABELS.USERS_TITLE,
     path: '/admin/users',
     description: 'Trang quản lý tài khoản người dùng hệ thống',
-    display_order: 14,
+    display_order: 13,
   },
   {
     key: 'admin-regions',
-    page_name: 'Quản lý Khu vực',
+    page_name: SYSTEM_ADMIN_LABELS.REGIONS_TITLE,
     path: '/admin/regions',
     description: 'Trang quản lý khu vực và cơ sở',
-    display_order: 15,
+    display_order: 14,
   },
   {
     key: 'admin-roles',
-    page_name: 'Quản lý Vai trò',
+    page_name: SYSTEM_ADMIN_LABELS.ROLES_TITLE,
     path: '/admin/roles',
     description: 'Trang quản lý vai trò và phân quyền',
-    display_order: 16,
+    display_order: 15,
   },
   {
     key: 'admin-usage-analytics',
-    page_name: 'Phân tích Sử dụng',
+    page_name: SYSTEM_ADMIN_LABELS.USAGE_TITLE,
     path: '/admin/usage-analytics',
     description: 'Theo dõi tần suất sử dụng, nhu cầu, thiết bị và tải hệ thống',
+    display_order: 16,
+  },
+  {
+    key: 'admin-manager-schedules',
+    page_name: MANAGER_SCHEDULE_LABELS.ADMIN_PAGE_TITLE,
+    path: '/admin/manager-schedules',
+    description: 'Admin theo dõi lịch làm việc của quản lý theo thời gian và cơ sở',
     display_order: 17,
   },
 ];

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { requireAdmin, authErrorResponse, AuthError } from '@/lib/auth/serverAuth';
+import { MANAGER_SCHEDULE_LABELS, SYSTEM_ADMIN_LABELS } from '@/constants';
 
 export async function POST(request: NextRequest) {
   try {
@@ -16,9 +17,11 @@ export async function POST(request: NextRequest) {
       { key: 'office-hours', name: 'Ca Trải nghiệm' },
       { key: 'teacher-schedule', name: 'Điều phối Giáo viên' },
       { key: 'teachers', name: 'Quản lý Giáo viên' },
-      { key: 'admin-users', name: 'Quản lý Tài khoản' },
-      { key: 'admin-regions', name: 'Quản lý Khu vực' },
-      { key: 'admin-roles', name: 'Quản lý Vai trò' },
+      { key: 'admin-users', name: SYSTEM_ADMIN_LABELS.USERS_TITLE },
+      { key: 'admin-regions', name: SYSTEM_ADMIN_LABELS.REGIONS_TITLE },
+      { key: 'admin-roles', name: SYSTEM_ADMIN_LABELS.ROLES_TITLE },
+      { key: 'admin-usage-analytics', name: SYSTEM_ADMIN_LABELS.USAGE_TITLE },
+      { key: 'admin-manager-schedules', name: MANAGER_SCHEDULE_LABELS.ADMIN_PAGE_TITLE },
       { key: 'admin-permissions', name: 'Phân quyền' },
     ];
 
@@ -95,6 +98,8 @@ export async function POST(request: NextRequest) {
       { key: 'admin-regions', order: 10 },
       { key: 'admin-roles', order: 11 },
       { key: 'admin-permissions', order: 12 },
+      { key: 'admin-usage-analytics', order: 13 },
+      { key: 'admin-manager-schedules', order: 14 },
     ];
 
     for (const item of displayOrders) {

@@ -11,6 +11,7 @@
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { revalidatePath } from 'next/cache';
 import { requirePagePermissionToken, AuthError } from '@/lib/auth/serverAuth';
+import { MANAGER_SCHEDULE_LABELS, SYSTEM_ADMIN_LABELS } from '@/constants';
 
 const ADMIN_USERS_PAGE = 'admin-users';
 const ADMIN_REGIONS_PAGE = 'admin-regions';
@@ -732,10 +733,12 @@ const USAGE_PAGE_LABELS: Record<string, string> = {
   'office-hours': 'Ca Trải nghiệm',
   'final-sessions': 'Giám khảo Cuối khoá',
   teachers: 'Quản lý Giáo viên',
-  'admin-users': 'Quản lý Tài khoản',
-  'admin-regions': 'Quản lý Khu vực',
-  'admin-roles': 'Quản lý Vai trò',
-  'admin-usage-analytics': 'Phân tích Sử dụng',
+  'manager-schedules': MANAGER_SCHEDULE_LABELS.PAGE_TITLE,
+  'admin-users': SYSTEM_ADMIN_LABELS.USERS_TITLE,
+  'admin-regions': SYSTEM_ADMIN_LABELS.REGIONS_TITLE,
+  'admin-roles': SYSTEM_ADMIN_LABELS.ROLES_TITLE,
+  'admin-usage-analytics': SYSTEM_ADMIN_LABELS.USAGE_TITLE,
+  'admin-manager-schedules': MANAGER_SCHEDULE_LABELS.ADMIN_PAGE_TITLE,
   'available-shifts': 'Ca trực khả dụng',
   'judge-requests': 'Giám khảo cuối khoá',
 };

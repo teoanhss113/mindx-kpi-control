@@ -8,6 +8,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { usePermissionsContext } from '@/lib/PermissionsContext';
 import { authFetch } from '@/lib/auth/clientAuth';
 import { PageLayout } from '@/components/PageLayout';
+import { MANAGER_SCHEDULE_LABELS, SYSTEM_ADMIN_LABELS } from '@/constants';
 import styles from './page.module.css';
 
 export default function DebugPermissionsPage() {
@@ -47,9 +48,12 @@ export default function DebugPermissionsPage() {
     { key: 'office-hours', name: 'Ca Trải nghiệm' },
     { key: 'teacher-schedule', name: 'Điều phối Giáo viên' },
     { key: 'teachers', name: 'Quản lý Giáo viên' },
-    { key: 'admin-users', name: 'Quản lý Tài khoản' },
-    { key: 'admin-regions', name: 'Quản lý Khu vực' },
-    { key: 'admin-roles', name: 'Quản lý Vai trò' },
+    { key: 'manager-schedules', name: MANAGER_SCHEDULE_LABELS.PAGE_TITLE },
+    { key: 'admin-users', name: SYSTEM_ADMIN_LABELS.USERS_TITLE },
+    { key: 'admin-regions', name: SYSTEM_ADMIN_LABELS.REGIONS_TITLE },
+    { key: 'admin-roles', name: SYSTEM_ADMIN_LABELS.ROLES_TITLE },
+    { key: 'admin-usage-analytics', name: SYSTEM_ADMIN_LABELS.USAGE_TITLE },
+    { key: 'admin-manager-schedules', name: MANAGER_SCHEDULE_LABELS.ADMIN_PAGE_TITLE },
   ];
 
   return (

@@ -7,6 +7,7 @@ import { usePermissionsContext } from '@/lib/PermissionsContext';
 import { initials, Icon } from '@/components/ui';
 import { NotificationBell } from '@/components/NotificationBell';
 import { NotificationPrompt } from '@/components/NotificationPrompt';
+import { MANAGER_SCHEDULE_LABELS, SYSTEM_ADMIN_LABELS } from '@/constants';
 import styles from '@/app/dashboard.module.css';
 
 interface PageLayoutProps {
@@ -175,15 +176,6 @@ export function PageLayout({ children, title, activePage, sidebarOpen = false, o
               Ca Trải nghiệm
             </div>
           )}
-          {!permissionsLoading && (canView('manager-schedules') || canView('admin-manager-schedules') || canView('admin-users')) && (
-            <div
-              className={`${styles.sidebarLink} ${activePage === 'manager-schedules' ? styles.active : ''}`}
-              onClick={() => { router.push('/admin/schedule'); handleSidebarToggle(false); }}
-            >
-              <Icon.Calendar size={15} />
-              Đăng ký lịch
-            </div>
-          )}
           {!permissionsLoading && canView('final-sessions') && (
             <div
               className={`${styles.sidebarLink} ${activePage === 'final-sessions' ? styles.active : ''}`}
@@ -211,6 +203,15 @@ export function PageLayout({ children, title, activePage, sidebarOpen = false, o
               Quản lý Giáo viên
             </div>
           )}
+          {!permissionsLoading && (canView('manager-schedules') || canView('admin-manager-schedules') || canView('admin-users')) && (
+            <div
+              className={`${styles.sidebarLink} ${activePage === 'manager-schedules' ? styles.active : ''}`}
+              onClick={() => { router.push('/admin/schedule'); handleSidebarToggle(false); }}
+            >
+              <Icon.Calendar size={15} />
+              Đăng ký lịch
+            </div>
+          )}
 
           {/* Admin section - only show if user has access to any admin page */}
           {!permissionsLoading && hasAdminAccess && (
@@ -227,7 +228,7 @@ export function PageLayout({ children, title, activePage, sidebarOpen = false, o
                   <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
                   <polyline points="9 12 10.5 13.5 15 9" />
                 </svg>
-                Quản trị Hệ thống
+                {SYSTEM_ADMIN_LABELS.GROUP_TITLE}
                 <svg 
                   width="12" 
                   height="12" 
@@ -256,7 +257,7 @@ export function PageLayout({ children, title, activePage, sidebarOpen = false, o
                       <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
                         <path d="M13 14v-1.5a3 3 0 0 0-3-3H6a3 3 0 0 0-3 3V14M8 7a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z" strokeLinecap="round" strokeLinejoin="round"/>
                       </svg>
-                      Tài khoản
+                      {SYSTEM_ADMIN_LABELS.USERS_NAV}
                     </div>
                   )}
                   {canView('admin-regions') && (
@@ -267,7 +268,7 @@ export function PageLayout({ children, title, activePage, sidebarOpen = false, o
                       <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
                         <path d="M2 14h12M3 14V6l3-3 3 3v8M6 9h2v2H6zM10 14V8l2-2 2 2v6M11 11h2v2h-2z" strokeLinecap="round" strokeLinejoin="round"/>
                       </svg>
-                      Khu vực
+                      {SYSTEM_ADMIN_LABELS.REGIONS_NAV}
                     </div>
                   )}
                   {canView('admin-roles') && (
@@ -278,7 +279,7 @@ export function PageLayout({ children, title, activePage, sidebarOpen = false, o
                       <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
                         <path d="M8 1l2 4h4l-3 3 1 4-4-2-4 2 1-4-3-3h4l2-4z" strokeLinecap="round" strokeLinejoin="round"/>
                       </svg>
-                      Vai trò
+                      {SYSTEM_ADMIN_LABELS.ROLES_NAV}
                     </div>
                   )}
                   {(canView('admin-usage-analytics') || canView('admin-users')) && (
@@ -287,7 +288,7 @@ export function PageLayout({ children, title, activePage, sidebarOpen = false, o
                       onClick={() => { router.push('/admin/usage-analytics'); handleSidebarToggle(false); }}
                     >
                       <Icon.BarChart size={13} />
-                      Phân tích sử dụng
+                      {SYSTEM_ADMIN_LABELS.USAGE_NAV}
                     </div>
                   )}
                   {(canView('admin-manager-schedules') || canView('admin-users')) && (
@@ -296,7 +297,7 @@ export function PageLayout({ children, title, activePage, sidebarOpen = false, o
                       onClick={() => { router.push('/admin/manager-schedules'); handleSidebarToggle(false); }}
                     >
                       <Icon.CalendarDays size={13} />
-                      Lịch Quản lý
+                      {MANAGER_SCHEDULE_LABELS.ADMIN_NAV_LABEL}
                     </div>
                   )}
                 </div>

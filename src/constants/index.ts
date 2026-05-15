@@ -213,16 +213,30 @@ export const DATE_RANGE_PRESET_LABELS = [
   DATE_RANGE_LABELS.NEXT_MONTH,
 ] as const;
 
+export const SYSTEM_ADMIN_LABELS = {
+  GROUP_TITLE: 'Quản trị Hệ thống',
+  USERS_TITLE: 'Quản lý Tài khoản',
+  USERS_NAV: 'Tài khoản',
+  REGIONS_TITLE: 'Quản lý Khu vực',
+  REGIONS_NAV: 'Khu vực',
+  ROLES_TITLE: 'Quản lý Vai trò',
+  ROLES_NAV: 'Vai trò',
+  USAGE_TITLE: 'Phân tích Sử dụng',
+  USAGE_NAV: 'Sử dụng',
+} as const;
+
 export const TEACHER_SCHEDULE_VIEW_OPTIONS = [
   { value: 'calendar', label: TEACHER_SCHEDULE_LABELS.CALENDAR_VIEW },
   { value: 'quality-table', label: TEACHER_SCHEDULE_LABELS.QUALITY_VIEW },
 ] as const;
 
 export const MANAGER_SCHEDULE_LABELS = {
-  PAGE_TITLE: 'Lịch làm việc Quản lý',
+  PAGE_TITLE: 'Đăng ký lịch Quản lý',
+  ADMIN_PAGE_TITLE: 'Lịch làm việc Quản lý',
+  ADMIN_NAV_LABEL: 'Lịch quản lý',
   REGISTER_SECTION: 'Đăng ký lịch tuần',
   REGISTER_GRID_TITLE: 'Đăng ký theo từng buổi và cơ sở',
-  STATS_SECTION: 'Thống kê lịch làm việc',
+  STATS_SECTION: 'Thống kê lịch Quản lý',
   TABLE_SECTION: 'Danh sách đăng ký',
   CALENDAR_SECTION: 'Lịch đăng ký theo ngày và buổi',
   MANAGER: 'Quản lý',
