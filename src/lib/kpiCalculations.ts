@@ -151,12 +151,8 @@ export function calcTeacherChangeRate(classes: any[]): {
     }
     if (hasChange) classesWithChange++;
 
-    // Count unique LEC + SUPPLY teachers across class + slots
+    // Count unique LEC + SUPPLY teachers from all class slots. 3 teachers already counts.
     const teacherMap = new Map<string, any>();
-    for (const t of cls.teachers ?? []) {
-      const role = getRoleUpper(t);
-      if (role === 'LEC' || role === 'SUPPLY') teacherMap.set(t.teacher.id, t);
-    }
     for (const slot of slots) {
       for (const t of slot.teachers ?? []) {
         const role = getRoleUpper(t);

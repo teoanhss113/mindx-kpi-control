@@ -44,6 +44,51 @@ type UsageAnalytics = NonNullable<Awaited<ReturnType<typeof getUsageAnalytics>>[
 type TrendMetric = 'daily' | 'weekly' | 'hourly';
 type EnvironmentMetric = 'devices' | 'browsers' | 'operatingSystems';
 type EnvironmentUserDetail = UsageAnalytics['environmentUserDetails'][EnvironmentMetric][number];
+type TrendChartItem = {
+  name: string;
+  count: number;
+  hour?: string;
+};
+type ChartClickState = {
+  activePayload?: Array<{
+    payload?: TrendChartItem;
+  }>;
+};
+type UsageTrendDotProps = {
+  cx?: number | string;
+  cy?: number | string;
+  payload?: TrendChartItem;
+  isHourly: boolean;
+  radius?: number;
+  onSelectHour: (hour: string) => void;
+};
+
+function UsageTrendDot({ cx, cy, payload, isHourly, radius = 3.5, onSelectHour }: UsageTrendDotProps) {
+  if (typeof cx !== 'number' || typeof cy !== 'number') return null;
+  const hour = payload?.hour;
+  const canSelect = isHourly && Boolean(hour);
+
+  return (
+    <g
+      role={canSelect ? 'button' : undefined}
+      tabIndex={canSelect ? 0 : undefined}
+      aria-label={canSelect ? `Xem người dùng hoạt động lúc ${hour}` : undefined}
+      onClick={(event) => {
+        event.stopPropagation();
+        if (hour) onSelectHour(hour);
+      }}
+      onKeyDown={(event) => {
+        if (!hour || (event.key !== 'Enter' && event.key !== ' ')) return;
+        event.preventDefault();
+        onSelectHour(hour);
+      }}
+      style={{ cursor: canSelect ? 'pointer' : 'default', outline: 'none' }}
+    >
+      <circle cx={cx} cy={cy} r={12} fill="transparent" pointerEvents="all" />
+      <circle cx={cx} cy={cy} r={radius} fill="var(--brand-indigo)" stroke="var(--bg-primary)" strokeWidth={radius > 4 ? 2 : 0} pointerEvents="none" />
+    </g>
+  );
+}
 
 function formatNumber(value: number) {
   return new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 1 }).format(value);
@@ -128,10 +173,12 @@ function UsageTrendChart({
   items,
   metric,
   onMetricChange,
+  onSelectHour,
 }: {
-  items: Array<{ name: string; count: number }>;
+  items: TrendChartItem[];
   metric: TrendMetric;
   onMetricChange: (value: TrendMetric) => void;
+  onSelectHour: (hour: string) => void;
 }) {
   const isHourly = metric === 'hourly';
   const label = metric === 'daily'
@@ -139,6 +186,11 @@ function UsageTrendChart({
     : metric === 'weekly'
       ? 'Lượt xem theo tuần'
       : 'Lượt xem theo giờ';
+  const handleChartClick = (state: ChartClickState | null) => {
+    if (!isHourly) return;
+    const hour = state?.activePayload?.[0]?.payload?.hour;
+    if (hour) onSelectHour(hour);
+  };
 
   return (
     <ChartCard title="Xu hướng lượt xem">
@@ -153,9 +205,14 @@ function UsageTrendChart({
           ]}
         />
       </div>
-      <div style={{ padding: 'var(--space-4)', height: 280 }}>
+      <div style={{ padding: 'var(--space-4)', height: 280, position: 'relative' }}>
         <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={items} margin={{ top: 8, right: 16, left: 0, bottom: 8 }}>
+          <AreaChart
+            data={items}
+            margin={{ top: 8, right: 16, left: 0, bottom: 8 }}
+            onClick={(state) => handleChartClick(state as ChartClickState | null)}
+            style={{ cursor: isHourly ? 'pointer' : 'default' }}
+          >
             <defs>
               <linearGradient id="usageTrendFill" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor="var(--brand-indigo)" stopOpacity={isHourly ? 0.10 : 0.16} />
@@ -174,11 +231,68 @@ function UsageTrendChart({
               stroke="var(--brand-indigo)"
               strokeWidth={2}
               fill="url(#usageTrendFill)"
-              dot={{ r: 3, fill: 'var(--brand-indigo)', strokeWidth: 0 }}
-              activeDot={{ r: 5 }}
+              dot={(props: unknown) => (
+                <UsageTrendDot
+                  {...(props as Omit<UsageTrendDotProps, 'isHourly' | 'radius' | 'onSelectHour'>)}
+                  isHourly={isHourly}
+                  onSelectHour={onSelectHour}
+                />
+              )}
+              activeDot={(props: unknown) => (
+                <UsageTrendDot
+                  {...(props as Omit<UsageTrendDotProps, 'isHourly' | 'radius' | 'onSelectHour'>)}
+                  isHourly={isHourly}
+                  radius={6}
+                  onSelectHour={onSelectHour}
+                />
+              )}
             />
           </AreaChart>
         </ResponsiveContainer>
+        {isHourly && items.length > 0 && (
+          <div
+            aria-hidden={false}
+            style={{
+              position: 'absolute',
+              inset: 'var(--space-4)',
+              zIndex: 2,
+              pointerEvents: 'none',
+            }}
+          >
+            {items.map((item, index) => {
+              const hour = item.hour;
+              if (!hour) return null;
+              const left = items.length === 1 ? 50 : (index / (items.length - 1)) * 100;
+
+              return (
+                <button
+                  key={hour}
+                  type="button"
+                  aria-label={`Xem người dùng hoạt động lúc ${hour}`}
+                  title={`Xem người dùng hoạt động lúc ${hour}`}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onSelectHour(hour);
+                  }}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    bottom: 0,
+                    left: `${left}%`,
+                    width: 28,
+                    transform: 'translateX(-50%)',
+                    border: 0,
+                    padding: 0,
+                    margin: 0,
+                    background: 'transparent',
+                    cursor: 'pointer',
+                    pointerEvents: 'auto',
+                  }}
+                />
+              );
+            })}
+          </div>
+        )}
       </div>
     </ChartCard>
   );
@@ -387,6 +501,7 @@ export default function UsageAnalyticsPage() {
   });
   const [selectedUserEmail, setSelectedUserEmail] = useState<string | null>(null);
   const [selectedEnvironmentGroup, setSelectedEnvironmentGroup] = useState<string | null>(null);
+  const [selectedHour, setSelectedHour] = useState<string | null>(null);
   const [trendMetric, setTrendMetric] = useState<TrendMetric>('hourly');
   const [retentionMetric, setRetentionMetric] = useState<TrendMetric>('daily');
   const [environmentMetric, setEnvironmentMetric] = useState<EnvironmentMetric>('devices');
@@ -513,6 +628,7 @@ export default function UsageAnalyticsPage() {
   const hourlyChartItems = useMemo(() => (
     data?.hourlyDistribution.map(item => ({
       name: item.hour,
+      hour: item.hour,
       count: item.count,
     })) || []
   ), [data]);
@@ -556,6 +672,46 @@ export default function UsageAnalyticsPage() {
     if (!data || !selectedEnvironmentGroup) return [];
     return data.environmentUserDetails[environmentMetric].filter(row => row.name === selectedEnvironmentGroup);
   }, [data, environmentMetric, selectedEnvironmentGroup]);
+
+  const selectedHourUsers = useMemo(() => {
+    if (!data || !selectedHour) return [];
+    const rows = data.hourlyUserDetails.filter(row => row.hour === selectedHour);
+    const users = new Map<string, {
+      email: string;
+      totalEvents: number;
+      totalPageViews: number;
+      lastActivityAt: string | null;
+      pages: Array<{ page: string; pageViews: number }>;
+    }>();
+
+    rows.forEach(row => {
+      const current = users.get(row.email) || {
+        email: row.email,
+        totalEvents: row.totalEvents,
+        totalPageViews: 0,
+        lastActivityAt: row.lastActivityAt,
+        pages: [],
+      };
+
+      current.totalEvents = Math.max(current.totalEvents, row.totalEvents);
+      current.totalPageViews += row.pageViews;
+      if (!current.lastActivityAt || (row.lastActivityAt && row.lastActivityAt > current.lastActivityAt)) {
+        current.lastActivityAt = row.lastActivityAt;
+      }
+      current.pages.push({ page: row.page, pageViews: row.pageViews });
+      users.set(row.email, current);
+    });
+
+    return Array.from(users.values())
+      .map(user => ({
+        ...user,
+        pages: user.pages.sort((a, b) => b.pageViews - a.pageViews || a.page.localeCompare(b.page, 'vi-VN')),
+      }))
+      .sort((a, b) => b.totalPageViews - a.totalPageViews || b.totalEvents - a.totalEvents || a.email.localeCompare(b.email, 'vi-VN'));
+  }, [data, selectedHour]);
+
+  const selectedHourTotalPageViews = selectedHourUsers.reduce((sum, user) => sum + user.totalPageViews, 0);
+  const selectedHourTotalEvents = selectedHourUsers.reduce((sum, user) => sum + user.totalEvents, 0);
 
   return (
     <ProtectedPage pageKey="admin-users">
@@ -601,6 +757,7 @@ export default function UsageAnalyticsPage() {
               items={trendChartItems}
               metric={trendMetric}
               onMetricChange={setTrendMetric}
+              onSelectHour={setSelectedHour}
             />
 
             <RetentionChart
@@ -755,6 +912,62 @@ export default function UsageAnalyticsPage() {
                       <tr key={`${selectedEnvironmentGroup}-${user.email}`} style={{ cursor: 'pointer' }} onClick={() => setSelectedUserEmail(user.email)}>
                         <td style={{ fontWeight: 510 }}>{user.email}</td>
                         <td>{formatNumber(user.pageViews)}</td>
+                        <td>{formatNumber(user.totalEvents)}</td>
+                        <td>{formatDateTime(user.lastActivityAt)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </Modal>
+        )}
+
+        {selectedHour && (
+          <Modal open={true} onClose={() => setSelectedHour(null)} maxWidth="min(980px, calc(100vw - 40px))">
+            <ModalHeader
+              title="Người dùng hoạt động theo khung giờ"
+              subtitle={`${selectedHour} trong khoảng ngày đang chọn`}
+              onClose={() => setSelectedHour(null)}
+            />
+            <div style={{ padding: 'var(--space-5)', display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', maxHeight: 'calc(90vh - 96px)', overflowY: 'auto' }}>
+              <div className={styles.statsGrid} style={{ marginBottom: 0 }}>
+                <StatCard label="Người dùng" value={formatNumber(selectedHourUsers.length)} desc="Có hoạt động trong khung giờ" />
+                <StatCard label="Lượt xem trang" value={formatNumber(selectedHourTotalPageViews)} desc="Tổng page view của khung giờ" />
+                <StatCard label="Tổng hoạt động" value={formatNumber(selectedHourTotalEvents)} desc="Bao gồm page view và heartbeat" />
+              </div>
+
+              <div className={styles.tableScrollWrapper}>
+                <table className={styles.studentTable}>
+                  <thead>
+                    <tr>
+                      <th>Email</th>
+                      <th>Trang đã truy cập</th>
+                      <th style={{ width: 140 }}>Lượt xem</th>
+                      <th style={{ width: 140 }}>Tổng hoạt động</th>
+                      <th style={{ width: 180 }}>Hoạt động cuối</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedHourUsers.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} style={{ color: 'var(--text-tertiary)', textAlign: 'center' }}>
+                          Chưa có người dùng hoạt động trong khung giờ này
+                        </td>
+                      </tr>
+                    ) : selectedHourUsers.map(user => (
+                      <tr key={`${selectedHour}-${user.email}`} style={{ cursor: 'pointer' }} onClick={() => setSelectedUserEmail(user.email)}>
+                        <td style={{ fontWeight: 510 }}>{user.email}</td>
+                        <td>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
+                            {user.pages.map(page => (
+                              <Badge key={`${user.email}-${page.page}`} variant={page.pageViews > 0 ? 'default' : 'exempt'} size="sm" shape="rounded">
+                                {page.pageViews > 0 ? `${page.page} (${formatNumber(page.pageViews)})` : page.page}
+                              </Badge>
+                            ))}
+                          </div>
+                        </td>
+                        <td>{formatNumber(user.totalPageViews)}</td>
                         <td>{formatNumber(user.totalEvents)}</td>
                         <td>{formatDateTime(user.lastActivityAt)}</td>
                       </tr>

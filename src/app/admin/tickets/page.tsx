@@ -7,10 +7,11 @@ import { useAuth } from '@/lib/AuthContext';
 import { loadSession } from '@/services/authService';
 import { fetchAllCentres, Centre } from '@/services/centresService';
 import { getCache, setCache, clearCache } from '@/lib/idb';
+import { authFetch } from '@/lib/auth/clientAuth';
 import { getCourseCategory } from '@/lib/courseCategories';
 import { getNavItemsWithRouter } from '@/lib/navigation';
 import { useAllowedPages } from '@/hooks/useAllowedPages';
-import { surveyColor, surveyScore, SURVEY_LEGEND } from '@/lib/kpiScoring';
+import { surveyColor, surveyScore, SURVEY_LEGEND, teacherPointColor, teacherPointScore } from '@/lib/kpiScoring';
 import { fetchTickets, updateTicket, searchUsers } from '@/services/ticketService';
 import { fetchPendingSurveyClasses } from '@/services/classesService';
 import { classSurveyKey, fetchStudentClassSurveys, STUDENT_TEACHING_SURVEY_ID } from '@/services/classSurveyService';
@@ -39,6 +40,7 @@ import { ProtectedPage } from '@/components/ProtectedPage';
 import styles from '@/app/dashboard.module.css';
 import GoogleSheetsSection from '@/components/tickets/GoogleSheetsSection';
 import { normalizeString } from '@/lib/googleSheetsMatching';
+import { buildTeacherPointRowsFromGoogleSheets, calcTeacherPointRate, isTeacherPointExemptStudent as isExemptStudent } from '@/lib/teacherPointKpi';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const SURVEY_TARGETS = [
@@ -48,49 +50,6 @@ const SURVEY_TARGETS = [
 ];
 
 const SURVEY_CHART_LEGEND = getKPILegendItems(SURVEY_LEGEND);
-
-const TICKET_EXEMPTED_REASONS = [
-  'CHANGE_CLASS_SCHEDULE_CHANGE',
-  'TRANSFER_COURSE_LINE',
-  'WRONG_ENROLL',
-  'ON_HOLD',
-  'DROP_OUT',
-  'On hold'
-];
-
-function normalizeCompletionReason(reason?: string | null): string {
-  const trimmed = reason?.trim();
-  if (!trimmed) return '';
-  if (trimmed.toUpperCase().replace(/\s+/g, '_') === 'ON_HOLD') return 'ON_HOLD';
-  return trimmed;
-}
-
-function isExemptStudent(st: any, classSlots?: any[]): boolean {
-  const info = st.completionInfo;
-  const hasAttendance = classSlots?.some(slot => 
-    slot.studentAttendance?.some((a: any) => a.student?.id === st.student?.id)
-  );
-  
-  // Original logic: WAITING status with no attendance
-  if (info && (info as any).status === 'WAITING' && !hasAttendance) {
-    return true;
-  }
-  
-  // Deactivated student with no attendance
-  if (!st.activeInClass && !hasAttendance) {
-    return true;
-  }
-
-  // Exclude explicitly based on completion reasons (on hold, dropped out, etc)
-  if (info?.reason) {
-    const normReason = normalizeCompletionReason(info.reason);
-    if (TICKET_EXEMPTED_REASONS.includes(normReason)) {
-      return true;
-    }
-  }
-  
-  return false;
-}
 
 function getPriorityColor(priority: string) {
   return getPriorityMeta(priority).color;
@@ -301,7 +260,7 @@ export default function TicketsDashboard() {
            addToast('Đã nạp cấu trúc lớp học!', 'success');
            return res;
         }),
-        fetch(sheetUrl, { signal }).then(r => r.json()).catch(err => {
+        authFetch(sheetUrl, { signal }).then(r => r.json()).catch(err => {
           console.error('Sheet fetch error:', err);
           return { data: [] };
         })
@@ -660,6 +619,17 @@ export default function TicketsDashboard() {
   }, [selectedCourseLines, selectedStatuses]);
 
   // ── Derived Data & Options ───────────────────────────────────────────────────
+  const teacherSurveyRows = useMemo(() => {
+    return buildTeacherPointRowsFromGoogleSheets({
+      rawData: googleSheetsRawData,
+      classes: pendingClasses,
+      fromDate,
+      toDate,
+      centres,
+      selectedCentres,
+    });
+  }, [googleSheetsRawData, pendingClasses, fromDate, toDate, centres, selectedCentres]);
+
   // Memoize expensive ticket processing with individual ticket caching
   const mappedTickets = useMemo(() => {
     const processTicket = (t: Ticket) => {
@@ -716,7 +686,7 @@ export default function TicketsDashboard() {
     const base = tickets.map(processTicket);
     
     // Map Google Sheets data into standard simulated Ticket shapes for seamless integration into Stats and Charts!
-    const sheetMapped = sheetProcessedRows.map((row, idx) => {
+    const sheetMapped = teacherSurveyRows.map((row, idx) => {
       const cls = row.matchedClass;
       
       // Derive course category natively using canonical system utilities to ensure filter alignment
@@ -762,7 +732,7 @@ export default function TicketsDashboard() {
     });
 
     return [...base, ...sheetMapped];
-  }, [tickets, pendingClasses, sheetProcessedRows, centres]);
+  }, [tickets, pendingClasses, teacherSurveyRows, centres]);
 
   const courseLineOptions = useMemo(() => {
     const cats = new Set<string>();
@@ -900,7 +870,7 @@ export default function TicketsDashboard() {
       .map(([name, data]) => ({
         name,
         'Số phiếu': data.count,
-        'Điểm TB (GV)': data.scoredCount > 0 ? parseFloat((data.totalScore / data.scoredCount).toFixed(1)) : 0,
+        'Điểm TB (Giáo viên)': data.scoredCount > 0 ? parseFloat((data.totalScore / data.scoredCount).toFixed(1)) : 0,
         _scoredCount: data.scoredCount
       }))
       .filter(d => d['Số phiếu'] > 0)
@@ -934,7 +904,7 @@ export default function TicketsDashboard() {
       .map(([name, data]) => ({
         name,
         'Số phiếu': data.count,
-        'Điểm TB (GV)': data.scoredCount > 0 ? parseFloat((data.totalScore / data.scoredCount).toFixed(1)) : 0,
+        'Điểm TB (Giáo viên)': data.scoredCount > 0 ? parseFloat((data.totalScore / data.scoredCount).toFixed(1)) : 0,
         _scoredCount: data.scoredCount
       }))
       .filter(d => d['Số phiếu'] > 0)
@@ -1130,7 +1100,7 @@ export default function TicketsDashboard() {
     });
 
     // 1.5 Process Google Sheets data AFTER class data has built official rosters
-    sheetProcessedRows.forEach(row => {
+    teacherSurveyRows.forEach(row => {
        const classId = row.matchedClass?.id;
        const className = row.matchedClass?.className || row.matchedClass?.name || row.normalizedClassCode;
        const key = classId || className;
@@ -1239,7 +1209,7 @@ export default function TicketsDashboard() {
     }
 
     return result;
-  }, [filteredTickets, pendingClasses, search, tableSelectedCentres, tableCentreIds, fromDate, toDate, selectedSessions, centres, sheetProcessedRows]);
+  }, [filteredTickets, pendingClasses, search, tableSelectedCentres, tableCentreIds, fromDate, toDate, selectedSessions, centres, teacherSurveyRows]);
 
   const activeGroups = useMemo(() =>
     groupedByClass.filter(g => !CLASS_INACTIVE_STATUSES.has(g.classStatus?.toUpperCase?.() || '')),
@@ -1284,6 +1254,15 @@ export default function TicketsDashboard() {
       return classSortOrder === 'asc' ? comparison : -comparison;
     });
   }, [classSortBy, classSortOrder]);
+
+  const teacherPointKpi = useMemo(() => {
+    return calcTeacherPointRate({
+      classes: filteredPendingClasses,
+      rows: teacherSurveyRows,
+      fromDate,
+      toDate,
+    });
+  }, [filteredPendingClasses, teacherSurveyRows, fromDate, toDate]);
 
   // Allowed pages (for navigation filtering)
   const { allowedPages } = useAllowedPages();
@@ -1374,7 +1353,7 @@ export default function TicketsDashboard() {
         />
 
           {/* ── KPI Stats ── */}
-          {(stats.total > 0 || loading) && (
+          {(stats.total > 0 || teacherPointKpi.eligible > 0 || loading) && (
             <motion.div className={styles.statsGrid} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
               <KPIStatCard
                 label={KPI_LABELS.SURVEY_SCORE}
@@ -1385,14 +1364,23 @@ export default function TicketsDashboard() {
                 icon={<Icon.User size={18} />}
                 delay={0.0}
               />
-              <KPIStatCard label={KPI_LABELS.NEW_TICKETS} value={String(stats.newTickets)} desc={`${stats.total} phiếu phản hồi trong kỳ`} valueColor={stats.newTickets > 0 ? 'var(--status-warning)' : 'var(--status-success)'} delay={0.07} />
-              <KPIStatCard label={KPI_LABELS.RESOLVE_RATE} value={`${stats.resolveRate.toFixed(1)}%`} desc={`${stats.closedTickets} đã xử lý`} valueColor={stats.resolveRate >= 90 ? 'var(--status-success)' : 'var(--status-warning)'} delay={0.14} />
+              <KPIStatCard
+                label={KPI_LABELS.TEACHER_POINT_RATE}
+                value={teacherPointKpi.rate !== null ? `${teacherPointKpi.rate.toFixed(1)}%` : '—'}
+                desc={`${teacherPointKpi.collected} / ${teacherPointKpi.eligible} học viên đã làm khảo sát`}
+                valueColor={teacherPointKpi.rate !== null ? teacherPointColor(teacherPointKpi.rate) : undefined}
+                score={teacherPointKpi.rate !== null ? teacherPointScore(teacherPointKpi.rate) : undefined}
+                icon={<Icon.CheckCircle size={18} />}
+                delay={0.07}
+              />
+              <KPIStatCard label={KPI_LABELS.NEW_TICKETS} value={String(stats.newTickets)} desc={`${stats.total} phiếu phản hồi trong kỳ`} valueColor={stats.newTickets > 0 ? 'var(--status-warning)' : 'var(--status-success)'} delay={0.14} />
+              <KPIStatCard label={KPI_LABELS.RESOLVE_RATE} value={`${stats.resolveRate.toFixed(1)}%`} desc={`${stats.closedTickets} đã xử lý`} valueColor={stats.resolveRate >= 90 ? 'var(--status-success)' : 'var(--status-warning)'} delay={0.21} />
             </motion.div>
           )}
 
           {stats.total > 0 && (
             <KPIThresholdSuggestions
-              label="Điểm GV:"
+              label="Điểm Giáo viên:"
               items={surveySuggestions}
             />
           )}
@@ -1414,7 +1402,7 @@ export default function TicketsDashboard() {
                     >
                       <KPIBarChart
                         data={centreChartData}
-                        dataKey="Điểm TB (GV)"
+                        dataKey="Điểm TB (Giáo viên)"
                         xLabel="Điểm (1-5)"
                         yLabel="Cơ sở"
                         domain={[0, 5]}
@@ -1422,7 +1410,7 @@ export default function TicketsDashboard() {
                         height={centreHeight}
                         valueFormatter={value => `★ ${value.toFixed(1)}`}
                         tickFormatter={value => String(value)}
-                        getColor={datum => surveyColor(Number(datum['Điểm TB (GV)']))}
+                        getColor={datum => surveyColor(Number(datum['Điểm TB (Giáo viên)']))}
                         showValueLabel
                       />
                     </KPIChartCard>
@@ -1436,7 +1424,7 @@ export default function TicketsDashboard() {
                     >
                       <KPIBarChart
                         data={courseLineChartData}
-                        dataKey="Điểm TB (GV)"
+                        dataKey="Điểm TB (Giáo viên)"
                         xLabel="Điểm (1-5)"
                         yLabel="Khối học"
                         domain={[0, 5]}
@@ -1444,7 +1432,7 @@ export default function TicketsDashboard() {
                         height={courseHeight}
                         valueFormatter={value => `★ ${value.toFixed(1)}`}
                         tickFormatter={value => String(value)}
-                        getColor={datum => surveyColor(Number(datum['Điểm TB (GV)']))}
+                        getColor={datum => surveyColor(Number(datum['Điểm TB (Giáo viên)']))}
                         showValueLabel
                       />
                     </KPIChartCard>
@@ -2278,7 +2266,7 @@ export default function TicketsDashboard() {
                       <th>Ngày</th>
                       <th>Trạng thái</th>
                       <th>Mã phiếu</th>
-                      <th>Điểm GV</th>
+                      <th>Điểm Giáo viên</th>
                       <th>Chi tiết điểm</th>
                     </tr>
                   </thead>

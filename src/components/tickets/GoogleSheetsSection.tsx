@@ -3,8 +3,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AdminTableSection, TableToolbar, TableGroupHeader, SubTableGroupHeader, FilterChip, Icon, SortIcon, Badge, EmptyState, CentreBadge } from '@/components/ui';
-import { findBestMatch, MatchResult, normalizeCenterHint, getTrueAcronym } from '@/lib/googleSheetsMatching';
 import { surveyColor } from '@/lib/kpiScoring';
+import { buildTeacherPointRowsFromGoogleSheets } from '@/lib/teacherPointKpi';
 import styles from '@/app/dashboard.module.css';
 
 interface GoogleSheetsSectionProps {
@@ -36,131 +36,15 @@ export default function GoogleSheetsSection({
 
   // 2. Process & Filter data (Logic Unchanged)
   const processedData = useMemo(() => {
-    if (!rawData || rawData.length === 0) return [];
-    const dStart = fromDate ? new Date(fromDate) : null;
-    if (dStart) dStart.setHours(0, 0, 0, 0);
-    const dEnd = toDate ? new Date(toDate) : null;
-    if (dEnd) dEnd.setHours(23, 59, 59, 999);
-
-    const initialPass = rawData
-      .map(row => {
-        const timeStr = row['Timestamp'] || '';
-        let rowDate: Date | null = null;
-        if (timeStr) rowDate = new Date(timeStr);
-        const matchInfo = findBestMatch(row, classes);
-        const qK = row['Giáo viên lớp em giảng bài dễ hiểu chứ?'] || '';
-        const qL = row['Em yêu thích Giáo viên lớp mình chứ?'] || '';
-        
-        const extractScore = (val: string) => {
-          const num = parseInt(val.replace(/[^0-9]/g, ''));
-          return isNaN(num) ? null : num;
-        };
-        const scoreK = extractScore(qK);
-        const scoreL = extractScore(qL);
-        let avgScore: number | null = null;
-        const validScores = [scoreK, scoreL].filter(s => s !== null) as number[];
-        if (validScores.length > 0) {
-          avgScore = validScores.reduce((a, b) => a + b, 0) / validScores.length;
-        }
-        return { ...matchInfo, rowDate, avgScore, scoreK, scoreL };
-      });
-
-    // Neighbor Inference Pass
-    const withInference = initialPass.map((item, index) => {
-      if (item.matchedClass) return item;
-      const RADIUS = 5;
-      const startSearch = Math.max(0, index - RADIUS);
-      const endSearch = Math.min(initialPass.length - 1, index + RADIUS);
-      const getJumbleKey = (s: string) => {
-        const c = (s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
-        const digits = c.replace(/[^0-9]/g, '');
-        const letters = c.replace(/[^A-Z]/g, '').split('').sort().join('');
-        return digits && letters ? `${digits}:${letters}` : c;
-      };
-      const itemKey = getJumbleKey(item.normalizedClassCode);
-      const candidates = new Map<string, { item: any, count: number }>();
-      for (let i = startSearch; i <= endSearch; i++) {
-        if (i === index) continue;
-        const neighbor = initialPass[i];
-        const neighborFull = neighbor.normalizedClassCode;
-        if (!neighborFull.includes('-')) continue;
-        const segments = item.normalizedClassCode.split('-');
-        const itemCore = segments.find(s => /\d/.test(s)) || segments.pop() || '';
-        const neighborKey = getJumbleKey(neighborFull);
-        const isContained = itemCore.length >= 4 && neighborFull.includes(itemCore);
-        const isJumbledEquivalent = itemKey.length > 3 && itemKey === neighborKey;
-        let isSubsetRescue = false;
-        const itemDigits = item.normalizedClassCode.replace(/[^0-9]/g, '');
-        const neighborDigits = neighborFull.replace(/[^0-9]/g, '');
-        if (itemDigits && itemDigits === neighborDigits && itemDigits.length >= 1) {
-           const itemLetters = item.normalizedClassCode.replace(/[^A-Z]/g, '');
-           const neighborLetters = neighborFull.replace(/[^A-Z]/g, '');
-           if (itemLetters.length >= 3 && neighborLetters.length >= 3) {
-              const shortStr = itemLetters.length <= neighborLetters.length ? itemLetters : neighborLetters;
-              const longStr = itemLetters.length <= neighborLetters.length ? neighborLetters : itemLetters;
-              const chars = Array.from(new Set(shortStr.split('')));
-              isSubsetRescue = chars.every(char => longStr.includes(char));
-           }
-        }
-        if (isContained || isJumbledEquivalent || isSubsetRescue) {
-           const key = neighborFull;
-           if (!candidates.has(key)) candidates.set(key, { item: neighbor, count: 0 });
-           candidates.get(key)!.count += 1;
-        }
-      }
-      const rankedCandidates = Array.from(candidates.values()).sort((a, b) => {
-         if (a.item.matchedClass && !b.item.matchedClass) return -1;
-         if (!a.item.matchedClass && b.item.matchedClass) return 1;
-         const lenA = a.item.normalizedClassCode.length;
-         const lenB = b.item.normalizedClassCode.length;
-         if (lenA !== lenB) return lenB - lenA;
-         return b.count - a.count; 
-      });
-      const bestNeighbor = rankedCandidates[0]?.item || null;
-      let shouldReplace = false;
-      if (bestNeighbor) {
-         if (bestNeighbor.matchedClass) shouldReplace = true;
-         else if (bestNeighbor.normalizedClassCode.length > item.normalizedClassCode.length) shouldReplace = true;
-         else if (bestNeighbor.normalizedClassCode.length === item.normalizedClassCode.length && bestNeighbor.normalizedClassCode !== item.normalizedClassCode) shouldReplace = true;
-      }
-      if (shouldReplace && bestNeighbor) {
-        if (bestNeighbor.matchedClass) return { ...item, matchedClass: bestNeighbor.matchedClass, inferredClass: bestNeighbor.matchedClass.className || bestNeighbor.matchedClass.name, matchScore: 90, isInferred: true, matchReason: ['Suy luận'] };
-        return { ...item, normalizedClassCode: bestNeighbor.normalizedClassCode, isInferred: true, inferredCode: bestNeighbor.normalizedClassCode };
-      }
-      return item;
+    return buildTeacherPointRowsFromGoogleSheets({
+      rawData,
+      classes,
+      fromDate,
+      toDate,
+      centres,
+      selectedCentres,
+      search,
     });
-
-    return withInference
-      .filter(item => {
-        if (!item.rowDate) return true; 
-        if (dStart && item.rowDate < dStart) return false;
-        if (dEnd && item.rowDate > dEnd) return false;
-        return true;
-      })
-      .filter(item => {
-        if (!selectedCentres || selectedCentres.length === 0) return true;
-        const targetShorts = selectedCentres.map(id => centres.find(c => c.id === id)?.shortName).filter(Boolean) as string[];
-        if (targetShorts.length === 0) return true;
-        const allSegments = item.normalizedClassCode.split('-');
-        const rowCenterTokens = allSegments.map((seg: string) => normalizeCenterHint(seg)).filter(Boolean) as string[];
-        return targetShorts.some((targetShort: string) => {
-          const hasNumTarget = /\d/.test(targetShort);
-          return rowCenterTokens.some((rowCenterRaw: string) => {
-            const hasNumRow = /\d/.test(rowCenterRaw);
-            if (hasNumTarget && hasNumRow) return targetShort === rowCenterRaw; 
-            return getTrueAcronym(targetShort) === getTrueAcronym(rowCenterRaw);
-          });
-        });
-      })
-      .filter(item => {
-        if (!search.trim()) return true;
-        const term = search.toLowerCase();
-        return (
-          item.studentName.toLowerCase().includes(term) ||
-          item.inputClassCode.toLowerCase().includes(term) ||
-          (item.matchedClass?.className || item.matchedClass?.name || '').toLowerCase().includes(term)
-        );
-      });
   }, [rawData, classes, fromDate, toDate, search, centres, selectedCentres]);
 
   useEffect(() => {

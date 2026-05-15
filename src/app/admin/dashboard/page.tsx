@@ -6,6 +6,7 @@ import { ProtectedPage } from '@/components/ProtectedPage';
 import { Icon, ToastContainer, useToast, Toolbar, KPIStatCard } from '@/components/ui';
 import { ActionableInsight } from '@/components/dashboard/ActionableInsight';
 import { getCache, setCache, clearCache } from '@/lib/idb';
+import { authFetch } from '@/lib/auth/clientAuth';
 import { CACHE_KEYS, FORMAT, ANIMATION, DATE_UTILS, MESSAGES, CLASS_INACTIVE_STATUSES, ENTITIES, TEACHER_SCHEDULE_CACHE_VERSION, KPI_LABELS } from '@/constants';
 import { useSharedFilterState } from '@/hooks/useSharedFilterState';
 import { analyzeComments, analyzeAttendance } from '@/lib/classQualityAnalysis';
@@ -15,16 +16,18 @@ import {
   calcSurveyScore,
   calcConversionRate,
 } from '@/lib/kpiCalculations';
+import { buildTeacherPointRowsFromGoogleSheets, calcTeacherPointRate } from '@/lib/teacherPointKpi';
 import {
   completionScore,
   teacherChangeScore,
   surveyScore as surveyKpiScore,
+  teacherPointScore,
   conversionScore,
   multiTeacherScore,
   kpiColor,
   KPI_COLORS
 } from '@/lib/kpiScoring';
-import { fetchAllClasses, dateRangeToUtcRange, GET_CLASSES_LIGHT_QUERY } from '@/services/classesService';
+import { fetchAllClasses, fetchPendingSurveyClasses, fetchStudentCommentAreas, dateRangeToUtcRange, GET_CLASSES_LIGHT_QUERY } from '@/services/classesService';
 import { fetchAllCentres, Centre } from '@/services/centresService';
 import { fetchTickets } from '@/services/ticketService';
 import { fetchOfficeHours } from '@/services/officeHoursService';
@@ -139,6 +142,9 @@ export default function DashboardPage() {
     // Create separate abort controllers for each request
     const classesController = new AbortController();
     const ticketsController = new AbortController();
+    const pendingSurveyController = new AbortController();
+    const sheetsController = new AbortController();
+    const commentAreasController = new AbortController();
     const officeHoursController = new AbortController();
     const teachersController = new AbortController();
     const teacherSchedulesController = new AbortController();
@@ -148,6 +154,9 @@ export default function DashboardPage() {
       abort: () => {
         classesController.abort();
         ticketsController.abort();
+        pendingSurveyController.abort();
+        sheetsController.abort();
+        commentAreasController.abort();
         officeHoursController.abort();
         teachersController.abort();
         teacherSchedulesController.abort();
@@ -157,6 +166,15 @@ export default function DashboardPage() {
     try {
       const { endDateFrom, endDateTo } = dateRangeToUtcRange(new Date(fromDate), new Date(toDate));
       const centreIds = selectedCentres.length > 0 ? selectedCentres : centres.map(c => c.id);
+      let sheetUrl = `/api/google-sheets?_t=${Date.now()}`;
+      if (fromDate) sheetUrl += `&fromDate=${encodeURIComponent(fromDate)}`;
+      if (toDate) sheetUrl += `&toDate=${encodeURIComponent(toDate)}`;
+      if (selectedCentres.length > 0) {
+        const shortCodes = selectedCentres
+          .map(id => centres.find(c => c.id === id)?.shortName)
+          .filter(Boolean);
+        if (shortCodes.length > 0) sheetUrl += `&center=${encodeURIComponent(shortCodes.join(','))}`;
+      }
 
       // Save filter state for other pages to use
       console.log('[Dashboard] Saving filter state:', {
@@ -185,11 +203,12 @@ export default function DashboardPage() {
       let schLoaded = 0, schTotal = 0;
       let clsLoaded = 0, clsTotal = 0;
       let ticLoaded = 0, ticTotal = 0;
+      let pendingLoaded = 0, pendingTotal = 0;
       let teaLoaded = 0, teaTotal = 0;
 
       const refreshAggProgress = () => {
-        const finalLoaded = schLoaded + clsLoaded + ticLoaded + teaLoaded;
-        const finalTotal = Math.max((schTotal || 0) + (clsTotal || 0) + (ticTotal || 0) + (teaTotal || 0), 1);
+        const finalLoaded = schLoaded + clsLoaded + ticLoaded + pendingLoaded + teaLoaded;
+        const finalTotal = Math.max((schTotal || 0) + (clsTotal || 0) + (ticTotal || 0) + (pendingTotal || 0) + (teaTotal || 0), 1);
         setProgress({ loaded: finalLoaded, total: finalTotal });
       };
 
@@ -197,6 +216,9 @@ export default function DashboardPage() {
         scheduleData,
         classesResult,
         ticketsResult,
+        pendingSurveyClasses,
+        googleSheetsResult,
+        studentCommentAreas,
         teachersResult
       ] = await Promise.all([
         // 1. Teacher Schedules
@@ -240,7 +262,37 @@ export default function DashboardPage() {
           ticketsController.signal
         ).then(res => { removeToast(ticketsToastId); return res; }),
 
-        // 4. Teachers (Internal paging handles concurrency flawlessly now!)
+        // 4. Classes that need teacher survey collection
+        fetchPendingSurveyClasses(
+          dateFrom,
+          dateTo,
+          centreIds,
+          (loaded, total) => {
+            pendingLoaded = loaded;
+            pendingTotal = total || 0;
+            refreshAggProgress();
+          },
+          pendingSurveyController.signal
+        ),
+
+        // 5. Google Sheets Teacher Survey submissions
+        authFetch(sheetUrl, { signal: sheetsController.signal })
+          .then(r => r.json())
+          .catch(err => {
+            console.error('Sheet fetch error:', err);
+            return { data: [] };
+          }),
+
+        // 6. Comment area definitions used by /admin/operations quality table
+        fetchStudentCommentAreas(
+          Array.from({ length: 30 }, (_, i) => String(i + 1)).concat('final'),
+          commentAreasController.signal
+        ).catch(err => {
+          console.warn('Unable to fetch student comment areas:', err);
+          return [];
+        }),
+
+        // 7. Teachers (Internal paging handles concurrency flawlessly now!)
         getTeachers(
           { centers: centreIds, orderBy: 'createdAt_desc' },
           teachersController.signal,
@@ -265,13 +317,21 @@ export default function DashboardPage() {
         attendanceWarnings: [], 
         timestamp: Date.now() 
       };
-      const ticketsCache = { tickets: ticketsResult.data, timestamp: Date.now() };
+      const ticketsCache = {
+        tickets: ticketsResult.data,
+        pendingClasses: pendingSurveyClasses,
+        googleSheetsRawData: googleSheetsResult?.data || [],
+        timestamp: Date.now(),
+      };
       const officeHoursCache = { officeHours: officeHoursResultData, timestamp: Date.now() };
       const teachersCache = { teachers: allTeachers, timestamp: Date.now() };
       const teacherSchedulesCache = { 
         version: TEACHER_SCHEDULE_CACHE_VERSION,
         schedules: teacherSchedulesResult, 
         rawClasses: activeClassesResult, // Critical hydration for /admin/operations visibility
+        studentCommentAreas,
+        dateFrom: fromDate,
+        dateTo: toDate,
         loadedCentreIds: centreIds,
         loadedRange: { from: fromDate, to: toDate },
         timestamp: Date.now(),
@@ -391,6 +451,29 @@ export default function DashboardPage() {
       return null;
     }
   }, [ticketsData]);
+
+  const teacherPointKpi = useMemo(() => {
+    if (!ticketsData?.pendingClasses || !ticketsData?.googleSheetsRawData) return null;
+    try {
+      const rows = buildTeacherPointRowsFromGoogleSheets({
+        rawData: ticketsData.googleSheetsRawData,
+        classes: ticketsData.pendingClasses,
+        fromDate,
+        toDate,
+        centres,
+        selectedCentres,
+      });
+      return calcTeacherPointRate({
+        classes: ticketsData.pendingClasses,
+        rows,
+        fromDate,
+        toDate,
+      });
+    } catch (err) {
+      console.error('Error calculating teacher survey rate:', err);
+      return null;
+    }
+  }, [ticketsData, fromDate, toDate, centres, selectedCentres]);
 
   const conversionKpi = useMemo(() => {
     if (!officeHoursData?.officeHours) return null;
@@ -532,7 +615,7 @@ export default function DashboardPage() {
         value: FORMAT.percentage(multiTeacherRate),
         score,
         description: `${activeTeacherChangeClassesCount} lớp có buổi học trong kỳ`,
-        action: multiTeacherRate > 0.5 ? 'Rà các lớp có nhiều LEC/SUPPLY để khóa lại phương án nhân sự' : 'Tỷ lệ lớp nhiều GV đang thấp',
+        action: multiTeacherRate > 0.5 ? 'Rà các lớp có 3+ giáo viên để khóa lại phương án nhân sự' : 'Tỷ lệ lớp có nhiều giáo viên đang thấp',
         href: '/admin/teacher-change',
         icon: <Icon.Users size={18} />,
         color: kpiColor(score),
@@ -553,6 +636,22 @@ export default function DashboardPage() {
         icon: <Icon.User size={18} />,
         color: kpiColor(score),
         priority: 70 - score * 10,
+      });
+    }
+
+    if (teacherPointKpi?.rate !== null && teacherPointKpi?.rate !== undefined) {
+      const score = teacherPointScore(teacherPointKpi.rate);
+      items.push({
+        id: 'teacher-point-rate',
+        label: KPI_LABELS.TEACHER_POINT_RATE,
+        value: FORMAT.percentage(teacherPointKpi.rate),
+        score,
+        description: `${teacherPointKpi.collected}/${teacherPointKpi.eligible} học viên đã làm khảo sát`,
+        action: teacherPointKpi.rate < 81 ? 'Ưu tiên các lớp tới mốc khảo sát nhưng chưa đủ phản hồi học viên' : 'Tỷ lệ lấy khảo sát đang trong vùng tốt',
+        href: '/admin/tickets',
+        icon: <Icon.CheckCircle size={18} />,
+        color: kpiColor(score),
+        priority: 65 - score * 10,
       });
     }
 
@@ -580,6 +679,7 @@ export default function DashboardPage() {
     multiTeacherRate,
     activeTeacherChangeClassesCount,
     surveyScore,
+    teacherPointKpi,
     ticketsData,
     conversionRate,
     conversionKpi,

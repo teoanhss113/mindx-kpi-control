@@ -53,6 +53,15 @@ export const SURVEY_LEGEND = [
   { score: 1 as const, label: '< 3.5' },
 ];
 
+/** Legend items for Teacher Survey collection rate charts/cards. Ordered score 5→1. */
+export const TEACHER_POINT_LEGEND = [
+  { score: 5 as const, label: '≥ 95%' },
+  { score: 4 as const, label: '81–94%' },
+  { score: 3 as const, label: '71–80%' },
+  { score: 2 as const, label: '51–70%' },
+  { score: 1 as const, label: '≤ 50%' },
+];
+
 /** Legend items for Conversion Rate (Trial → Paid) charts. Ordered score 5→1. */
 export const CONVERSION_LEGEND = [
   { score: 5 as const, label: '> 40%' },
@@ -129,6 +138,22 @@ export function surveyScore(score: number): 1 | 2 | 3 | 4 | 5 {
 }
 
 /**
+ * Teacher Survey collection rate KPI (Tỷ lệ lấy Khảo sát Giáo viên)
+ *   ≥ 95%   → 5
+ *   81–94%  → 4
+ *   71–80%  → 3
+ *   51–70%  → 2
+ *   ≤ 50%   → 1
+ */
+export function teacherPointScore(rate: number): 1 | 2 | 3 | 4 | 5 {
+  if (rate >= 95) return 5;
+  if (rate >= 81) return 4;
+  if (rate >= 71) return 3;
+  if (rate >= 51) return 2;
+  return 1;
+}
+
+/**
  * Conversion Rate KPI (Tỷ lệ chuyển đổi học viên trải nghiệm)
  *   > 40%    → 5
  *   31–40%   → 4
@@ -157,6 +182,10 @@ export const teacherChangeColor = (pct: number): string =>
 /** Color for a Survey Score value (0–5). */
 export const surveyColor = (score: number): string =>
   kpiColor(surveyScore(score));
+
+/** Color for a Teacher Survey collection rate value (0–100). */
+export const teacherPointColor = (rate: number): string =>
+  kpiColor(teacherPointScore(rate));
 
 /** Color for a Conversion Rate value (0–100). */
 export const conversionColor = (rate: number): string =>

@@ -840,6 +840,9 @@ export async function getUsageAnalytics(idToken: string, range: UsageAnalyticsRa
     const dailyActiveUsers = new Map<string, Set<string>>();
     const weeklyActiveUsers = new Map<string, Set<string>>();
     const userPageMatrix = new Map<string, Map<string, number>>();
+    const hourlyUserPageMatrix = new Map<string, Map<string, Map<string, number>>>();
+    const hourlyUserEvents = new Map<string, Map<string, number>>();
+    const hourlyUserLastActivity = new Map<string, Map<string, string>>();
     const userLastActivity = new Map<string, string>();
     let lastActivityAt: string | null = null;
 
@@ -856,6 +859,14 @@ export async function getUsageAnalytics(idToken: string, range: UsageAnalyticsRa
       dailyActiveUsers.get(dayKey)?.add(event.user_email);
       if (!weeklyActiveUsers.has(weekKey)) weeklyActiveUsers.set(weekKey, new Set());
       weeklyActiveUsers.get(weekKey)?.add(event.user_email);
+      if (!hourlyUserEvents.has(hourKey)) hourlyUserEvents.set(hourKey, new Map());
+      incrementMap(hourlyUserEvents.get(hourKey)!, event.user_email);
+      if (!hourlyUserLastActivity.has(hourKey)) hourlyUserLastActivity.set(hourKey, new Map());
+      const hourLastActivity = hourlyUserLastActivity.get(hourKey)!;
+      const currentHourLastActivity = hourLastActivity.get(event.user_email);
+      if (!currentHourLastActivity || event.occurred_at > currentHourLastActivity) {
+        hourLastActivity.set(event.user_email, event.occurred_at);
+      }
 
       if (!lastActivityAt || event.occurred_at > lastActivityAt) {
         lastActivityAt = event.occurred_at;
@@ -885,6 +896,10 @@ export async function getUsageAnalytics(idToken: string, range: UsageAnalyticsRa
       incrementMap(hourCounts, hourKey);
       incrementMap(pageViewCounts, label);
       incrementMap(userPageViews, event.user_email);
+      if (!hourlyUserPageMatrix.has(hourKey)) hourlyUserPageMatrix.set(hourKey, new Map());
+      const hourlyUsers = hourlyUserPageMatrix.get(hourKey)!;
+      if (!hourlyUsers.has(event.user_email)) hourlyUsers.set(event.user_email, new Map());
+      incrementMap(hourlyUsers.get(event.user_email)!, label);
 
       if (!pageUserCounts.has(label)) pageUserCounts.set(label, new Set());
       pageUserCounts.get(label)?.add(event.user_email);
@@ -938,6 +953,33 @@ export async function getUsageAnalytics(idToken: string, range: UsageAnalyticsRa
     const hourlyDistribution = Array.from(hourCounts.entries())
       .map(([hour, count]) => ({ hour, count }))
       .sort((a, b) => a.hour.localeCompare(b.hour));
+
+    const hourlyUserDetails = Array.from(hourlyUserEvents.entries())
+      .flatMap(([hour, users]) => Array.from(users.entries()).flatMap(([email, totalEvents]) => {
+        const pageMap = hourlyUserPageMatrix.get(hour)?.get(email);
+        const lastActivityAtForHour = hourlyUserLastActivity.get(hour)?.get(email) || null;
+
+        if (!pageMap || pageMap.size === 0) {
+          return [{
+            hour,
+            email,
+            page: 'Không có lượt xem trang',
+            pageViews: 0,
+            totalEvents,
+            lastActivityAt: lastActivityAtForHour,
+          }];
+        }
+
+        return Array.from(pageMap.entries()).map(([page, pageViews]) => ({
+          hour,
+          email,
+          page,
+          pageViews,
+          totalEvents,
+          lastActivityAt: lastActivityAtForHour,
+        }));
+      }))
+      .sort((a, b) => a.hour.localeCompare(b.hour) || a.email.localeCompare(b.email, 'vi-VN') || b.pageViews - a.pageViews || a.page.localeCompare(b.page, 'vi-VN'));
 
     const environmentUserDetails = (groups: Map<string, Map<string, number>>) => Array.from(groups.entries())
       .flatMap(([name, users]) => Array.from(users.entries()).map(([email, pageViews]) => ({
@@ -1010,6 +1052,7 @@ export async function getUsageAnalytics(idToken: string, range: UsageAnalyticsRa
         dailyActiveTrend,
         weeklyActiveTrend,
         hourlyDistribution,
+        hourlyUserDetails,
         onlineUsers,
       },
     };

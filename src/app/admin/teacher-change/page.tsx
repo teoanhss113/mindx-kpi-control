@@ -95,8 +95,9 @@ function pad2(n: number) { return String(n).padStart(2, '0'); }
  *   Changed slot = slot whose LEC ≠ primary LEC.
  *   TA ignored, SUPPLY ignored in this KPI.
  *
- * KPI 2 — Unique teacher count (LEC + SUPPLY, no TA).
- *   Sources: cls.teachers + every slot.
+ * KPI 2 — Unique teacher count:
+ *   Count unique LEC + SUPPLY teachers across all slots of the selected class.
+ *   Example: 1 LEC + 2 SUPPLY is counted as 3 teachers.
  */
 function analyzeTeacherChanges(cls: Class): Omit<ClassAnalyzed, 'cls' | 'courseLineName'> {
   const slots = (cls.slots ?? [])
@@ -125,13 +126,8 @@ function analyzeTeacherChanges(cls: Class): Omit<ClassAnalyzed, 'cls' | 'courseL
   const changedSlots = slotDetails.filter(d => d.lecChanged).length;
   const totalSlots   = slots.length;
 
-  // KPI 2: gather all unique LEC + SUPPLY teachers
+  // Teacher roster shown in the table: LEC + SUPPLY from class slots, no TA.
   const teacherMap = new Map<string, { id: string; name: string; role: string }>();
-  (cls.teachers ?? []).forEach(t => {
-    const role = getRoleShortName(t);
-    if (role === ROLE_LEC || role === ROLE_SUPPLY)
-      teacherMap.set(t.teacher.id, { id: t.teacher.id, name: t.teacher.fullName, role });
-  });
   slots.forEach(slot => {
     (slot.teachers ?? []).forEach(t => {
       const role = getRoleShortName(t);
@@ -139,7 +135,6 @@ function analyzeTeacherChanges(cls: Class): Omit<ClassAnalyzed, 'cls' | 'courseL
         teacherMap.set(t.teacher.id, { id: t.teacher.id, name: t.teacher.fullName, role });
     });
   });
-
   return {
     totalSlots,
     changedSlots,
@@ -445,7 +440,7 @@ export default function TeacherChangePage() {
     if (selectedLevels.length > 0 && selectedLevels.length !== levelOptions.length) list = list.filter(a => selectedLevels.includes(a.cls.level || ''));
     if (selectedOperations.length > 0 && selectedOperations.length !== operationOptions.length) list = list.filter(a => selectedOperations.includes(a.cls.operationMethod?.id || ''));
     if (rateRange[0] > 0 || rateRange[1] < 100) {
-      // Range filter: on uniqueTeacherCount percentage (0-100 mapped to 0-N)
+      // Range filter: on uniqueTeacherCount threshold (0-100 mapped to below/above 3 teachers)
       list = list.filter(a => {
         const pct = a.uniqueTeacherCount >= 3 ? 100 : 0;
         return pct >= rateRange[0] && pct <= rateRange[1];
@@ -646,7 +641,7 @@ export default function TeacherChangePage() {
               <KPIStatCard
                 label={KPI_LABELS.MULTI_TEACHER_RATE}
                 value={stats.totalClasses > 0 ? `${stats.multiTeacherRate.toFixed(1)}%` : '—'}
-                desc={`${stats.classesMultipleTeachers}/${stats.totalClasses} lớp (LEC + SUPPLY)`}
+                desc={`${stats.classesMultipleTeachers}/${stats.totalClasses} lớp có 3+ Giáo viên`}
                 valueColor={kpiColor(stats.kpi2Score)}
                 score={stats.kpi2Score}
                 icon={<Icon.Users size={18} />}
@@ -656,7 +651,7 @@ export default function TeacherChangePage() {
               <KPIStatCard
                 label={KPI_LABELS.DATA_SCOPE}
                 value={String(stats.totalClasses)}
-                desc={`${stats.classesWithLECChange} lớp thay LEC · ${stats.classesMultipleTeachers} lớp có 3+ GV`}
+                desc={`${stats.classesWithLECChange} lớp thay LEC · ${stats.classesMultipleTeachers} lớp có 3+ Giáo viên`}
                 delay={0.14}
               />
             </motion.div>
@@ -772,7 +767,7 @@ export default function TeacherChangePage() {
                         countDisplay="always"
                         onClick={() => setQuickFilter(q => q === 'multiTeachers' ? null : 'multiTeachers')}
                       >
-                        Nhiều Giáo viên (3+)
+                        3+ Giáo viên
                       </FilterChip>
                     </>
                   }
@@ -789,13 +784,13 @@ export default function TeacherChangePage() {
                         onChange={setSelectedOperations} placeholder="Tất cả hình thức" />}
                     </>
                   }
-                  rangeValue={rateRange} onRangeChange={setRateRange} rangeLabel="Số GV"
+                  rangeValue={rateRange} onRangeChange={setRateRange} rangeLabel="Số Giáo viên"
                   hasFilter={hasTableFilter} onClearFilter={clearTableFilters}
                 />
               }
             >
                     <div className={styles.tableScrollWrapper}>
-                      {/* Column headers: Name | Status | Tiến độ | Số GV | Danh sách GV (LEC+SUPPLY) */}
+                      {/* Column headers: Name | Status | Tiến độ | Số Giáo viên | Danh sách GV */}
                       <div style={{
                         display: 'grid',
                         gridTemplateColumns: 'minmax(0,2.5fr) minmax(0,0.8fr) minmax(0,0.7fr) minmax(0,1.1fr) minmax(0,2.5fr)',
@@ -821,16 +816,13 @@ export default function TeacherChangePage() {
                               className={isSortable ? `${styles.sortableCol} ${sortKey === col ? styles.activeSort : ''}` : ''}
                               style={isSortable ? { display: 'flex', alignItems: 'center', gap: 'var(--space-1)', userSelect: 'none' } : { display: 'flex', alignItems: 'center', userSelect: 'none' }}
                               onClick={() => isSortable && handleSort(col)}>
-                              {['Trạng thái', 'Tiến độ', 'Số GV (LEC+SUP)'][i]}
+                              {['Trạng thái', 'Tiến độ', 'Số Giáo viên'][i]}
                               {isSortable && <SortIcon col={col} sortKey={sortKey} sortDir={sortDir} />}
                             </div>
                           );
                         })}
                         <div style={{ display: 'flex', alignItems: 'center', userSelect: 'none' }}>
-                          Danh sách GV &nbsp;
-                          <span style={{ fontSize: 10, opacity: 0.6, fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>
-                            (LEC — xanh · SUPPLY — cam)
-                          </span>
+                          Danh sách GV
                         </div>
                       </div>
 
@@ -909,7 +901,7 @@ export default function TeacherChangePage() {
                           )}
                         </div>
 
-                        {/* Teacher list (LEC blue, SUPPLY amber) */}
+                        {/* Teacher list (LEC + SUPPLY) */}
                         <div className={styles.reasonsPreview} style={{ paddingTop: 2 }}>
                           {sortedTeachers.length === 0
                             ? <span style={{ color: 'var(--text-quaternary)' }}>—</span>
@@ -1056,14 +1048,14 @@ export default function TeacherChangePage() {
                   borderRadius: "var(--radius-card)",
                 }}>
                   <div style={{ fontSize: 11, fontWeight: 590, color: 'var(--text-quaternary)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>
-                    Số GV (LEC + SUPPLY)
+                    Số Giáo viên
                   </div>
                   <div style={{ fontSize: 24, fontWeight: 590, letterSpacing: '-0.5px', color: hasMulti ? kpiColor(multiTeacherScore(100)) : 'var(--text-primary)' }}>
                     {selectedEntry.uniqueTeacherCount}
                     {hasMulti && <span style={{ fontSize: 12, marginLeft: 6, color: 'var(--status-warning)', fontWeight: 590 }}>3+</span>}
                   </div>
                   <div style={{ fontSize: 12, color: 'var(--text-quaternary)', marginTop: 4 }}>
-                    {hasMulti ? 'Lớp có nhiều giáo viên' : 'Giáo viên ổn định'}
+                    {hasMulti ? 'Lớp có 3+ Giáo viên' : 'Dưới 3 Giáo viên'}
                   </div>
                 </div>
               </div>
@@ -1165,7 +1157,7 @@ function getDefaultCSVColumns(): CSVColumnConfig[] {
     { id: 'totalSessions', label: 'Tổng buổi', enabled: true },
     { id: 'changedSlots', label: 'Buổi thay GV', enabled: true },
     { id: 'changeRate', label: 'Tỷ lệ thay GV (%)', enabled: true },
-    { id: 'teacherCount', label: 'Số GV', enabled: true },
+    { id: 'teacherCount', label: 'Số Giáo viên', enabled: true },
     { id: 'lecTeachers', label: 'GV chính (LEC)', enabled: true },
     { id: 'supplyTeachers', label: 'GV thay thế (SUPPLY)', enabled: true },
     { id: 'allTeachers', label: 'Tất cả GV', enabled: true },
@@ -1183,7 +1175,7 @@ function getCSVColumnsFromConfig(config: CSVColumnConfig[]): CSVColumn<ClassAnal
     totalSessions: { header: 'Tổng buổi', accessor: 'totalSlots' },
     changedSlots: { header: 'Buổi thay GV', accessor: 'changedSlots' },
     changeRate: { header: 'Tỷ lệ thay GV (%)', accessor: 'changeRate', formatter: CSVFormatters.number(1) },
-    teacherCount: { header: 'Số GV', accessor: 'uniqueTeacherCount' },
+    teacherCount: { header: 'Số Giáo viên', accessor: 'uniqueTeacherCount' },
     lecTeachers: { 
       header: 'GV chính (LEC)', 
       accessor: (row) => row.uniqueTeachers

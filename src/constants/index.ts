@@ -240,7 +240,7 @@ export const TICKET_LABELS = {
   CLASS_ANALYSIS_VIEW: 'Phân tích theo Lớp',
   TOTAL_TICKETS_STAT: 'TỔNG PHIẾU',
   NEW_TICKETS_STAT: 'PHIẾU MỚI',
-  RESOLVE_RATE_STAT: 'TỶ LỆ DONE',
+  RESOLVE_RATE_STAT: 'TỶ LỆ ĐÃ XỬ LÝ',
   LOW_SCORE: 'Điểm thấp (≤ 3.0)',
   TICKET_LIST: 'Danh sách Phiếu đánh giá',
   CLASS_ANALYSIS: 'Phân tích theo Lớp học',
@@ -248,7 +248,7 @@ export const TICKET_LABELS = {
   SEARCH_PLACEHOLDER: 'Mã phiếu, Lớp, Học viên, Nội dung...',
   TICKETS_BY_CENTRE: 'Số Phiếu Theo Cơ Sở',
   TICKETS_BY_COURSE_LINE: 'Số Phiếu Theo Khối',
-  AVG_SCORE_GV: 'ĐIỂM TRUNG BÌNH (GV)',
+  AVG_SCORE_GV: 'ĐIỂM TRUNG BÌNH (GIÁO VIÊN)',
   PENDING_SURVEYS: 'Cần khảo sát',
 } as const;
 
@@ -256,12 +256,13 @@ export const KPI_LABELS = {
   SCORE: 'KPI SCORE',
   COMPLETION_RATE: 'TỶ LỆ HOÀN THÀNH',
   TEACHER_CHANGE_RATE: 'TỶ LỆ THAY GV CHÍNH (LEC)',
-  MULTI_TEACHER_RATE: 'TỶ LỆ LỚP CÓ 3+ GV',
-  SURVEY_SCORE: 'ĐIỂM KHẢO SÁT GV',
+  MULTI_TEACHER_RATE: 'TỶ LỆ LỚP CÓ 3+ GIÁO VIÊN',
+  SURVEY_SCORE: 'ĐIỂM KHẢO SÁT GIÁO VIÊN',
+  TEACHER_POINT_RATE: 'TỶ LỆ LẤY KHẢO SÁT GIÁO VIÊN',
   CONVERSION_RATE: 'TỶ LỆ CHUYỂN ĐỔI',
   DATA_SCOPE: 'PHẠM VI DỮ LIỆU',
   NEW_TICKETS: 'PHIẾU MỚI',
-  RESOLVE_RATE: 'TỶ LỆ DONE',
+  RESOLVE_RATE: 'TỶ LỆ ĐÃ XỬ LÝ',
   TRIAL_STUDENTS: 'HỌC VIÊN HỌC THỬ',
   COMMENT_QUALITY: 'NHẬN XÉT LỚP HỌC',
   ATTENDANCE_QUALITY: 'CHUYÊN CẦN HỌC VIÊN',
@@ -271,8 +272,9 @@ export const KPI_LABELS = {
 export const KPI_DESCRIPTIONS = {
   COMPLETION_RATE: 'Theo ngưỡng tỷ lệ hoàn thành',
   TEACHER_CHANGE_RATE: 'Theo ngưỡng tỷ lệ thay GV chính',
-  MULTI_TEACHER_RATE: 'Theo ngưỡng lớp có 3+ GV',
-  SURVEY_SCORE: 'Theo ngưỡng điểm khảo sát GV',
+  MULTI_TEACHER_RATE: 'Theo ngưỡng lớp có 3+ Giáo viên',
+  SURVEY_SCORE: 'Theo ngưỡng điểm khảo sát Giáo viên',
+  TEACHER_POINT_RATE: 'Theo ngưỡng tỷ lệ lấy Khảo sát Giáo viên',
   CONVERSION_RATE: 'Theo ngưỡng tỷ lệ học thử sang đơn hàng',
 } as const;
 

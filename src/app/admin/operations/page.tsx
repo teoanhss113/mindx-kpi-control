@@ -2954,6 +2954,8 @@ export default function TeacherSchedulePage() {
         }
 
         const cached = await getCache(CACHE_KEYS.TEACHER_SCHEDULE);
+        const cachedClassQuality = await getCache(CACHE_KEYS.CLASS_QUALITY);
+        let hydratedRawClasses = false;
         if (cached) {
           if (cached.selectedTeachers) setSelectedTeachers(cached.selectedTeachers);
           if (cached.selectedCourseLines) setSelectedCourseLines(cached.selectedCourseLines);
@@ -2966,7 +2968,10 @@ export default function TeacherSchedulePage() {
           if (cached.loadedRange) setLoadedRange(cached.loadedRange);
           if (cached.version === TEACHER_SCHEDULE_CACHE_VERSION) {
             if (cached.schedules) setSchedules(cached.schedules);
-            if (cached.rawClasses) setRawClasses(cached.rawClasses);
+            if (cached.rawClasses?.length) {
+              setRawClasses(cached.rawClasses);
+              hydratedRawClasses = true;
+            }
             if (cached.studentCommentAreas) {
               setStudentCommentAreas(cached.studentCommentAreas);
             } else {
@@ -2976,6 +2981,10 @@ export default function TeacherSchedulePage() {
               setStudentCommentAreas(commentAreas);
             }
           }
+        }
+
+        if (!hydratedRawClasses && cachedClassQuality?.classes?.length) {
+          setRawClasses(cachedClassQuality.classes);
         }
       } catch (e) {
         console.error('State parse error', e);
@@ -2991,7 +3000,7 @@ export default function TeacherSchedulePage() {
     
     // Only save if we have data or if it's a clear state
     // This prevents overwriting the cache with empty arrays during initial hydration
-    if (schedules.length === 0 && rawClasses.length === 0 && loadedCentreIds === undefined) return;
+    if (schedules.length === 0 && rawClasses.length === 0 && loadedCentreIds.length === 0) return;
 
     setCache(CACHE_KEYS.TEACHER_SCHEDULE, {
       version: TEACHER_SCHEDULE_CACHE_VERSION,
@@ -3435,7 +3444,7 @@ export default function TeacherSchedulePage() {
           onCancel={handleCancelFetch}
           loading={loading}
           progress={progress}
-          hasData={schedules.length > 0}
+          hasData={schedules.length > 0 || rawClasses.length > 0}
           onClearCache={() => {
             setSchedules([]);
             setRawClasses([]);
