@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo, useCallback, useRef, memo, Fragment, useTransition, useDeferredValue, type ReactNode } from 'react';
+import { useEffect, useState, useMemo, useCallback, useRef, memo, Fragment, useTransition, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -611,13 +611,16 @@ function ScheduleFilterSummary({
   selectedCentres,
   selectedCourseLines,
   selectedTeachers,
+  classCodeSearch,
 }: {
   filteredTeacherCount: number;
   selectedCentres: string[];
   selectedCourseLines: string[];
   selectedTeachers: string[];
+  classCodeSearch: string;
 }) {
   const chips = [
+    classCodeSearch.trim() ? `Mã lớp: ${classCodeSearch.trim()}` : '',
     selectedCentres.length > 0 ? `${selectedCentres.length} cơ sở` : '',
     selectedCourseLines.length > 0 ? `${selectedCourseLines.length} khối` : '',
     selectedTeachers.length > 0 ? `${selectedTeachers.length} giáo viên` : '',
@@ -2416,7 +2419,8 @@ export default function TeacherSchedulePage() {
   
   // ── Table filter states ────────────────────────────────────────────────────
   const [searchTerm, setSearchTerm] = useState('');
-  const deferredSearchTerm = useDeferredValue(searchTerm);
+  const [calendarClassCodeSearch, setCalendarClassCodeSearch] = useState('');
+  const [appliedCalendarClassCodeSearch, setAppliedCalendarClassCodeSearch] = useState('');
   const [classCodeSearch, setClassCodeSearch] = useState('');
   const [scheduleTypeFilter, setScheduleTypeFilter] = useState<ScheduleTypeFilter>('ALL');
   const [rawClasses, setRawClasses] = useState<Class[]>([]);
@@ -2451,6 +2455,14 @@ export default function TeacherSchedulePage() {
   const [showSummarySection, setShowSummarySection] = useState(false);
   const [selectedSummaryCentre, setSelectedSummaryCentre] = useState<string>('all');
   const [summaryStatusFilter, setSummaryStatusFilter] = useState<string[]>([]);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setAppliedCalendarClassCodeSearch(calendarClassCodeSearch.trim());
+    }, 400);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [calendarClassCodeSearch]);
   
   // ── Group expansion states for teacher categorization ──────────────────────
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
@@ -3056,8 +3068,18 @@ export default function TeacherSchedulePage() {
 
   // ── Filtered Schedules for Calendar ────────────────────────────────────────
   const filteredSchedulesForCalendar = useMemo(() => {
+    const classCodeQuery = appliedCalendarClassCodeSearch.toLowerCase();
+
     return schedules.map(schedule => {
       const filteredSlots = schedule.slots.filter(slot => {
+        if (classCodeQuery) {
+          const classSearchText = [
+            slot.className,
+            slot.classId,
+            slot.classSiteId,
+          ].filter(Boolean).join(' ').toLowerCase();
+          if (!classSearchText.includes(classCodeQuery)) return false;
+        }
         if (calendarCentreFilter.length > 0 && !calendarCentreFilter.includes(slot.centreId)) return false;
         if (selectedCourseLines.length > 0) {
           const category = getCourseLineCategory(slot.courseLine, slot.className);
@@ -3074,7 +3096,7 @@ export default function TeacherSchedulePage() {
       if (selectedTeachers.length > 0 && !selectedTeachers.includes(schedule.teacher.id)) return false;
       return true;
     });
-  }, [schedules, calendarCentreFilter, selectedTeachers, selectedCourseLines, scheduleTypeFilter]);
+  }, [schedules, calendarCentreFilter, selectedTeachers, selectedCourseLines, scheduleTypeFilter, appliedCalendarClassCodeSearch]);
 
   // ── Analyzed Classes for Quality Table ───────────────────────────────────────
   const analyzedClasses = useMemo(() => {
@@ -3516,9 +3538,9 @@ export default function TeacherSchedulePage() {
             toolbarSlot={
               <>
                 <TableToolbar
-                  search={searchTerm}
-                  onSearchChange={(val) => startTransition(() => setSearchTerm(val))}
-                  searchPlaceholder="Tìm giáo viên..."
+                  search={calendarClassCodeSearch}
+                  onSearchChange={setCalendarClassCodeSearch}
+                  searchPlaceholder="Mã lớp..."
                   filterSlots={
                     <>
                       <CentreSelect menuPosition="fixed"
@@ -3558,12 +3580,13 @@ export default function TeacherSchedulePage() {
                       showCourses={true}
                     />
                   )}
-                  hasFilter={calendarCentreFilter.length > 0 || selectedTeachers.length > 0 || selectedCourseLines.length > 0 || searchTerm !== ''}
+                  hasFilter={calendarCentreFilter.length > 0 || selectedTeachers.length > 0 || selectedCourseLines.length > 0 || calendarClassCodeSearch.trim() !== '' || appliedCalendarClassCodeSearch !== ''}
                   onClearFilter={() => startTransition(() => {
                     setCalendarCentreFilter([]);
                     setSelectedTeachers([]);
                     setSelectedCourseLines([]);
-                    setSearchTerm('');
+                    setCalendarClassCodeSearch('');
+                    setAppliedCalendarClassCodeSearch('');
                   })}
                 />
 
@@ -3572,6 +3595,7 @@ export default function TeacherSchedulePage() {
                   selectedCentres={calendarCentreFilter}
                   selectedCourseLines={selectedCourseLines}
                   selectedTeachers={selectedTeachers}
+                  classCodeSearch={appliedCalendarClassCodeSearch}
                 />
               </>
             }
