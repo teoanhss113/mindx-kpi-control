@@ -35,7 +35,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion'
 import { useRouter } from 'next/navigation'
 import styles from '@/app/dashboard.module.css'
-import { LABELS } from '@/constants'
+import { DATE_RANGE_LABELS, LABELS } from '@/constants'
 import { CentreSelect as CentreSelectComponent } from './CentreSelect'
 import { FilterChip } from './FilterChip'
 
@@ -844,14 +844,14 @@ function fmtDate(iso: string): string {
 
 const DATE_PRESETS = [
   {
-    label: 'Hôm nay',
+    label: DATE_RANGE_LABELS.TODAY,
     range: () => {
       const t = toDateStr(new Date())
       return { from: t, to: t }
     },
   },
   {
-    label: 'Tuần này',
+    label: DATE_RANGE_LABELS.THIS_WEEK,
     range: () => {
       const today = new Date()
       const dow = today.getDay() === 0 ? 6 : today.getDay() - 1 // Mon=0
@@ -863,7 +863,31 @@ const DATE_PRESETS = [
     },
   },
   {
-    label: 'Tháng này',
+    label: DATE_RANGE_LABELS.PREVIOUS_WEEK,
+    range: () => {
+      const today = new Date()
+      const dow = today.getDay() === 0 ? 6 : today.getDay() - 1 // Mon=0
+      const mon = new Date(today)
+      mon.setDate(today.getDate() - dow - 7)
+      const sun = new Date(mon)
+      sun.setDate(mon.getDate() + 6)
+      return { from: toDateStr(mon), to: toDateStr(sun) }
+    },
+  },
+  {
+    label: DATE_RANGE_LABELS.NEXT_WEEK,
+    range: () => {
+      const today = new Date()
+      const dow = today.getDay() === 0 ? 6 : today.getDay() - 1 // Mon=0
+      const mon = new Date(today)
+      mon.setDate(today.getDate() - dow + 7)
+      const sun = new Date(mon)
+      sun.setDate(mon.getDate() + 6)
+      return { from: toDateStr(mon), to: toDateStr(sun) }
+    },
+  },
+  {
+    label: DATE_RANGE_LABELS.THIS_MONTH,
     range: () => {
       const now = new Date()
       const first = new Date(now.getFullYear(), now.getMonth(), 1)
@@ -872,11 +896,20 @@ const DATE_PRESETS = [
     },
   },
   {
-    label: 'Tháng trước',
+    label: DATE_RANGE_LABELS.PREVIOUS_MONTH,
     range: () => {
       const now = new Date()
       const first = new Date(now.getFullYear(), now.getMonth() - 1, 1)
       const last = new Date(now.getFullYear(), now.getMonth(), 0)
+      return { from: toDateStr(first), to: toDateStr(last) }
+    },
+  },
+  {
+    label: DATE_RANGE_LABELS.NEXT_MONTH,
+    range: () => {
+      const now = new Date()
+      const first = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+      const last = new Date(now.getFullYear(), now.getMonth() + 2, 0)
       return { from: toDateStr(first), to: toDateStr(last) }
     },
   },
@@ -1072,6 +1105,14 @@ export function DateRangeInput({
     setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1))
   }
 
+  const clearDateRange = useCallback(() => {
+    onDateFromChange('')
+    onDateToChange('')
+    setTempStart(null)
+    setHoverDate(null)
+    setOpen(false)
+  }, [onDateFromChange, onDateToChange])
+
   const menuContent = (
     <AnimatePresence>
       {open && (
@@ -1174,6 +1215,16 @@ export function DateRangeInput({
               })}
             </div>
           </div>
+
+          <div className={styles.dateRangePickerFooter}>
+            <button
+              type="button"
+              className={styles.dateRangeClearBtn}
+              onClick={clearDateRange}
+            >
+              {DATE_RANGE_LABELS.CLEAR}
+            </button>
+          </div>
         </motion.div>
       )}
     </AnimatePresence>
@@ -1205,7 +1256,7 @@ export function DateRangeInput({
             <line x1="3" y1="10" x2="21" y2="10" />
           </svg>
           <span className={styles.dateRangePickerValue}>
-            {displayValue || 'Chọn khoảng thời gian'}
+            {displayValue || DATE_RANGE_LABELS.PLACEHOLDER}
           </span>
           <svg
             width="12"
@@ -1263,10 +1314,15 @@ export function DateRangePicker({
 
   const label =
     !dateFrom && !dateTo
-      ? 'Khoảng thời gian'
+      ? DATE_RANGE_LABELS.RANGE_PLACEHOLDER
       : dateFrom === dateTo
         ? fmtDate(dateFrom)
         : `${fmtDate(dateFrom)} – ${fmtDate(dateTo)}`
+
+  const clearDateRange = () => {
+    onDateFromChange('')
+    onDateToChange('')
+  }
 
   return (
     <div ref={ref} className={styles.dateRangeWrapper}>
@@ -1337,7 +1393,7 @@ export function DateRangePicker({
 
           <div className={styles.dateRangeInputRow}>
             <div className={styles.dateRangeInputGroup}>
-              <span className={styles.dateLabel}>Từ</span>
+              <span className={styles.dateLabel}>{LABELS.FROM}</span>
               <input
                 type="date"
                 className={styles.dateInput}
@@ -1361,7 +1417,7 @@ export function DateRangePicker({
               <polyline points="12 5 19 12 12 19" />
             </svg>
             <div className={styles.dateRangeInputGroup}>
-              <span className={styles.dateLabel}>Đến</span>
+              <span className={styles.dateLabel}>{LABELS.TO}</span>
               <input
                 type="date"
                 className={styles.dateInput}
@@ -1370,6 +1426,16 @@ export function DateRangePicker({
                 onChange={(e) => onDateToChange(e.target.value)}
               />
             </div>
+          </div>
+
+          <div className={styles.dateRangePickerFooter}>
+            <button
+              type="button"
+              className={styles.dateRangeClearBtn}
+              onClick={clearDateRange}
+            >
+              {DATE_RANGE_LABELS.CLEAR}
+            </button>
           </div>
         </div>
       )}

@@ -88,8 +88,8 @@ export function useSharedDateRange(): [
   // Update dates when filter state loads
   useEffect(() => {
     if (loaded && filterState) {
-      if (filterState.fromDate) setFromDate(filterState.fromDate);
-      if (filterState.toDate) setToDate(filterState.toDate);
+      if (typeof filterState.fromDate === 'string') setFromDate(filterState.fromDate);
+      if (typeof filterState.toDate === 'string') setToDate(filterState.toDate);
     }
   }, [loaded, filterState]);
 

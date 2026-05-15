@@ -13,7 +13,7 @@ import { getNavItemsWithRouter } from '@/lib/navigation';
 import { useAllowedPages } from '@/hooks/useAllowedPages';
 import { surveyColor, surveyScore, SURVEY_LEGEND, teacherPointColor, teacherPointScore } from '@/lib/kpiScoring';
 import { fetchTickets, updateTicket, searchUsers } from '@/services/ticketService';
-import { fetchPendingSurveyClasses } from '@/services/classesService';
+import { fetchAllClasses, fetchPendingSurveyClasses } from '@/services/classesService';
 import { classSurveyKey, fetchStudentClassSurveys, STUDENT_TEACHING_SURVEY_ID } from '@/services/classSurveyService';
 import { Ticket, LmsUser, TicketQuestion } from '@/types/ticket';
 import { Class } from '@/types/classes';
@@ -174,12 +174,14 @@ export default function TicketsDashboard() {
 
   // ── Data Fetching ───────────────────────────────────────────────────────────
   const loadData = useCallback(async (start: string, end: string) => {
-    if (!start || !end) {
+    if ((start && !end) || (!start && end)) {
       addToast(MESSAGES.ERROR.DATE_RANGE_REQUIRED, 'error');
       return;
     }
-    const fDate = new Date(start), tDate = new Date(end);
-    if (fDate > tDate) {
+    const hasDateRange = Boolean(start && end);
+    const dStart = hasDateRange ? new Date(start) : null;
+    const dEnd = hasDateRange ? new Date(end) : null;
+    if (dStart && dEnd && dStart > dEnd) {
       addToast(MESSAGES.ERROR.DATE_RANGE_INVALID, 'error');
       return;
     }
@@ -208,8 +210,8 @@ export default function TicketsDashboard() {
         await setCache(CACHE_KEYS.CENTRES, { centres: _centres });
       }
       
-      const dStart = new Date(start); dStart.setHours(0, 0, 0, 0);
-      const dEnd = new Date(end); dEnd.setHours(23, 59, 59, 999);
+      if (dStart) dStart.setHours(0, 0, 0, 0);
+      if (dEnd) dEnd.setHours(23, 59, 59, 999);
 
       // Construct google sheet URL based on current filter parameters
       let sheetUrl = `/api/google-sheets?_t=${Date.now()}`; 
@@ -234,8 +236,7 @@ export default function TicketsDashboard() {
       // Fetch tickets, pending classes, and Google Sheets data in parallel
       const [ticketsRes, pendingRes, sheetsRes] = await Promise.all([
         fetchTickets({
-          createdAt_gte: dStart.toISOString(),
-          createdAt_lte: dEnd.toISOString(),
+          ...(dStart && dEnd ? { createdAt_gte: dStart.toISOString(), createdAt_lte: dEnd.toISOString() } : {}),
           centreId_in: selectedCentres.length > 0 ? selectedCentres : [],
           ...(classCodeSearch.trim() ? { search: classCodeSearch.trim() } : {}),
         }, (loaded, total, chunk) => {
@@ -246,16 +247,27 @@ export default function TicketsDashboard() {
           curTickets = [...curTickets, ...chunk];
           setTickets([...curTickets]);
         }, signal),
-        fetchPendingSurveyClasses(
-          dStart,
-          dEnd,
-          selectedCentres,
-          (loaded, total) => {
-            cLoaded = loaded;
-            cTotal = total || 0;
-            refreshProgress();
-          },
-          signal
+        (dStart && dEnd
+          ? fetchPendingSurveyClasses(
+              dStart,
+              dEnd,
+              selectedCentres,
+              (loaded, total) => {
+                cLoaded = loaded;
+                cTotal = total || 0;
+                refreshProgress();
+              },
+              signal
+            )
+          : fetchAllClasses(
+              { ...(selectedCentres.length > 0 ? { centres: selectedCentres } : {}) },
+              (loaded, total) => {
+                cLoaded = loaded;
+                cTotal = total || 0;
+                refreshProgress();
+              },
+              signal
+            )
         ).then(res => {
            addToast('Đã nạp cấu trúc lớp học!', 'success');
            return res;
@@ -272,7 +284,8 @@ export default function TicketsDashboard() {
           const slot = slots[slotIndex];
           if (!slot?._id) return [];
           const slotDate = new Date(slot.date);
-          if (slotDate < dStart || slotDate > dEnd) return [];
+          if (dStart && slotDate < dStart) return [];
+          if (dEnd && slotDate > dEnd) return [];
           return [{
             classId: c.id,
             sessionId: slot._id,
@@ -291,7 +304,8 @@ export default function TicketsDashboard() {
             const surveySessions = (c.slots || []).flatMap((slot, slotIndex) => {
               if (![3, 7].includes(slotIndex) || !slot?._id) return [];
               const slotDate = new Date(slot.date);
-              if (slotDate < dStart || slotDate > dEnd) return [];
+              if (dStart && slotDate < dStart) return [];
+              if (dEnd && slotDate > dEnd) return [];
               const status = surveyMap.get(classSurveyKey(c.id, slot._id));
               return status ? [{
                 sessionNumber: slotIndex + 1,

@@ -507,13 +507,13 @@ export default function UsageAnalyticsPage() {
   const [environmentMetric, setEnvironmentMetric] = useState<EnvironmentMetric>('devices');
 
   const loadData = useCallback(async () => {
-    if (!fromDate || !toDate) {
+    if ((fromDate && !toDate) || (!fromDate && toDate)) {
       setError('Vui lòng chọn khoảng thời gian');
       setLoading(false);
       return;
     }
 
-    if (new Date(fromDate) > new Date(toDate)) {
+    if (fromDate && toDate && new Date(fromDate) > new Date(toDate)) {
       setError('Ngày bắt đầu phải trước ngày kết thúc');
       setLoading(false);
       return;
@@ -524,7 +524,7 @@ export default function UsageAnalyticsPage() {
 
     try {
       const token = await getAuthToken();
-      const result = await getUsageAnalytics(token, { fromDate, toDate });
+      const result = await getUsageAnalytics(token, fromDate && toDate ? { fromDate, toDate } : {});
 
       if (result.success) {
         setData(result.data);

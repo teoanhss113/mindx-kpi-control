@@ -217,7 +217,8 @@ export default function FinalSessionsAdminPage() {
   // ─── LMS fetch ────────────────────────────────────────────────────────────
 
   async function handleFetch() {
-    if (!dateFrom || !dateTo) { addToast('Chọn khoảng thời gian', 'error'); return; }
+    if ((dateFrom && !dateTo) || (!dateFrom && dateTo)) { addToast('Chọn khoảng thời gian', 'error'); return; }
+    if (dateFrom && dateTo && dateFrom > dateTo) { addToast(MESSAGES.ERROR.DATE_RANGE_INVALID, 'error'); return; }
     if (abortRef.current) abortRef.current.abort();
     abortRef.current = new AbortController();
     const signal = abortRef.current.signal;
@@ -230,10 +231,9 @@ export default function FinalSessionsAdminPage() {
     const tid = addToast(MESSAGES.LOADING.CONNECTING, 'loading');
 
     const centreIds = selectedCentres.length > 0 ? selectedCentres : centres.map(c => c.id);
-    const { endDateFrom, endDateTo } = dateRangeToUtcRange(
-      new Date(dateFrom),
-      new Date(dateTo),
-    );
+    const rangeParams = dateFrom && dateTo
+      ? dateRangeToUtcRange(new Date(dateFrom), new Date(dateTo))
+      : {};
 
     // The LMS filters by class end date, so this only loads classes whose final
     // session is expected in the selected window.
@@ -241,7 +241,7 @@ export default function FinalSessionsAdminPage() {
 
     try {
       await fetchAllClasses(
-        { centres: centreIds, endDateFrom, endDateTo, ...(classCodeSearch.trim() ? { search: classCodeSearch.trim() } : {}) },
+        { centres: centreIds, ...rangeParams, ...(classCodeSearch.trim() ? { search: classCodeSearch.trim() } : {}) },
         (loaded, total, chunk) => {
           setProgress({ loaded, total });
           for (const cls of chunk) {
@@ -250,7 +250,8 @@ export default function FinalSessionsAdminPage() {
             const last = sorted[sorted.length - 1];
             if (!last) continue;
             const lastSlotKey = dateKey(last.date);
-            if (lastSlotKey < dateFrom || lastSlotKey > dateTo) continue;
+            if (dateFrom && lastSlotKey < dateFrom) continue;
+            if (dateTo && lastSlotKey > dateTo) continue;
             accumulated.push({
               cls, slot: last,
               category: getCourseCategory(cls),
@@ -305,7 +306,7 @@ export default function FinalSessionsAdminPage() {
       ? candidates
       : candidates.filter(c => {
           const dk = dateKey(c.slot.date);
-          return dk >= dateFrom && dk <= dateTo;
+          return (!dateFrom || dk >= dateFrom) && (!dateTo || dk <= dateTo);
         });
 
     return [...filtered].sort((a, b) => {

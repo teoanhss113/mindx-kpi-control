@@ -40,8 +40,12 @@ export function ClassQualityTab({
   const [classCodeSearch, setClassCodeSearch] = useState('');
 
   const loadData = async () => {
-    if (!fromDate || !toDate) {
+    if ((fromDate && !toDate) || (!fromDate && toDate)) {
       addToast(MESSAGES.ERROR.DATE_RANGE_REQUIRED, 'error');
+      return;
+    }
+    if (fromDate && toDate && fromDate > toDate) {
+      addToast(MESSAGES.ERROR.DATE_RANGE_INVALID, 'error');
       return;
     }
     if (abortController) {
@@ -56,11 +60,13 @@ export function ClassQualityTab({
     const tid = addToast(MESSAGES.LOADING.CONNECTING, 'loading');
     let accumulated: Class[] = [];
     try {
-      const { from: hFrom, to: hTo } = haveSlotInToUtcRange(new Date(fromDate), new Date(toDate));
+      const haveSlotIn = fromDate && toDate
+        ? haveSlotInToUtcRange(new Date(fromDate), new Date(toDate))
+        : undefined;
       const centreIds = selectedCentres.length > 0 ? selectedCentres : centres.map(c => c.id);
       
       const result = await fetchAllClasses(
-        { haveSlotIn: { from: hFrom, to: hTo }, centres: centreIds, ...(classCodeSearch.trim() ? { search: classCodeSearch.trim() } : {}) },
+        { ...(haveSlotIn ? { haveSlotIn } : {}), centres: centreIds, ...(classCodeSearch.trim() ? { search: classCodeSearch.trim() } : {}) },
         (loaded, total, chunk) => {
           setProgress({ loaded, total });
           accumulated = [...accumulated, ...chunk];

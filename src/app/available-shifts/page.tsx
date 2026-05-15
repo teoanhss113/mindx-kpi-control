@@ -225,6 +225,10 @@ export default function AvailableShiftsPage() {
     if (!teacherInfo || regionCentres.length === 0) {
       return;
     }
+    if ((timeFrom && !timeTo) || (!timeFrom && timeTo)) {
+      addToast(MESSAGES.ERROR.DATE_RANGE_REQUIRED, 'error');
+      return;
+    }
 
     if (abortRef.current) abortRef.current.abort();
     abortRef.current = new AbortController();
@@ -243,9 +247,11 @@ export default function AvailableShiftsPage() {
     try {
       const params: any = {
         centreIn: centresToFetch, // Use selected centres from filter
-        timeFrom: new Date(timeFrom + 'T00:00:00+07:00').toISOString(),
-        timeTo: new Date(timeTo + 'T23:59:59+07:00').toISOString(),
       };
+      if (timeFrom && timeTo) {
+        params.timeFrom = new Date(timeFrom + 'T00:00:00+07:00').toISOString();
+        params.timeTo = new Date(timeTo + 'T23:59:59+07:00').toISOString();
+      }
 
       const response = await fetchOfficeHours(
         params,

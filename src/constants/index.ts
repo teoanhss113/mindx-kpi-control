@@ -189,6 +189,29 @@ export const TEACHER_SCHEDULE_TYPE_OPTIONS = [
   { value: 'TRIAL', label: TEACHER_SCHEDULE_LABELS.TRIAL_ONLY },
 ] as const;
 
+export const DATE_RANGE_LABELS = {
+  CLEAR: 'Xoá',
+  PLACEHOLDER: 'Chọn khoảng thời gian',
+  RANGE_PLACEHOLDER: 'Khoảng thời gian',
+  TODAY: 'Hôm nay',
+  THIS_WEEK: 'Tuần này',
+  PREVIOUS_WEEK: 'Tuần trước',
+  NEXT_WEEK: 'Tuần sau',
+  THIS_MONTH: 'Tháng này',
+  PREVIOUS_MONTH: 'Tháng trước',
+  NEXT_MONTH: 'Tháng sau',
+} as const;
+
+export const DATE_RANGE_PRESET_LABELS = [
+  DATE_RANGE_LABELS.TODAY,
+  DATE_RANGE_LABELS.THIS_WEEK,
+  DATE_RANGE_LABELS.PREVIOUS_WEEK,
+  DATE_RANGE_LABELS.NEXT_WEEK,
+  DATE_RANGE_LABELS.THIS_MONTH,
+  DATE_RANGE_LABELS.PREVIOUS_MONTH,
+  DATE_RANGE_LABELS.NEXT_MONTH,
+] as const;
+
 export const TEACHER_SCHEDULE_VIEW_OPTIONS = [
   { value: 'calendar', label: TEACHER_SCHEDULE_LABELS.CALENDAR_VIEW },
   { value: 'quality-table', label: TEACHER_SCHEDULE_LABELS.QUALITY_VIEW },

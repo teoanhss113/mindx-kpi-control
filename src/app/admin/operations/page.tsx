@@ -2527,11 +2527,11 @@ export default function TeacherSchedulePage() {
 
   // ── Data Fetching ───────────────────────────────────────────────────────────
   const loadData = useCallback(async (start: string, end: string) => {
-    if (!start || !end) {
+    if ((start && !end) || (!start && end)) {
       addToast(MESSAGES.ERROR.DATE_RANGE_REQUIRED, 'error');
       return;
     }
-    if (start > end) {
+    if (start && end && start > end) {
       addToast(MESSAGES.ERROR.DATE_RANGE_INVALID, 'error');
       return;
     }
@@ -2565,15 +2565,15 @@ export default function TeacherSchedulePage() {
       // We need to fetch the FULL MONTH of classes so that `haveSlotIn` doesn't truncate the `slots` array
       // to just 1 week. If it truncates to 1 week, we miss Checkpoint sessions (which only happen every ~5 sessions),
       // and Checkpoint analysis will fail. This matches how `/admin/class-quality` works perfectly.
-      const monthDateFrom = new Date(fromDate);
-      const monthDateTo = new Date(toDate);
-      monthDateTo.setHours(23, 59, 59, 999);
-      const monthHaveSlotIn = haveSlotInToUtcRange(monthDateFrom, monthDateTo);
-
-      const weekDateFrom = new Date(start);
-      const weekDateTo = new Date(end);
+      const hasDateRange = Boolean(start && end);
+      const weekDateFrom = hasDateRange ? new Date(start) : new Date('1970-01-01T00:00:00.000Z');
+      const weekDateTo = hasDateRange ? new Date(end) : new Date('2100-12-31T23:59:59.999Z');
       weekDateTo.setHours(23, 59, 59, 999);
-      const weekHaveSlotIn = haveSlotInToUtcRange(weekDateFrom, weekDateTo);
+      const monthDateFrom = hasDateRange ? new Date(fromDate) : weekDateFrom;
+      const monthDateTo = hasDateRange ? new Date(toDate) : weekDateTo;
+      monthDateTo.setHours(23, 59, 59, 999);
+      const monthHaveSlotIn = hasDateRange ? haveSlotInToUtcRange(monthDateFrom, monthDateTo) : undefined;
+      const weekHaveSlotIn = hasDateRange ? haveSlotInToUtcRange(weekDateFrom, weekDateTo) : undefined;
 
       let clsLoaded = 0, clsTotal = 0, ohLoaded = 0, ohTotal = 0;
       const refreshProgress = () => {
@@ -2584,7 +2584,7 @@ export default function TeacherSchedulePage() {
       // Start BOTH fetch streams simultaneously (FULL CONCURRENCY)
       const classesPromise = fetchAllClasses(
         {
-          haveSlotIn: { from: monthHaveSlotIn.from, to: monthHaveSlotIn.to },
+          ...(monthHaveSlotIn ? { haveSlotIn: { from: monthHaveSlotIn.from, to: monthHaveSlotIn.to } } : {}),
           statusIn: ['RUNNING', 'FINISHED'],
           ...(centreIds && centreIds.length > 0 ? { centres: centreIds } : {}),
           ...(classCodeSearch.trim() ? { search: classCodeSearch.trim() } : {}),
@@ -2599,8 +2599,7 @@ export default function TeacherSchedulePage() {
 
       const officeHoursPromise = fetchOfficeHours(
         {
-          timeFrom: weekHaveSlotIn.from,
-          timeTo: weekHaveSlotIn.to,
+          ...(weekHaveSlotIn ? { timeFrom: weekHaveSlotIn.from, timeTo: weekHaveSlotIn.to } : {}),
           ...(centreIds && centreIds.length > 0 ? { centreIn: centreIds } : {}),
         },
         (loaded, total) => {
@@ -2679,7 +2678,7 @@ export default function TeacherSchedulePage() {
         setProgress({ loaded: 100, total: 100 });
       }
     }
-  }, [centres, selectedCentres, selectedTeachers, selectedCourseLines, scheduleTypeFilter, exemptedSessions, exemptOneOnOneClasses, holidayPeriods, addToast]);
+  }, [centres, selectedCentres, selectedTeachers, selectedCourseLines, scheduleTypeFilter, exemptedSessions, exemptOneOnOneClasses, holidayPeriods, addToast, classCodeSearch, fromDate, toDate]);
 
   const handleCancelFetch = () => {
     if (abortRef.current) {

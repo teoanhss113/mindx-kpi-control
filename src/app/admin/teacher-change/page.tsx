@@ -255,9 +255,11 @@ export default function TeacherChangePage() {
   }, []);
 
   const handleFetch = async () => {
-    if (!dateFrom || !dateTo) { addToast(MESSAGES.ERROR.DATE_RANGE_REQUIRED, 'error'); return; }
-    const from = new Date(dateFrom), to = new Date(dateTo);
-    if (from > to) { addToast(MESSAGES.ERROR.DATE_RANGE_INVALID, 'error'); return; }
+    if ((dateFrom && !dateTo) || (!dateFrom && dateTo)) { addToast(MESSAGES.ERROR.DATE_RANGE_REQUIRED, 'error'); return; }
+    const hasDateRange = Boolean(dateFrom && dateTo);
+    const from = hasDateRange ? new Date(dateFrom) : null;
+    const to = hasDateRange ? new Date(dateTo) : null;
+    if (from && to && from > to) { addToast(MESSAGES.ERROR.DATE_RANGE_INVALID, 'error'); return; }
 
     const controller = new AbortController();
     setAbortController(controller);
@@ -267,10 +269,10 @@ export default function TeacherChangePage() {
     const tid = addToast(MESSAGES.LOADING.CONNECTING, 'loading');
     let accumulated: Class[] = [];
     try {
-      const { from: hFrom, to: hTo } = haveSlotInToUtcRange(from, to);
+      const haveSlotIn = from && to ? haveSlotInToUtcRange(from, to) : undefined;
       const centreIds = selectedCentres.length > 0 ? selectedCentres : centres.map(c => c.id);
       const result = await fetchAllClasses(
-        { haveSlotIn: { from: hFrom, to: hTo }, centres: centreIds, ...(classCodeSearch.trim() ? { search: classCodeSearch.trim() } : {}) },
+        { ...(haveSlotIn ? { haveSlotIn } : {}), centres: centreIds, ...(classCodeSearch.trim() ? { search: classCodeSearch.trim() } : {}) },
         (loaded, total, chunk) => {
           setProgress({ loaded, total });
           accumulated = [...accumulated, ...chunk];

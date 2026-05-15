@@ -10,7 +10,7 @@ import { dateRangeToUtcRange, fetchAllClasses } from '@/services/classesService'
 import { searchTeachers, type Teacher } from '@/services/officeHoursService';
 import { addJudgeTeacherToSession } from '@/services/teacherScheduleService';
 import { getCourseCategory } from '@/lib/courseCategories';
-import { LABELS } from '@/constants';
+import { LABELS, MESSAGES } from '@/constants';
 import type { Class, Session } from '@/types/classes';
 import styles from '@/app/dashboard.module.css';
 
@@ -259,7 +259,8 @@ export default function BatchDetailPage() {
   }
 
   async function fetchFromLms() {
-    if (!lmsDateFrom || !lmsDateTo) { addToast('Chọn khoảng thời gian', 'error'); return; }
+    if ((lmsDateFrom && !lmsDateTo) || (!lmsDateFrom && lmsDateTo)) { addToast('Chọn khoảng thời gian', 'error'); return; }
+    if (lmsDateFrom && lmsDateTo && lmsDateFrom > lmsDateTo) { addToast(MESSAGES.ERROR.DATE_RANGE_INVALID, 'error'); return; }
     if (lmsAbortRef.current) lmsAbortRef.current.abort();
     lmsAbortRef.current = new AbortController();
     const signal = lmsAbortRef.current.signal;
@@ -272,10 +273,9 @@ export default function BatchDetailPage() {
     const alreadyAddedSlotIds = new Set((batch?.sessions || []).map(s => s.lms_slot_id));
 
     try {
-      const { endDateFrom, endDateTo } = dateRangeToUtcRange(
-        new Date(lmsDateFrom),
-        new Date(lmsDateTo),
-      );
+      const rangeParams = lmsDateFrom && lmsDateTo
+        ? dateRangeToUtcRange(new Date(lmsDateFrom), new Date(lmsDateTo))
+        : {};
       const centreIds = lmsSelectedCentres.length > 0
         ? lmsSelectedCentres
         : centres.map(c => c.id);
@@ -283,7 +283,7 @@ export default function BatchDetailPage() {
       const found: LmsCandidate[] = [];
 
       await fetchAllClasses(
-        { centres: centreIds, endDateFrom, endDateTo },
+        { centres: centreIds, ...rangeParams },
         (loaded, total, chunk) => {
           setLmsProgress({ loaded, total });
           for (const cls of chunk) {
@@ -294,7 +294,8 @@ export default function BatchDetailPage() {
             const lastSlot = sorted[sorted.length - 1];
             if (!lastSlot) continue;
             const slotKey = dateKey(lastSlot.date);
-            if (slotKey < lmsDateFrom || slotKey > lmsDateTo) continue;
+            if (lmsDateFrom && slotKey < lmsDateFrom) continue;
+            if (lmsDateTo && slotKey > lmsDateTo) continue;
             const judge = getJudgeTeacherInfo(lastSlot);
 
             found.push({

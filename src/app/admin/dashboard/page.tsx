@@ -126,12 +126,12 @@ export default function DashboardPage() {
 
   // Fetch all data from APIs
   async function handleFetchData() {
-    if (!fromDate || !toDate) {
+    if ((fromDate && !toDate) || (!fromDate && toDate)) {
       addToast('Vui lòng chọn khoảng thời gian', 'error');
       return;
     }
 
-    if (new Date(fromDate) > new Date(toDate)) {
+    if (fromDate && toDate && new Date(fromDate) > new Date(toDate)) {
       addToast('Ngày bắt đầu phải trước ngày kết thúc', 'error');
       return;
     }
@@ -164,7 +164,10 @@ export default function DashboardPage() {
     } as any;
 
     try {
-      const { endDateFrom, endDateTo } = dateRangeToUtcRange(new Date(fromDate), new Date(toDate));
+      const hasDateRange = Boolean(fromDate && toDate);
+      const rangeParams = hasDateRange
+        ? dateRangeToUtcRange(new Date(fromDate), new Date(toDate))
+        : {};
       const centreIds = selectedCentres.length > 0 ? selectedCentres : centres.map(c => c.id);
       let sheetUrl = `/api/google-sheets?_t=${Date.now()}`;
       if (fromDate) sheetUrl += `&fromDate=${encodeURIComponent(fromDate)}`;
@@ -194,10 +197,10 @@ export default function DashboardPage() {
       const ticketsToastId = addToast(MESSAGES.LOADING.LOADING_TICKETS, 'loading');
       const teachersToastId = addToast('Đang tải dữ liệu giáo viên...', 'loading');
       
-      const dateFrom = new Date(fromDate);
-      const dateTo = new Date(toDate);
-      dateFrom.setHours(0, 0, 0, 0);
-      dateTo.setHours(23, 59, 59, 999);
+      const dateFromObj = hasDateRange ? new Date(fromDate) : new Date('1970-01-01T00:00:00.000Z');
+      const dateToObj = hasDateRange ? new Date(toDate) : new Date('2100-12-31T23:59:59.999Z');
+      dateFromObj.setHours(0, 0, 0, 0);
+      dateToObj.setHours(23, 59, 59, 999);
       
       // 🚀 CONCURRENT FUSION: Fire ALL four massive data streams in parallel for ultimate speed!
       let schLoaded = 0, schTotal = 0;
@@ -223,8 +226,8 @@ export default function DashboardPage() {
       ] = await Promise.all([
         // 1. Teacher Schedules
         fetchTeacherSchedules(
-          dateFrom,
-          dateTo,
+          dateFromObj,
+          dateToObj,
           centreIds,
           undefined,
           (loaded, total) => {
@@ -237,7 +240,7 @@ export default function DashboardPage() {
 
         // 2. All Classes (KPIs)
         fetchAllClasses(
-          { centres: centreIds, endDateFrom, endDateTo },
+          { centres: centreIds, ...rangeParams },
           (loaded, total) => {
             clsLoaded = loaded;
             clsTotal = total || 0;
@@ -251,8 +254,10 @@ export default function DashboardPage() {
         fetchTickets(
           {
             centreId_in: centreIds,
-            createdAt_gte: new Date(fromDate).toISOString(),
-            createdAt_lte: new Date(toDate).toISOString(),
+            ...(hasDateRange ? {
+              createdAt_gte: dateFromObj.toISOString(),
+              createdAt_lte: dateToObj.toISOString(),
+            } : {}),
           },
           (loaded, total) => {
             ticLoaded = loaded;
@@ -264,8 +269,8 @@ export default function DashboardPage() {
 
         // 4. Classes that need teacher survey collection
         fetchPendingSurveyClasses(
-          dateFrom,
-          dateTo,
+          dateFromObj,
+          dateToObj,
           centreIds,
           (loaded, total) => {
             pendingLoaded = loaded;

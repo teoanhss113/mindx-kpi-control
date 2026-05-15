@@ -328,7 +328,7 @@ function OfficeHoursPageInner() {
     const resolvedTo   = override?.date ?? timeTo;
     const resolvedCentres = override?.centreIds ?? selectedCentres;
 
-    if (!resolvedFrom || !resolvedTo) {
+    if ((resolvedFrom && !resolvedTo) || (!resolvedFrom && resolvedTo)) {
       addToast(MESSAGES.ERROR.DATE_RANGE_REQUIRED, 'error');
       return;
     }
@@ -343,14 +343,17 @@ function OfficeHoursPageInner() {
     let accumulated: OfficeHour[] = [];
 
     try {
-      const fromUTC = new Date(resolvedFrom + 'T00:00:00+07:00').toISOString();
-      const toUTC = new Date(resolvedTo + 'T23:59:59+07:00').toISOString();
+      const rangeParams = resolvedFrom && resolvedTo
+        ? {
+            timeFrom: new Date(resolvedFrom + 'T00:00:00+07:00').toISOString(),
+            timeTo: new Date(resolvedTo + 'T23:59:59+07:00').toISOString(),
+          }
+        : {};
 
       const result = await fetchOfficeHours(
         {
           centreIn: resolvedCentres.length > 0 ? resolvedCentres : undefined,
-          timeFrom: fromUTC,
-          timeTo: toUTC,
+          ...rangeParams,
         },
         (loaded, total, chunk) => {
           // Update progress

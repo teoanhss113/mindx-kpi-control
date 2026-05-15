@@ -86,6 +86,26 @@ function summarizeTemplateMatch(parsedAreas: ReturnType<typeof parseCommentByAre
   return undefined;
 }
 
+function isBriefCommentText(text: string | undefined): boolean {
+  if (!text) return false;
+  const normalized = text
+    .replace(/[​-‍﻿]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return normalized.length > 0 && normalized.length < 30;
+}
+
+function hasBriefCustomComment(parsedAreas: ReturnType<typeof parseCommentByAreasStructured>): boolean {
+  return parsedAreas.some(area => {
+    if (isBriefCommentText(area.generalText)) return true;
+
+    return area.criteria.some(criterion => {
+      const isTemplateBased = criterion.templateMatch === 'exact' || criterion.templateMatch === 'modified';
+      return !isTemplateBased && isBriefCommentText(criterion.text);
+    });
+  });
+}
+
 export function analyzeComments(
   cls: Class,
   exemptedSessions: number[] = DEFAULT_EXEMPTED_SESSIONS,
@@ -183,10 +203,11 @@ export function analyzeComments(
          ? structured
          : parseCommentAreas(sa.commentByAreas || []);
        const templateMatch = summarizeTemplateMatch(parsedAreas);
+       const hasBriefCustomText = hasBriefCustomComment(parsedAreas);
        
        if (!text) {
          if (isPast) status = 'empty';
-       } else if (text.length < 30) {
+       } else if (text.length < 30 || hasBriefCustomText) {
          status = 'brief';
        } else {
          const duplicatesOtherStudent = (slotCommentFreq.get(text) || 0) > 1;

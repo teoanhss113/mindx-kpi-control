@@ -188,7 +188,14 @@ export default function DashboardPage() {
   }, []);
 
   const handleFetch = async () => {
-    if (!fromDate || !toDate) return;
+    if ((fromDate && !toDate) || (!fromDate && toDate)) {
+      addToast(MESSAGES.ERROR.DATE_RANGE_REQUIRED, 'error');
+      return;
+    }
+    if (fromDate && toDate && fromDate > toDate) {
+      addToast(MESSAGES.ERROR.DATE_RANGE_INVALID, 'error');
+      return;
+    }
     const controller = new AbortController();
     setAbortController(controller);
     setLoading(true);
@@ -199,9 +206,11 @@ export default function DashboardPage() {
     let curExcluded = { ...exemptedCourses };
     const tid = addToast(MESSAGES.LOADING.CONNECTING, 'loading');
     try {
-      const { endDateFrom, endDateTo } = dateRangeToUtcRange(new Date(fromDate), new Date(toDate));
+      const rangeParams = fromDate && toDate
+        ? dateRangeToUtcRange(new Date(fromDate), new Date(toDate))
+        : {};
       const centreIds = selectedCentres.length > 0 ? selectedCentres : centres.map(c => c.id);
-      const result = await fetchAllClasses({ endDateFrom, endDateTo, centres: centreIds, ...(classCodeSearch.trim() ? { search: classCodeSearch.trim() } : {}) }, (loaded, total, chunk) => {
+      const result = await fetchAllClasses({ ...rangeParams, centres: centreIds, ...(classCodeSearch.trim() ? { search: classCodeSearch.trim() } : {}) }, (loaded, total, chunk) => {
         setProgress({ loaded, total });
         curClasses = [...curClasses, ...chunk];
         setClasses([...curClasses]);
