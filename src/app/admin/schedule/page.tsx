@@ -4,6 +4,7 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { ProtectedPage } from '@/components/ProtectedPage';
 import { PageLayout } from '@/components/PageLayout';
 import { Badge, CentreBadge, CentreSelect, Icon, ToastContainer, useToast } from '@/components/ui';
+import type { SelectOption } from '@/components/ui';
 import { useAuth } from '@/lib/AuthContext';
 import { getCache, setCache } from '@/lib/idb';
 import { supabase } from '@/lib/supabase/client';
@@ -23,6 +24,9 @@ import {
 } from '@/constants';
 import type { ManagerScheduleInput, ManagerScheduleRegistration, ManagerWorkSession } from '@/types/managerSchedule';
 import styles from '@/app/dashboard.module.css';
+
+const OTHER_CENTRE_OPTION_ID = '__manager_schedule_other__';
+const OTHER_CENTRE_ID_PREFIX = 'other:';
 
 function toDateInputValue(date: Date) {
   const yyyy = date.getFullYear();
@@ -54,12 +58,37 @@ function slotKey(date: string, session: ManagerWorkSession) {
   return `${date}:${session}`;
 }
 
+function isOtherCentreId(centreId: string) {
+  return centreId === OTHER_CENTRE_OPTION_ID || centreId.startsWith(OTHER_CENTRE_ID_PREFIX);
+}
+
+function makeOtherCentreId(value: string) {
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 64);
+  return `${OTHER_CENTRE_ID_PREFIX}${normalized || 'custom'}`;
+}
+
 function isRequiredWeekend(weekday: number) {
   return MANAGER_REQUIRED_WEEKDAYS.includes(weekday as typeof MANAGER_REQUIRED_WEEKDAYS[number]);
 }
 
-function displayManagerName(item: ManagerScheduleRegistration) {
-  return item.managerName?.trim() || item.managerEmail;
+function looksLikeEmail(value: string) {
+  return value.includes('@');
+}
+
+function displayManagerName(item: ManagerScheduleRegistration, managerNamesByEmail: Record<string, string>) {
+  const emailKey = item.managerEmail.toLowerCase();
+  const enrichedName = managerNamesByEmail[emailKey]?.trim();
+  const storedName = item.managerName?.trim() || '';
+  if (enrichedName && !looksLikeEmail(enrichedName)) return enrichedName;
+  if (storedName && !looksLikeEmail(storedName)) return storedName;
+  return item.managerEmail.split('@')[0] || item.managerEmail;
 }
 
 async function loadRegionCentreIds() {
@@ -100,9 +129,18 @@ export default function ManagerScheduleRegistrationPage() {
   const [weekStart, setWeekStart] = useState(() => toDateInputValue(getMonday()));
   const [centres, setCentres] = useState<Centre[]>([]);
   const [schedules, setSchedules] = useState<ManagerScheduleRegistration[]>([]);
+  const [managerNamesByEmail, setManagerNamesByEmail] = useState<Record<string, string>>({});
   const [slotCentres, setSlotCentres] = useState<Record<string, string>>({});
+  const [customCentreNames, setCustomCentreNames] = useState<Record<string, string>>({});
+  const [slotNotes, setSlotNotes] = useState<Record<string, string>>({});
   const [savingSlots, setSavingSlots] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(false);
+
+  const otherCentreOption = useMemo<SelectOption>(() => ({
+    value: OTHER_CENTRE_OPTION_ID,
+    label: MANAGER_SCHEDULE_LABELS.OTHER_CENTRE_LABEL,
+    searchTerms: [MANAGER_SCHEDULE_LABELS.OTHER_CENTRE_LABEL],
+  }), []);
 
   const weekDays = useMemo(() => WEEKDAY_OPTIONS.map(day => ({
     ...day,
@@ -121,13 +159,44 @@ export default function ManagerScheduleRegistrationPage() {
 
       const scheduleData = await fetchManagerSchedules({ dateFrom, dateTo });
       setSchedules(scheduleData);
+      const uniqueEmails = Array.from(new Set(scheduleData.map(item => item.managerEmail.toLowerCase()).filter(Boolean)));
+      if (uniqueEmails.length > 0) {
+        const { enrichProfiles } = await import('@/services/userEnrichmentService');
+        const enriched = await enrichProfiles(uniqueEmails.map(email => ({
+          id: email,
+          email,
+          role: 'manager' as const,
+          is_active: true,
+          created_at: '',
+        })));
+
+        setManagerNamesByEmail(enriched.reduce<Record<string, string>>((acc, user) => {
+          const name = user.full_name || user.username || '';
+          if (name) acc[user.email.toLowerCase()] = name;
+          return acc;
+        }, {}));
+      } else {
+        setManagerNamesByEmail({});
+      }
       const mine = scheduleData
         .filter(item => item.managerEmail.toLowerCase() === myEmail)
         .reduce<Record<string, string>>((acc, item) => {
-          acc[slotKey(item.date, item.session)] = item.centreId;
+          acc[slotKey(item.date, item.session)] = isOtherCentreId(item.centreId) ? OTHER_CENTRE_OPTION_ID : item.centreId;
           return acc;
         }, {});
       setSlotCentres(mine);
+      setSlotNotes(scheduleData
+        .filter(item => item.managerEmail.toLowerCase() === myEmail)
+        .reduce<Record<string, string>>((acc, item) => {
+          acc[slotKey(item.date, item.session)] = item.note || '';
+          return acc;
+        }, {}));
+      setCustomCentreNames(scheduleData
+        .filter(item => item.managerEmail.toLowerCase() === myEmail && isOtherCentreId(item.centreId))
+        .reduce<Record<string, string>>((acc, item) => {
+          acc[slotKey(item.date, item.session)] = item.centreName || item.centreShortName || '';
+          return acc;
+        }, {}));
     } catch (error) {
       console.error('Failed to load manager schedules:', error);
       addToast(MESSAGES.ERROR.GENERIC, 'error');
@@ -151,13 +220,35 @@ export default function ManagerScheduleRegistrationPage() {
     }, {});
   }, [schedules]);
 
-  const handleCentreChange = async (date: string, sessionValue: ManagerWorkSession, centreId: string) => {
+  const saveSlot = async (date: string, sessionValue: ManagerWorkSession, centreId: string, customCentreName = '', note = '', forceSave = false) => {
     const key = slotKey(date, sessionValue);
     const previousCentreId = slotCentres[key] || '';
     const previousSchedules = schedules;
     const ownRegistration = schedulesBySlot[key]?.find(item => item.managerEmail.toLowerCase() === myEmail);
+    const previousCustomCentreNames = customCentreNames;
+    const previousSlotNotes = slotNotes;
+    const isOtherSelection = centreId === OTHER_CENTRE_OPTION_ID;
+    const finalCustomName = customCentreName.trim();
+    const finalNote = note.trim();
+    const finalCentreId = isOtherSelection ? makeOtherCentreId(finalCustomName) : centreId;
+    const currentStoredCentreId = ownRegistration
+      ? (isOtherCentreId(ownRegistration.centreId) ? OTHER_CENTRE_OPTION_ID : ownRegistration.centreId)
+      : '';
+    const currentStoredCustomName = ownRegistration && isOtherCentreId(ownRegistration.centreId)
+      ? (ownRegistration.centreName || ownRegistration.centreShortName || '')
+      : '';
+    const currentStoredNote = ownRegistration?.note || '';
 
-    if (previousCentreId === centreId) return;
+    if (previousCentreId === centreId && !isOtherSelection && !forceSave) return;
+    if (isOtherSelection && !finalCustomName) return;
+    if (
+      forceSave
+      && currentStoredCentreId === centreId
+      && currentStoredNote === finalNote
+      && (!isOtherSelection || currentStoredCustomName === finalCustomName)
+    ) {
+      return;
+    }
 
     setSlotCentres(prev => {
       const next = { ...prev };
@@ -172,6 +263,11 @@ export default function ManagerScheduleRegistrationPage() {
         if (ownRegistration) {
           await deleteManagerSchedule(ownRegistration.id);
           setSchedules(prev => prev.filter(item => item.id !== ownRegistration.id));
+          setSlotNotes(prev => {
+            const next = { ...prev };
+            delete next[key];
+            return next;
+          });
           addToast(MANAGER_SCHEDULE_LABELS.DELETE_SUCCESS, 'success');
         }
         return;
@@ -179,18 +275,23 @@ export default function ManagerScheduleRegistrationPage() {
 
       const item: ManagerScheduleInput = (() => {
         const centre = centres.find(item => item.id === centreId);
+        const centreName = isOtherSelection ? finalCustomName : centre?.name || '';
+        const centreShortName = isOtherSelection ? finalCustomName : centre?.shortName || centre?.name || '';
         return {
-          centreId,
-          centreName: centre?.name || '',
-          centreShortName: centre?.shortName || centre?.name || '',
+          centreId: finalCentreId,
+          centreName,
+          centreShortName,
           date,
           weekday: new Date(`${date}T00:00:00`).getDay(),
           session: sessionValue,
-          note: '',
+          note: finalNote,
         };
       })();
 
-      const savedRows = await createManagerSchedules([item], session?.displayName || session?.email || '');
+      const currentManagerName = session?.displayName && !looksLikeEmail(session.displayName)
+        ? session.displayName
+        : session?.email?.split('@')[0] || '';
+      const savedRows = await createManagerSchedules([item], currentManagerName);
       if (savedRows[0]) {
         setSchedules(prev => [
           ...prev.filter(item => !(item.managerEmail.toLowerCase() === myEmail && item.date === date && item.session === sessionValue)),
@@ -201,6 +302,8 @@ export default function ManagerScheduleRegistrationPage() {
     } catch (error) {
       console.error('Failed to save manager schedules:', error);
       setSchedules(previousSchedules);
+      setCustomCentreNames(previousCustomCentreNames);
+      setSlotNotes(previousSlotNotes);
       setSlotCentres(prev => {
         const next = { ...prev };
         if (previousCentreId) next[key] = previousCentreId;
@@ -211,6 +314,43 @@ export default function ManagerScheduleRegistrationPage() {
     } finally {
       setSavingSlots(prev => ({ ...prev, [key]: false }));
     }
+  };
+
+  const handleCentreChange = async (date: string, sessionValue: ManagerWorkSession, ids: string[]) => {
+    const key = slotKey(date, sessionValue);
+    const centreId = ids[ids.length - 1] || '';
+    if (centreId === OTHER_CENTRE_OPTION_ID) {
+      setSlotCentres(prev => ({ ...prev, [key]: OTHER_CENTRE_OPTION_ID }));
+      setCustomCentreNames(prev => ({ ...prev, [key]: prev[key] || '' }));
+      return;
+    }
+    if (centreId !== OTHER_CENTRE_OPTION_ID) {
+      setCustomCentreNames(prev => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+    }
+    if (!centreId) {
+      setSlotNotes(prev => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+    }
+    await saveSlot(date, sessionValue, centreId, '', slotNotes[key] || '');
+  };
+
+  const handleCustomCentreSave = async (date: string, sessionValue: ManagerWorkSession) => {
+    const key = slotKey(date, sessionValue);
+    await saveSlot(date, sessionValue, OTHER_CENTRE_OPTION_ID, customCentreNames[key] || '', slotNotes[key] || '', true);
+  };
+
+  const handleSlotNoteSave = async (date: string, sessionValue: ManagerWorkSession) => {
+    const key = slotKey(date, sessionValue);
+    const centreId = slotCentres[key] || '';
+    if (!centreId) return;
+    await saveSlot(date, sessionValue, centreId, customCentreNames[key] || '', slotNotes[key] || '', true);
   };
 
   const moveWeek = (days: number) => {
@@ -323,15 +463,46 @@ export default function ManagerScheduleRegistrationPage() {
                             <CentreSelect
                               centres={centres}
                               selected={selectedCentre ? [selectedCentre] : []}
-                              onChange={(ids) => void handleCentreChange(day.date, sessionItem.value, ids[ids.length - 1] || '')}
+                              onChange={(ids) => void handleCentreChange(day.date, sessionItem.value, ids)}
                               placeholder={MANAGER_SCHEDULE_LABELS.CENTRE_PLACEHOLDER}
                               maxDisplay={1}
                               searchable
                               showRegionQuickSelect={false}
                               showSelectAll={false}
                               menuPosition="fixed"
+                              extraOptions={[otherCentreOption]}
                             />
                           </div>
+                          {selectedCentre === OTHER_CENTRE_OPTION_ID && (
+                            <input
+                              className={styles.dateInput}
+                              style={{ width: '100%', marginTop: 'var(--space-2)' }}
+                              value={customCentreNames[key] || ''}
+                              placeholder={MANAGER_SCHEDULE_LABELS.OTHER_CENTRE_PLACEHOLDER}
+                              onChange={event => setCustomCentreNames(prev => ({ ...prev, [key]: event.target.value }))}
+                              onBlur={() => void handleCustomCentreSave(day.date, sessionItem.value)}
+                              onKeyDown={event => {
+                                if (event.key === 'Enter') {
+                                  event.currentTarget.blur();
+                                }
+                              }}
+                            />
+                          )}
+                          {selectedCentre && (
+                            <input
+                              className={styles.dateInput}
+                              style={{ width: '100%', marginTop: 'var(--space-2)' }}
+                              value={slotNotes[key] || ''}
+                              placeholder={MANAGER_SCHEDULE_LABELS.SLOT_NOTE_PLACEHOLDER}
+                              onChange={event => setSlotNotes(prev => ({ ...prev, [key]: event.target.value }))}
+                              onBlur={() => void handleSlotNoteSave(day.date, sessionItem.value)}
+                              onKeyDown={event => {
+                                if (event.key === 'Enter') {
+                                  event.currentTarget.blur();
+                                }
+                              }}
+                            />
+                          )}
                           {isSavingSlot && (
                             <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 'var(--space-1)' }}>{MANAGER_SCHEDULE_LABELS.SAVING_SLOT}</div>
                           )}
@@ -347,23 +518,30 @@ export default function ManagerScheduleRegistrationPage() {
                                 </div>
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 6, minWidth: 0 }}>
                                   {items.map(item => (
-                                    <span
-                                      key={item.id}
-                                      title={displayManagerName(item)}
-                                      style={{
-                                        display: 'block',
-                                        minWidth: 0,
-                                        overflow: 'hidden',
-                                        textOverflow: 'ellipsis',
-                                        whiteSpace: 'nowrap',
-                                        fontSize: 11,
-                                        lineHeight: '16px',
-                                        color: item.managerEmail.toLowerCase() === myEmail ? 'var(--brand-indigo)' : 'var(--text-secondary)',
-                                        fontWeight: item.managerEmail.toLowerCase() === myEmail ? 590 : 400,
-                                      }}
-                                    >
-                                      {displayManagerName(item)}
-                                    </span>
+                                    <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
+                                      <span
+                                        title={displayManagerName(item, managerNamesByEmail)}
+                                        style={{
+                                          display: 'block',
+                                          minWidth: 0,
+                                          overflow: 'hidden',
+                                          textOverflow: 'ellipsis',
+                                          whiteSpace: 'nowrap',
+                                          fontSize: 11,
+                                          lineHeight: '16px',
+                                          color: item.managerEmail.toLowerCase() === myEmail ? 'var(--brand-indigo)' : 'var(--text-secondary)',
+                                          fontWeight: item.managerEmail.toLowerCase() === myEmail ? 590 : 400,
+                                        }}
+                                      >
+                                        {displayManagerName(item, managerNamesByEmail)}
+                                      </span>
+                                      {item.note?.trim() && (
+                                        <span className={styles.tooltipWrap}>
+                                          <span className={styles.tooltipIcon}>i</span>
+                                          <span className={styles.tooltipBox}>{item.note.trim()}</span>
+                                        </span>
+                                      )}
+                                    </div>
                                   ))}
                                 </div>
                               </div>

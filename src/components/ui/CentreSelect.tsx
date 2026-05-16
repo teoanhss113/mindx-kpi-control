@@ -34,6 +34,8 @@ interface CentreSelectProps {
   menuPosition?: 'bottom' | 'top' | 'fixed';
   /** Show the bulk "Tất cả" option. Disable for single-centre picking. */
   showSelectAll?: boolean;
+  /** Additional options shown after the centre list, useful for contextual choices. */
+  extraOptions?: SelectOption[];
 }
 
 /**
@@ -81,6 +83,7 @@ export function CentreSelect({
   showRegionQuickSelect = false,
   menuPosition = 'bottom',
   showSelectAll = true,
+  extraOptions = [],
 }: CentreSelectProps) {
   const [regions, setRegions] = useState<Region[]>([]);
 
@@ -161,11 +164,11 @@ export function CentreSelect({
         regionCentreIds: r.centre_ids, // Store centre IDs for checking selection state
       }));
 
-      return [...regionOptions, ...centreOptions];
+      return [...regionOptions, ...centreOptions, ...extraOptions];
     }
 
-    return centreOptions;
-  }, [centres, filterToIds, showRegionQuickSelect, regions]);
+    return [...centreOptions, ...extraOptions];
+  }, [centres, extraOptions, filterToIds, showRegionQuickSelect, regions]);
 
   // Custom onChange handler to handle region selection
   function handleChange(selectedValues: string[]) {
