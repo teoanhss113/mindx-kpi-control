@@ -204,6 +204,9 @@ export function analyzeComments(
          : parseCommentAreas(sa.commentByAreas || []);
        const templateMatch = summarizeTemplateMatch(parsedAreas);
        const hasBriefCustomText = hasBriefCustomComment(parsedAreas);
+       let duplicateWithSessionIndex: number | undefined;
+       let duplicateWithDate: string | undefined;
+       let duplicateWithTeacherName: string | undefined;
        
        if (!text) {
          if (isPast) status = 'empty';
@@ -211,7 +214,7 @@ export function analyzeComments(
          status = 'brief';
        } else {
          const duplicatesOtherStudent = (slotCommentFreq.get(text) || 0) > 1;
-         const duplicatesThisStudent = st.comments.some(c => c.text === text);
+         const duplicateThisStudentComment = [...st.comments].reverse().find(c => c.text === text);
 
          if (templateMatch === 'exact') {
            status = 'template_exact';
@@ -219,8 +222,11 @@ export function analyzeComments(
            status = 'template_modified';
          } else if (duplicatesOtherStudent) {
            status = 'duplicate_other';
-         } else if (duplicatesThisStudent) {
+         } else if (duplicateThisStudentComment) {
            status = 'duplicate_self';
+           duplicateWithSessionIndex = duplicateThisStudentComment.sessionIndex;
+           duplicateWithDate = duplicateThisStudentComment.date;
+           duplicateWithTeacherName = duplicateThisStudentComment.teacherName;
          }
        }
 
@@ -246,6 +252,9 @@ export function analyzeComments(
          text,
          status,
          templateMatch,
+         duplicateWithSessionIndex,
+         duplicateWithDate,
+         duplicateWithTeacherName,
          isOverdue,
          overdueHours: isOverdue ? Math.floor(overdueHours) : undefined,
          commentDeadlineHours,

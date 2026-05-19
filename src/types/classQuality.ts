@@ -21,6 +21,9 @@ export interface StudentCommentStatus {
     text: string;
     status: CommentStatus;
     templateMatch?: TemplateMatch;
+    duplicateWithSessionIndex?: number;
+    duplicateWithDate?: string;
+    duplicateWithTeacherName?: string;
     isOverdue: boolean;
     overdueHours?: number;
     commentDeadlineHours?: number;

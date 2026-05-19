@@ -2732,6 +2732,8 @@ export default function TeacherSchedulePage() {
     setLoading(true);
     setProgress({ loaded: 0, total: 100 });
     const teacherIds = selectedTeachers.length > 0 ? [...selectedTeachers] : undefined;
+    const shouldLoadClasses = scheduleTypeFilter !== 'TRIAL';
+    const shouldLoadOfficeHours = scheduleTypeFilter !== 'CLASS';
 
     try {
       // Load centres if not loaded
@@ -2771,42 +2773,48 @@ export default function TeacherSchedulePage() {
         setProgress({ loaded: clsLoaded + ohLoaded, total: finalTotal });
       };
 
-      // Start BOTH fetch streams simultaneously (FULL CONCURRENCY)
-      const classesPromise = fetchAllClasses(
-        {
-          ...(monthHaveSlotIn ? { haveSlotIn: { from: monthHaveSlotIn.from, to: monthHaveSlotIn.to } } : {}),
-          statusIn: ['RUNNING', 'FINISHED'],
-          ...(centreIds && centreIds.length > 0 ? { centres: centreIds } : {}),
-          ...(classCodeSearch.trim() ? { search: classCodeSearch.trim() } : {}),
-        },
-        (loaded, total) => {
-          clsLoaded = loaded;
-          clsTotal = total || 0;
-          refreshProgress();
-        },
-        signal
-      );
+      // Start the enabled fetch streams simultaneously.
+      const classesPromise = shouldLoadClasses
+        ? fetchAllClasses(
+            {
+              ...(monthHaveSlotIn ? { haveSlotIn: { from: monthHaveSlotIn.from, to: monthHaveSlotIn.to } } : {}),
+              statusIn: ['RUNNING', 'FINISHED'],
+              ...(centreIds && centreIds.length > 0 ? { centres: centreIds } : {}),
+              ...(classCodeSearch.trim() ? { search: classCodeSearch.trim() } : {}),
+            },
+            (loaded, total) => {
+              clsLoaded = loaded;
+              clsTotal = total || 0;
+              refreshProgress();
+            },
+            signal
+          )
+        : Promise.resolve([] as Class[]);
 
-      const officeHoursPromise = fetchOfficeHours(
-        {
-          ...(weekHaveSlotIn ? { timeFrom: weekHaveSlotIn.from, timeTo: weekHaveSlotIn.to } : {}),
-          ...(centreIds && centreIds.length > 0 ? { centreIn: centreIds } : {}),
-        },
-        (loaded, total) => {
-          ohLoaded = loaded;
-          ohTotal = total || 0;
-          refreshProgress();
-        },
-        signal
-      );
+      const officeHoursPromise = shouldLoadOfficeHours
+        ? fetchOfficeHours(
+            {
+              ...(weekHaveSlotIn ? { timeFrom: weekHaveSlotIn.from, timeTo: weekHaveSlotIn.to } : {}),
+              ...(centreIds && centreIds.length > 0 ? { centreIn: centreIds } : {}),
+            },
+            (loaded, total) => {
+              ohLoaded = loaded;
+              ohTotal = total || 0;
+              refreshProgress();
+            },
+            signal
+          )
+        : Promise.resolve({ data: [], pagination: { type: 'OFFSET', total: 0 } });
 
-      const commentAreasPromise = fetchStudentCommentAreas(
-        Array.from({ length: 30 }, (_, i) => String(i + 1)).concat('final'),
-        signal
-      ).catch(err => {
-        console.warn('Unable to fetch student comment areas:', err);
-        return [] as CommentAreaDef[];
-      });
+      const commentAreasPromise = shouldLoadClasses
+        ? fetchStudentCommentAreas(
+            Array.from({ length: 30 }, (_, i) => String(i + 1)).concat('final'),
+            signal
+          ).catch(err => {
+            console.warn('Unable to fetch student comment areas:', err);
+            return [] as CommentAreaDef[];
+          })
+        : Promise.resolve([] as CommentAreaDef[]);
 
       // Fire them in parallel!
       const [scopedClasses, officeHoursResult, commentAreas] = await Promise.all([
@@ -4302,7 +4310,18 @@ export default function TeacherSchedulePage() {
                                   return (
                                     <tr key={st.studentId}>
                                       <td style={{ fontWeight: 510, fontSize: 12 }}>{st.studentName}</td>
-                                      <td><CommentStatusBadge status={status} /></td>
+                                      <td>
+                                        <CommentStatusBadge status={status} />
+                                        {c?.status === 'duplicate_self' && (
+                                          <div
+                                            style={{ marginTop: 4, fontSize: 10, color: 'var(--text-tertiary)', lineHeight: 1.35, whiteSpace: 'nowrap' }}
+                                          >
+                                            {c.duplicateWithSessionIndex !== undefined
+                                              ? `Trùng buổi ${c.duplicateWithSessionIndex + 1}`
+                                              : 'Trùng với buổi trước'}
+                                          </div>
+                                        )}
+                                      </td>
                                       <td style={{ fontSize: 11, color: c?.text ? 'var(--text-primary)' : 'var(--text-quaternary)', lineHeight: 1.4, verticalAlign: 'top', paddingTop: 6 }}>
                                         {c?.text ? (
                                           <TeacherCommentCell text={c.text} parsedAreas={c.parsedAreas} />

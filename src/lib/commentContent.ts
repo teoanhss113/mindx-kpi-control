@@ -79,6 +79,40 @@ export interface ParsedArea {
   generalText?: string; // Quill editor or plain text (no structured criteria)
 }
 
+const TEMPLATE_MATCH_EXCLUDED_LABELS = [
+  'KHẢO SÁT ĐÁNH GIÁ CHẤT LƯỢNG DỊCH VỤ - DÀNH CHO PHỤ HUYNH',
+];
+
+function normalizeTemplateLabel(value: string | null | undefined): string {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[–—−]/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function isTemplateMatchExcludedLabel(value: string | null | undefined): boolean {
+  const normalized = normalizeTemplateLabel(value);
+  return normalized.length > 0 && TEMPLATE_MATCH_EXCLUDED_LABELS
+    .some(label => {
+      const excludedLabel = normalizeTemplateLabel(label);
+      return normalized === excludedLabel || normalized.includes(excludedLabel);
+    });
+}
+
+function isTemplateMatchExcludedArea(
+  entry: CommentAreaLookupEntry | undefined,
+  groupTitle: string | null | undefined
+): boolean {
+  return isTemplateMatchExcludedLabel(entry?.area.name)
+    || isTemplateMatchExcludedLabel(entry?.area.fieldName)
+    || isTemplateMatchExcludedLabel(entry?.evaluationTitle)
+    || isTemplateMatchExcludedLabel(groupTitle)
+    || Boolean(entry?.area.translations?.some(t => isTemplateMatchExcludedLabel(t.value)));
+}
+
 // ─── CourseProcess-based structured parsing ──────────────────────────────────
 
 export interface CommentAreaLookupEntry {
@@ -291,12 +325,18 @@ export function parseCommentByAreasStructured(
     // (handled inside resolveCommentArea once we extract name; nothing else to do here)
 
     const name = def?.area.name || undefined;
+    const groupTitle = cba.courseProcessFinalEvaluationTitle;
     const group = def?.evaluationTitle
-      || cba.courseProcessFinalEvaluationTitle
+      || groupTitle
       || UNGROUPED;
 
-    const samples = def?.area.rates?.find(r => r.value === cba.grade)?.commentSamples;
-    const templateMatch = text ? detectTemplateMatch(text, samples) : undefined;
+    const samples = def?.area.rates?.find(r => r.value === cba.grade)?.commentSamples
+      ?.filter(sample => !isTemplateMatchExcludedLabel(sample));
+    const templateMatch = text
+      && !isTemplateMatchExcludedArea(def, groupTitle)
+      && !isTemplateMatchExcludedLabel(text)
+      ? detectTemplateMatch(text, samples)
+      : undefined;
 
     pushTo(group, {
       name,
