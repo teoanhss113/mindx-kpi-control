@@ -5,11 +5,25 @@ import { useParams } from 'next/navigation';
 import { AuthenticatedPage } from '@/components/AuthenticatedPage';
 import { UserLayout } from '@/components/UserLayout';
 import { useAuth } from '@/lib/AuthContext';
-import { useToast, ToastContainer, TableGroupHeader, EmptyState, Modal, ModalHeader, BatchStatusBadge, ParticipationStatusBadge } from '@/components/ui';
+import {
+  useToast, ToastContainer, TableGroupHeader, EmptyState, Modal, ModalHeader,
+  BatchStatusBadge, DetailField, DetailGrid, DetailText, Icon, JudgeRequestStatusBadge,
+} from '@/components/ui';
 import { authFetch } from '@/lib/auth/clientAuth';
 import { searchTeachers, type Teacher } from '@/services/officeHoursService';
 import { dateRangeToUtcRange, fetchAllClasses } from '@/services/classesService';
-import { LABELS } from '@/constants';
+import {
+  COURSE_CATEGORY_COLORS,
+  COURSE_CATEGORY_ORDER,
+  COURSES,
+  DAY_SESSION_LABELS,
+  DAY_SESSION_ORDER,
+  JUDGE_REQUEST_LABELS,
+  LABELS,
+  WEEKDAY_LABELS_VI,
+  type DaySessionLabel,
+  type Course,
+} from '@/constants';
 import { motion, AnimatePresence } from 'framer-motion';
 import styles from '@/app/dashboard.module.css';
 import type { Session, TeacherSlot } from '@/types/classes';
@@ -56,39 +70,29 @@ interface Batch {
   sessions: FinalSession[];
 }
 
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-const DOW_VI = ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
-
-const CATEGORY_COLORS: Record<string, string> = {
-  Coding:   '#059669',
-  Robotics: 'var(--brand-indigo, #3b82f6)',
-  Art:      '#d97706',
-  Others:   'var(--border)',
-};
-
-const CATEGORY_ORDER: Record<string, number> = { Coding: 0, Robotics: 1, Art: 2, Others: 3 };
-const SESSION_ORDER: Record<string, number>  = { Sáng: 0, Chiều: 1, Tối: 2 };
-
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function sessionLabel(endUtc: string | null): 'Sáng' | 'Chiều' | 'Tối' {
-  if (!endUtc) return 'Sáng';
+function sessionLabel(endUtc: string | null): DaySessionLabel {
+  if (!endUtc) return DAY_SESSION_LABELS[0];
   const h = parseInt(
     new Intl.DateTimeFormat('vi-VN', { hour: 'numeric', timeZone: 'Asia/Ho_Chi_Minh', hour12: false }).format(new Date(endUtc)),
     10,
   );
-  if (h <= 12) return 'Sáng';
-  if (h <= 18) return 'Chiều';
-  return 'Tối';
+  if (h <= 12) return DAY_SESSION_LABELS[0];
+  if (h <= 18) return DAY_SESSION_LABELS[1];
+  return DAY_SESSION_LABELS[2];
 }
 
-function dateLabelParts(ymd: string): { dow: string; display: string } {
+function dateLabelParts(ymd: string): { dow: string; ymd: string } {
   const d = new Date(ymd + 'T12:00:00');
   return {
-    dow:     DOW_VI[d.getDay()],
-    display: `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`,
+    dow: WEEKDAY_LABELS_VI[d.getDay()],
+    ymd: `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`,
   };
+}
+
+function normalizeCourseCategory(category: string | null | undefined): Course {
+  return COURSES.includes(category as Course) ? category as Course : 'Others';
 }
 
 function formatTime(utc: string | null): string {
@@ -146,7 +150,7 @@ export default function JudgeRequestsSlugPage() {
       setBatch(json.data);
     } catch (err) {
       console.error('Failed to load batch:', err);
-      addToast(err instanceof Error ? err.message : 'Không thể tải dữ liệu', 'error');
+      addToast(err instanceof Error ? err.message : JUDGE_REQUEST_LABELS.LOAD_ERROR, 'error');
       // If it's not a 404, we don't set notFound, but batch remains null
     } finally {
       setLoading(false);
@@ -157,7 +161,9 @@ export default function JudgeRequestsSlugPage() {
   // Without this guard, authFetch fires before the token is ready → 401 error.
   useEffect(() => {
     if (authLoading || !session) return;
-    void loadBatch();
+    queueMicrotask(() => {
+      void loadBatch();
+    });
   }, [authLoading, session, loadBatch]);
 
   useEffect(() => {
@@ -210,12 +216,12 @@ export default function JudgeRequestsSlugPage() {
           teacherId: teacherInfo.id,
         }),
       });
-      if (res.status === 409) { addToast('Bạn đã đăng ký cho buổi này rồi', 'info'); return; }
+      if (res.status === 409) { addToast(JUDGE_REQUEST_LABELS.REQUEST_DUPLICATE, 'info'); return; }
       if (!res.ok) throw new Error();
-      addToast('Đã gửi đăng ký làm giám khảo', 'success');
+      addToast(JUDGE_REQUEST_LABELS.REQUEST_SUCCESS, 'success');
       await loadBatch();
     } catch {
-      addToast('Không thể gửi đăng ký', 'error');
+      addToast(JUDGE_REQUEST_LABELS.REQUEST_ERROR, 'error');
     } finally {
       setSubmitting(false);
     }
@@ -226,10 +232,10 @@ export default function JudgeRequestsSlugPage() {
     try {
       const res = await authFetch(`/api/judge-requests?sessionId=${fs.id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error();
-      addToast('Đã huỷ đăng ký', 'success');
+      addToast(JUDGE_REQUEST_LABELS.CANCEL_SUCCESS, 'success');
       await loadBatch();
     } catch {
-      addToast('Không thể huỷ đăng ký', 'error');
+      addToast(JUDGE_REQUEST_LABELS.CANCEL_ERROR, 'error');
     } finally {
       setSubmitting(false);
     }
@@ -245,7 +251,7 @@ export default function JudgeRequestsSlugPage() {
       const dParts  = dateLabelParts(fs.session_date);
       const centreId = fs.centre_id || '';
       const centreLabel = fs.centre_name || '—';
-      const cat     = fs.category || 'Others';
+      const cat     = normalizeCourseCategory(fs.category);
       const sesLabel = sessionLabel(fs.end_time_utc);
       const startMs  = fs.start_time_utc ? new Date(fs.start_time_utc).getTime() : 0;
       return { fs, dKey, dParts, centreId, centreLabel, cat, sesLabel, startMs };
@@ -254,11 +260,11 @@ export default function JudgeRequestsSlugPage() {
     enriched.sort((a, b) => {
       if (a.dKey !== b.dKey) return a.dKey.localeCompare(b.dKey);
       if (a.centreLabel !== b.centreLabel) return a.centreLabel.localeCompare(b.centreLabel, 'vi');
-      const ca = CATEGORY_ORDER[a.cat] ?? 99;
-      const cb = CATEGORY_ORDER[b.cat] ?? 99;
+      const ca = COURSE_CATEGORY_ORDER[a.cat] ?? 99;
+      const cb = COURSE_CATEGORY_ORDER[b.cat] ?? 99;
       if (ca !== cb) return ca - cb;
-      const sa = SESSION_ORDER[a.sesLabel] ?? 99;
-      const sb = SESSION_ORDER[b.sesLabel] ?? 99;
+      const sa = DAY_SESSION_ORDER[a.sesLabel] ?? 99;
+      const sb = DAY_SESSION_ORDER[b.sesLabel] ?? 99;
       if (sa !== sb) return sa - sb;
       return a.startMs - b.startMs;
     });
@@ -294,8 +300,10 @@ export default function JudgeRequestsSlugPage() {
   if (loading) {
     return (
       <AuthenticatedPage>
-        <UserLayout title="Giám khảo Cuối khoá" activePage="judge-requests">
-          <div style={{ padding: 'var(--space-6)', color: 'var(--text-secondary)' }}>Đang tải...</div>
+        <UserLayout title={JUDGE_REQUEST_LABELS.PAGE_TITLE} activePage="judge-requests">
+          <div style={{ padding: 'var(--space-6)', color: 'var(--text-secondary)' }}>
+            {JUDGE_REQUEST_LABELS.LOADING}
+          </div>
         </UserLayout>
       </AuthenticatedPage>
     );
@@ -304,11 +312,11 @@ export default function JudgeRequestsSlugPage() {
   if (notFound) {
     return (
       <AuthenticatedPage>
-        <UserLayout title="Giám khảo Cuối khoá" activePage="judge-requests">
+        <UserLayout title={JUDGE_REQUEST_LABELS.PAGE_TITLE} activePage="judge-requests">
           <EmptyState
-            icon={<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>}
-            title="Không tìm thấy đợt đăng ký"
-            subtitle="Link có thể đã hết hạn hoặc không hợp lệ"
+            icon={<Icon.AlertCircle size={48} />}
+            title={JUDGE_REQUEST_LABELS.NOT_FOUND_TITLE}
+            subtitle={JUDGE_REQUEST_LABELS.NOT_FOUND_SUBTITLE}
           />
         </UserLayout>
       </AuthenticatedPage>
@@ -318,11 +326,11 @@ export default function JudgeRequestsSlugPage() {
   if (!batch) {
     return (
       <AuthenticatedPage>
-        <UserLayout title="Giám khảo Cuối khoá" activePage="judge-requests">
+        <UserLayout title={JUDGE_REQUEST_LABELS.PAGE_TITLE} activePage="judge-requests">
           <EmptyState
-            icon={<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>}
-            title="Không thể tải đợt đăng ký"
-            subtitle="Vui lòng thử lại sau"
+            icon={<Icon.AlertCircle size={48} />}
+            title={JUDGE_REQUEST_LABELS.LOAD_ERROR_TITLE}
+            subtitle={JUDGE_REQUEST_LABELS.LOAD_ERROR_SUBTITLE}
           />
         </UserLayout>
       </AuthenticatedPage>
@@ -331,7 +339,7 @@ export default function JudgeRequestsSlugPage() {
 
   return (
     <AuthenticatedPage>
-      <UserLayout title="Giám khảo Cuối khoá" activePage="judge-requests">
+      <UserLayout title={JUDGE_REQUEST_LABELS.PAGE_TITLE} activePage="judge-requests">
         <ToastContainer toasts={toasts} onRemove={removeToast} />
 
         {/* Batch header */}
@@ -345,13 +353,13 @@ export default function JudgeRequestsSlugPage() {
                 )}
               </div>
               <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 3 }}>
-                {formatDate(batch.week_from)} – {formatDate(batch.week_to)} · {batch.sessions.length} buổi cuối khoá
+                {formatDate(batch.week_from)} – {formatDate(batch.week_to)} · {batch.sessions.length} {JUDGE_REQUEST_LABELS.BATCH_SESSION_SUFFIX}
               </div>
               {batch.notes && <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 4, fontStyle: 'italic' }}>{batch.notes}</div>}
             </div>
             {!batch.is_active && (
               <div style={{ fontSize: 12, color: 'var(--text-tertiary)', textAlign: 'right' }}>
-                Đợt đăng ký này đã đóng
+                {JUDGE_REQUEST_LABELS.CLOSED_BATCH_NOTE}
               </div>
             )}
           </div>
@@ -359,14 +367,14 @@ export default function JudgeRequestsSlugPage() {
 
         {batch.sessions.length === 0 ? (
           <EmptyState
-            icon={<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M12 2L2 7l10 5 10-5-10-5z" /><path d="M2 17l10 5 10-5" /><path d="M2 12l10 5 10-5" /></svg>}
-            title="Chưa có buổi nào trong đợt này"
-            subtitle="Admin chưa thêm buổi. Quay lại sau."
+            icon={<Icon.CalendarDays size={48} />}
+            title={JUDGE_REQUEST_LABELS.EMPTY_BATCH_TITLE}
+            subtitle={JUDGE_REQUEST_LABELS.EMPTY_BATCH_SUBTITLE}
           />
         ) : (
           <div className={styles.tableSection}>
             <TableGroupHeader
-              title="Danh sách buổi cuối khoá"
+              title={JUDGE_REQUEST_LABELS.TABLE_TITLE}
               count={batch.sessions.length}
               loading={false}
               progress={{ loaded: 0, total: 0 }}
@@ -390,12 +398,12 @@ export default function JudgeRequestsSlugPage() {
                           <th>{LABELS.CENTRE}</th>
                           <th>{LABELS.COURSE_LINE}</th>
                           <th>{LABELS.SESSION}</th>
-                          <th>Giờ</th>
+                          <th>{LABELS.TIME}</th>
                           <th>{LABELS.CLASS_TITLE}</th>
                           <th>{LABELS.COURSE}</th>
                           <th>{LABELS.MAIN_TEACHER}</th>
                           <th style={{ textAlign: 'center' }}>{LABELS.STUDENTS}</th>
-                          <th>Giám khảo</th>
+                          <th>{JUDGE_REQUEST_LABELS.JUDGE}</th>
                           <th>{LABELS.REGISTRATION_STATUS}</th>
                           <th>{LABELS.ACTION}</th>
                         </tr>
@@ -418,7 +426,7 @@ export default function JudgeRequestsSlugPage() {
                               {row.dateSpan > 0 && (
                                 <td rowSpan={row.dateSpan} className={styles.mergedCell} style={{ fontWeight: 600, lineHeight: 1.3 }}>
                                   <div>{row.dParts.dow}</div>
-                                  <div style={{ color: 'var(--text-secondary)', fontWeight: 500, fontSize: 12 }}>{row.dParts.display}</div>
+                                  <div style={{ color: 'var(--text-secondary)', fontWeight: 500, fontSize: 12 }}>{row.dParts.ymd}</div>
                                 </td>
                               )}
                               {row.centreSpan > 0 && (
@@ -427,7 +435,7 @@ export default function JudgeRequestsSlugPage() {
                                 </td>
                               )}
                               {row.catSpan > 0 && (
-                                <td rowSpan={row.catSpan} className={styles.mergedCell} style={{ fontWeight: 700, backgroundColor: CATEGORY_COLORS[row.cat] || 'var(--border)', color: 'white', borderLeft: 'none' }}>
+                                <td rowSpan={row.catSpan} className={styles.mergedCell} style={{ fontWeight: 700, backgroundColor: COURSE_CATEGORY_COLORS[row.cat], color: 'white', borderLeft: 'none' }}>
                                   {row.cat}
                                 </td>
                               )}
@@ -458,30 +466,30 @@ export default function JudgeRequestsSlugPage() {
                                 {approvedJudgeName || '—'}
                               </td>
                               <td onClick={() => setDetailSession(fs)} style={{ cursor: 'pointer' }}>
-                                <ParticipationStatusBadge status={req?.status === 'approved' ? 'confirmed' : req?.status} />
+                                <JudgeRequestStatusBadge status={req?.status} />
                               </td>
                               <td onClick={e => e.stopPropagation()}>
                                 <div style={{ display: 'flex', justifyContent: 'center' }}>
                                   {!batch.is_active ? (
-                                    <span style={{ color: 'var(--text-tertiary)', fontSize: 12 }}>Đã đóng</span>
+                                    <span style={{ color: 'var(--text-tertiary)', fontSize: 12 }}>{JUDGE_REQUEST_LABELS.CLOSED}</span>
                                   ) : req?.status === 'pending' ? (
                                     <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
-                                      <span style={{ color: 'var(--brand-indigo)', fontSize: 12, fontWeight: 510 }}>Đã đăng ký</span>
+                                      <span style={{ color: 'var(--brand-indigo)', fontSize: 12, fontWeight: 510 }}>{JUDGE_REQUEST_LABELS.REGISTERED}</span>
                                       <button
                                         className={styles.clearCacheBtn}
                                         style={{ padding: '4px 8px', fontSize: 11, minWidth: 'auto', color: 'var(--status-error)', borderColor: 'rgba(220,38,38,0.3)' }}
                                         disabled={submitting}
                                         onClick={() => handleCancel(fs)}
                                       >
-                                        Huỷ
+                                        {LABELS.CANCEL}
                                       </button>
                                     </div>
                                   ) : req?.status === 'approved' ? (
-                                    <ParticipationStatusBadge status="confirmed" />
+                                    <JudgeRequestStatusBadge status="approved" />
                                   ) : req?.status === 'rejected' ? (
-                                    <ParticipationStatusBadge status="rejected" />
+                                    <JudgeRequestStatusBadge status="rejected" />
                                   ) : approvedJudgeName ? (
-                                    <span style={{ color: 'var(--text-tertiary)', fontSize: 12 }}>Đã có giám khảo</span>
+                                    <span style={{ color: 'var(--text-tertiary)', fontSize: 12 }}>{JUDGE_REQUEST_LABELS.HAS_JUDGE}</span>
                                   ) : (
                                     <button
                                       className={styles.clearCacheBtn}
@@ -489,7 +497,7 @@ export default function JudgeRequestsSlugPage() {
                                       disabled={submitting}
                                       onClick={() => handleRequest(fs)}
                                     >
-                                      Đăng ký làm giám khảo
+                                      {JUDGE_REQUEST_LABELS.REQUEST_ACTION}
                                     </button>
                                   )}
                                 </div>
@@ -512,27 +520,29 @@ export default function JudgeRequestsSlugPage() {
             <>
               <ModalHeader
                 title={detailSession.class_name}
-                subtitle={`Buổi cuối khoá · ${detailSession.centre_name || ''}`}
+                subtitle={`${JUDGE_REQUEST_LABELS.FINAL_SESSION} · ${detailSession.centre_name || '—'}`}
                 onClose={() => setDetailSession(null)}
               />
-              <div style={{ padding: 'var(--space-4)', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
-                {[
-                  ['Ngày', formatDate(detailSession.session_date)],
-                  ['Giờ', `${formatTime(detailSession.start_time_utc)} – ${formatTime(detailSession.end_time_utc)}`],
-                  ['Cơ sở', detailSession.centre_name || '—'],
-                  [LABELS.COURSE, detailSession.course_short_name || '—'],
-                  ['Giáo viên chính', detailSession.main_teacher || '—'],
-                  [LABELS.STUDENTS, `${detailSession.student_count}`],
-                ].map(([label, value]) => (
-                  <div key={label as string}>
-                    <div style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 3 }}>{label}</div>
-                    <div style={{ fontSize: 14, fontWeight: 510 }}>{value}</div>
-                  </div>
-                ))}
+              <div style={{ padding: 'var(--space-4)' }}>
+                <DetailGrid>
+                  {[
+                    [LABELS.DATE, formatDate(detailSession.session_date)],
+                    [LABELS.TIME, `${formatTime(detailSession.start_time_utc)} – ${formatTime(detailSession.end_time_utc)}`],
+                    [LABELS.CENTRE, detailSession.centre_name || '—'],
+                    [LABELS.COURSE, detailSession.course_short_name || '—'],
+                    [LABELS.MAIN_TEACHER, detailSession.main_teacher || '—'],
+                    [LABELS.STUDENTS, `${detailSession.student_count}`],
+                  ].map(([label, value]) => (
+                    <DetailField key={label as string} label={label}>
+                      <DetailText>{value}</DetailText>
+                    </DetailField>
+                  ))}
+                </DetailGrid>
                 {detailSession.notes && (
-                  <div style={{ gridColumn: '1 / -1' }}>
-                    <div style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 3 }}>Ghi chú</div>
-                    <div style={{ fontSize: 13, fontStyle: 'italic' }}>{detailSession.notes}</div>
+                  <div style={{ marginTop: 'var(--space-3)' }}>
+                    <DetailField label={JUDGE_REQUEST_LABELS.NOTES}>
+                      <DetailText>{detailSession.notes}</DetailText>
+                    </DetailField>
                   </div>
                 )}
               </div>

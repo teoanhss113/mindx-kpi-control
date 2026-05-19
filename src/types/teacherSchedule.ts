@@ -8,6 +8,12 @@ export interface Teacher {
   email: string;
   phoneNumber?: string;
   imageUrl?: string;
+  mainCentreId?: string | null;
+  mainCentreName?: string | null;
+  workCentres?: Array<{ id: string; name: string; shortName?: string }>;
+  regionIds?: string[];
+  regionNames?: string[];
+  sameRegionAsRequest?: boolean;
 }
 
 export interface TeacherScheduleSlot {

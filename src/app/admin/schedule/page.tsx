@@ -401,7 +401,7 @@ export default function ManagerScheduleRegistrationPage() {
           </div>
           <div className={styles.tablePanelBody}>
             <div className={styles.tableScrollWrapper}>
-              <div style={{ minWidth: 1220, display: 'grid', gridTemplateColumns: '104px repeat(7, minmax(158px, 1fr))', border: '1px solid var(--border-primary)', borderRadius: 'var(--radius-comfortable)', overflow: 'hidden' }}>
+              <div style={{ minWidth: 1220, display: 'grid', gridTemplateColumns: '104px repeat(7, minmax(158px, 1fr))', border: '1px solid var(--border-primary)', borderRadius: 'var(--radius-comfortable)', overflow: 'visible' }}>
                 <div style={{ padding: 'var(--space-2)', background: 'var(--bg-elevated)', borderRight: '1px solid var(--border-primary)', fontSize: 11, fontWeight: 590, color: 'var(--text-quaternary)' }}>
                   {MANAGER_SCHEDULE_LABELS.SESSION_COLUMN}
                 </div>
@@ -538,7 +538,7 @@ export default function ManagerScheduleRegistrationPage() {
                                       {item.note?.trim() && (
                                         <span className={styles.tooltipWrap}>
                                           <span className={styles.tooltipIcon}>i</span>
-                                          <span className={styles.tooltipBox}>{item.note.trim()}</span>
+                                          <span className={`${styles.tooltipBox} ${styles.managerScheduleNoteTooltip}`}>{item.note.trim()}</span>
                                         </span>
                                       )}
                                     </div>

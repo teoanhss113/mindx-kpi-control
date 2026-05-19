@@ -13,6 +13,8 @@ import { loadSession } from '@/services/authService';
 import { fetchAllClasses, fetchStudentCommentAreas, haveSlotInToUtcRange } from '@/services/classesService';
 import { fetchAllCentres, Centre } from '@/services/centresService';
 import { fetchOfficeHours } from '@/services/officeHoursService';
+import { getTeachers } from '@/services/teacherService';
+import type { Teacher as TeacherProfile } from '@/types/teacher';
 import { getCache, setCache, clearCache } from '@/lib/idb';
 import { getCourseLineCategory } from '@/lib/courseCategories';
 import { getNavItemsWithRouter } from '@/lib/navigation';
@@ -36,6 +38,7 @@ import {
   ChartSectionHeader,
   TableToolbar,
   TableGroupHeader,
+  SubTableGroupHeader,
   AdminTableSection,
   Modal,
   ModalHeader,
@@ -77,12 +80,16 @@ import {
   COURSES,
   FORMAT,
   CLASS_QUALITY_LABELS,
+  TEACHER_AVAILABILITY_CATEGORY_ORDER,
+  TEACHER_AVAILABILITY_CATEGORY_LABELS,
+  TEACHER_AVAILABILITY_REFERENCE_CATEGORY_ORDER,
   TEACHER_SCHEDULE_LABELS,
   TEACHER_SCHEDULE_TYPE_OPTIONS,
   TEACHER_SCHEDULE_VIEW_OPTIONS,
   TEACHER_SCHEDULE_CACHE_VERSION,
 } from '@/constants';
 import { useSharedDateRange, useSharedCentres } from '@/hooks/useSharedFilterState';
+import { supabase } from '@/lib/supabase/client';
 import styles from '@/app/dashboard.module.css';
 
 // ─── Custom Hook: useMediaQuery ───────────────────────────────────────────────
@@ -116,6 +123,8 @@ const TIME_SLOTS = [
 
 const DAYS_OF_WEEK = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
 type HolidayPeriod = { name: string; from: string; to: string };
+type CentreRegionInfo = { id: string; name: string };
+type CentreRegionMap = Record<string, CentreRegionInfo[]>;
 
 const DEFAULT_HOLIDAY_PERIODS: HolidayPeriod[] = [
   { name: 'Tết Dương lịch', from: '2026-01-01', to: '2026-01-01' },
@@ -123,6 +132,86 @@ const DEFAULT_HOLIDAY_PERIODS: HolidayPeriod[] = [
   { name: 'Giỗ Tổ Hùng Vương', from: '2026-04-25', to: '2026-04-26' },
   { name: 'Giải phóng miền Nam & Quốc tế Lao động', from: '2026-04-30', to: '2026-05-02' },
 ];
+
+function getTeacherMainCentre(profile: TeacherProfile | undefined): { id: string | null; name: string | null } {
+  const mainCentre = profile?.centres?.[0];
+  return {
+    id: mainCentre?.id || null,
+    name: mainCentre?.name || null,
+  };
+}
+
+function getCentreRegionIds(centreRegionMap: CentreRegionMap, centreId: string | null | undefined) {
+  return new Set((centreId ? centreRegionMap[centreId] : undefined)?.map(region => region.id) || []);
+}
+
+function getCentreRegionNames(centreRegionMap: CentreRegionMap, centreId: string | null | undefined) {
+  return (centreId ? centreRegionMap[centreId] : undefined)?.map(region => region.name) || [];
+}
+
+function shareAnyRegion(left: Set<string>, right: Set<string>) {
+  if (left.size === 0 || right.size === 0) return false;
+  for (const id of left) {
+    if (right.has(id)) return true;
+  }
+  return false;
+}
+
+function getTeacherProfileWorkCentres(profile: TeacherProfile | undefined) {
+  return (profile?.centres || []).map(centre => ({
+    id: centre.id,
+    name: centre.name,
+  }));
+}
+
+function enrichTeacherAvailabilityByRegion(
+  teachers: TeacherAvailability[],
+  teacherProfilesById: Map<string, TeacherProfile>,
+  centreRegionMap: CentreRegionMap,
+  requestCentreId: string,
+) {
+  const requestRegionIds = getCentreRegionIds(centreRegionMap, requestCentreId);
+
+  return teachers
+    .map(availability => {
+      const profile = teacherProfilesById.get(availability.teacher.id);
+      const mainCentre = getTeacherMainCentre(profile);
+      const teacherRegionIds = getCentreRegionIds(centreRegionMap, mainCentre.id);
+      const sameRegionAsRequest = shareAnyRegion(requestRegionIds, teacherRegionIds);
+      const regionNames = getCentreRegionNames(centreRegionMap, mainCentre.id);
+
+      return {
+        ...availability,
+        score: availability.score + (sameRegionAsRequest ? 45 : 0),
+        teacher: {
+          ...availability.teacher,
+          mainCentreId: mainCentre.id,
+          mainCentreName: mainCentre.name,
+          workCentres: getTeacherProfileWorkCentres(profile),
+          regionIds: Array.from(teacherRegionIds),
+          regionNames,
+          sameRegionAsRequest,
+        },
+      };
+    })
+    .sort((a, b) => {
+      const sameRegionDelta = Number(Boolean(b.teacher.sameRegionAsRequest)) - Number(Boolean(a.teacher.sameRegionAsRequest));
+      if (sameRegionDelta !== 0) return sameRegionDelta;
+      return b.score - a.score;
+    });
+}
+
+function getSameCourseTeacherCount(teachers: TeacherAvailability[]) {
+  return teachers.filter(teacher => teacher.courseLineMatch).length;
+}
+
+function getAvailableTeachersToastMessage(teachers: TeacherAvailability[]) {
+  const sameCourseCount = getSameCourseTeacherCount(teachers);
+  if (sameCourseCount > 0) {
+    return `Tìm thấy ${sameCourseCount} ${TEACHER_SCHEDULE_LABELS.AVAILABLE_SAME_COURSE_TEACHERS_COUNT}`;
+  }
+  return `${TEACHER_SCHEDULE_LABELS.NO_SAME_COURSE_TEACHER}; có ${teachers.length} ${TEACHER_SCHEDULE_LABELS.OTHER_COURSE_REFERENCE_COUNT}`;
+}
 
 
 
@@ -1045,17 +1134,17 @@ function calculateAvailableTeachers(
         globalIsBefore = isBefore;
 
         if (closestGap !== null && closestGap <= 0) {
-          reasons.push('Có lớp liền kề tại cùng cơ sở');
+          reasons.push(TEACHER_SCHEDULE_LABELS.SAME_CENTRE_ADJACENT_CLASS_REASON);
           score += 30;
         } else if (closestGap! <= 30) {
-          reasons.push('Có lớp tại cùng cơ sở');
+          reasons.push(TEACHER_SCHEDULE_LABELS.SAME_CENTRE_CLASS_REASON);
           score += 20;
         } else {
-          reasons.push('Có lớp tại cùng cơ sở');
+          reasons.push(TEACHER_SCHEDULE_LABELS.SAME_CENTRE_CLASS_REASON);
           score += 10;
         }
       } else {
-        reasons.push('Có lớp tại cùng cơ sở');
+        reasons.push(TEACHER_SCHEDULE_LABELS.SAME_CENTRE_CLASS_REASON);
       }
     }
     
@@ -1083,7 +1172,7 @@ function calculateAvailableTeachers(
       if (totalHours === 0) {
         category = 'completely-free';
         score = 130;
-        reasons.push('Hoàn toàn rảnh trong ngày');
+        reasons.push(TEACHER_AVAILABILITY_CATEGORY_LABELS.COMPLETELY_FREE);
       } else {
         // Has classes at other centres
         // Check if any class is close to requested time
@@ -1136,14 +1225,14 @@ function calculateAvailableTeachers(
           }
           
           if (closestGap !== null && closestGap <= 0) {
-            reasons.push('Có lớp liền kề tại cơ sở khác');
+            reasons.push(TEACHER_SCHEDULE_LABELS.OTHER_CENTRE_ADJACENT_CLASS_REASON);
           } else if (closestGap! <= 60) {
-            reasons.push('Có lớp tại cơ sở khác');
+            reasons.push(TEACHER_SCHEDULE_LABELS.OTHER_CENTRE_CLASS_REASON);
           } else {
-            reasons.push('Có lớp tại cơ sở khác');
+            reasons.push(TEACHER_SCHEDULE_LABELS.OTHER_CENTRE_CLASS_REASON);
           }
         } else {
-          reasons.push('Có lớp tại cơ sở khác');
+          reasons.push(TEACHER_SCHEDULE_LABELS.OTHER_CENTRE_CLASS_REASON);
         }
       }
     }
@@ -1151,10 +1240,10 @@ function calculateAvailableTeachers(
     // Penalty for heavy workload
     if (totalHours >= 6) {
       score -= 20;
-      reasons.push('Đã dạy nhiều giờ');
+      reasons.push(TEACHER_SCHEDULE_LABELS.HEAVY_WORKLOAD_REASON);
     }
     
-    const reason = reasons.length > 0 ? reasons.join(' • ') : 'Giáo viên rảnh';
+    const reason = reasons.length > 0 ? reasons.join(' • ') : TEACHER_SCHEDULE_LABELS.AVAILABLE_TEACHER_REASON;
     
     availabilities.push({
       teacher: schedule.teacher,
@@ -2443,6 +2532,8 @@ export default function TeacherSchedulePage() {
   const [calculatingTeachers, setCalculatingTeachers] = useState(false);
   const [addingSupplyTeacherId, setAddingSupplyTeacherId] = useState<string | null>(null);
   const [reloadingClassId, setReloadingClassId] = useState<string | null>(null);
+  const [teacherProfiles, setTeacherProfiles] = useState<TeacherProfile[]>([]);
+  const [centreRegionMap, setCentreRegionMap] = useState<CentreRegionMap>({});
 
   // ── Class quality states ────────────────────────────────────────────────────
   const [classQualityData, setClassQualityData] = useState<AnalyzedClassForQuality | null>(null);
@@ -2464,12 +2555,13 @@ export default function TeacherSchedulePage() {
     return () => window.clearTimeout(timeoutId);
   }, [calendarClassCodeSearch]);
   
-  // ── Group expansion states for teacher categorization ──────────────────────
+  // ── Group expansion states for teacher coordination shortlist ──────────────
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
-    'match': true,      // Default expand "Đúng khối"
-    'no-match': false   // Default collapse "Khối khác"
+    'same-course-same-region': true,
+    'same-course-other-region': true,
+    'same-course-unknown-region': false,
+    'other-course': false,
   });
-  const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({});
   const [coordinationCourseLineFilter, setCoordinationCourseLineFilter] = useState<string[]>([]);
 
   const abortRef = useRef<AbortController | null>(null);
@@ -2536,6 +2628,92 @@ export default function TeacherSchedulePage() {
     setHolidayPeriods(DEFAULT_HOLIDAY_PERIODS);
     addToast('Đã khôi phục quy tắc miễn trừ mặc định', 'success');
   }, [addToast]);
+
+  const teacherProfilesById = useMemo(() => {
+    return new Map(teacherProfiles.map(teacher => [teacher.id, teacher]));
+  }, [teacherProfiles]);
+
+  const loadCoordinationReferenceData = useCallback(async (requiredTeacherIds: string[] = []) => {
+    let nextTeacherProfiles = teacherProfiles;
+    let nextCentreRegionMap = centreRegionMap;
+
+    const hasRequiredProfiles = (profiles: TeacherProfile[]) => {
+      if (requiredTeacherIds.length === 0) return profiles.length > 0;
+      const profileIds = new Set(profiles.map(teacher => teacher.id));
+      return requiredTeacherIds.every(id => profileIds.has(id));
+    };
+
+    if (!hasRequiredProfiles(nextTeacherProfiles)) {
+      const cachedTeachers = await getCache(CACHE_KEYS.TEACHERS);
+      if (cachedTeachers?.teachers?.length && hasRequiredProfiles(cachedTeachers.teachers as TeacherProfile[])) {
+        nextTeacherProfiles = cachedTeachers.teachers as TeacherProfile[];
+      } else {
+        const result = await getTeachers({ isActive: true });
+        nextTeacherProfiles = result.data;
+        await setCache(CACHE_KEYS.TEACHERS, {
+          teachers: nextTeacherProfiles,
+          timestamp: Date.now(),
+        });
+      }
+      setTeacherProfiles(nextTeacherProfiles);
+    }
+
+    if (Object.keys(nextCentreRegionMap).length === 0) {
+      const { data: regionsData, error: regionsError } = await supabase
+        .from('regions')
+        .select('id, name')
+        .eq('is_active', true);
+
+      if (regionsError) throw regionsError;
+
+      const activeRegions = (regionsData || []) as Array<{ id: string; name: string }>;
+      if (activeRegions.length > 0) {
+        const { data: regionCentresData, error: regionCentresError } = await supabase
+          .from('region_centres')
+          .select('region_id, centre_id')
+          .in('region_id', activeRegions.map(region => region.id));
+
+        if (regionCentresError) throw regionCentresError;
+
+        const regionsById = new Map(activeRegions.map(region => [region.id, region.name]));
+        nextCentreRegionMap = {};
+        (regionCentresData || []).forEach(item => {
+          if (!item.centre_id || !item.region_id) return;
+          const regionName = regionsById.get(item.region_id);
+          if (!regionName) return;
+          if (!nextCentreRegionMap[item.centre_id]) nextCentreRegionMap[item.centre_id] = [];
+          nextCentreRegionMap[item.centre_id].push({ id: item.region_id, name: regionName });
+        });
+      } else {
+        nextCentreRegionMap = {};
+      }
+
+      setCentreRegionMap(nextCentreRegionMap);
+    }
+
+    return {
+      teacherProfilesById: new Map(nextTeacherProfiles.map(teacher => [teacher.id, teacher])),
+      centreRegionMap: nextCentreRegionMap,
+    };
+  }, [centreRegionMap, teacherProfiles]);
+
+  const enrichAvailableTeachersForRequest = useCallback((
+    teachers: TeacherAvailability[],
+    requestCentreId: string,
+    referenceData?: { teacherProfilesById: Map<string, TeacherProfile>; centreRegionMap: CentreRegionMap },
+  ) => {
+    return enrichTeacherAvailabilityByRegion(
+      teachers,
+      referenceData?.teacherProfilesById || teacherProfilesById,
+      referenceData?.centreRegionMap || centreRegionMap,
+      requestCentreId,
+    );
+  }, [centreRegionMap, teacherProfilesById]);
+
+  const sameCourseAvailableTeachersCount = useMemo(
+    () => getSameCourseTeacherCount(availableTeachers),
+    [availableTeachers],
+  );
 
   // ── Data Fetching ───────────────────────────────────────────────────────────
   const loadData = useCallback(async (start: string, end: string) => {
@@ -2733,31 +2911,43 @@ export default function TeacherSchedulePage() {
     // Open modal immediately
     setShowCoordinationPanel(true);
     
-    setTimeout(() => {
-      const available = calculateAvailableTeachers(
-        schedules,
-        dateStr,
-        startTimeStr,
-        endTimeStr,
-        slot.centreId,
-        slot.courseLine // Pass course line for matching
-      );
-      
-      // Filter out the current teacher from suggestions
-      const currentTeacherIds = getSlotTeacherIds(slot);
-      const filteredAvailable = available.filter(ta => !currentTeacherIds.has(ta.teacher.id));
-      
-      setAvailableTeachers(filteredAvailable);
-      setUnavailableTeachers([]);
-      setCalculatingTeachers(false);
-      
-      // Show toast with result
-      if (filteredAvailable.length > 0) {
-        addToast(`Tìm thấy ${filteredAvailable.length} giáo viên rảnh`, 'success');
-      } else {
-        addToast('Không có giáo viên rảnh trong khung giờ này', 'info');
+    void (async () => {
+      try {
+        const available = calculateAvailableTeachers(
+          schedules,
+          dateStr,
+          startTimeStr,
+          endTimeStr,
+          slot.centreId,
+          slot.courseLine // Pass course line for matching
+        );
+
+        // Filter out the current teacher from suggestions
+        const currentTeacherIds = getSlotTeacherIds(slot);
+        const rawFilteredAvailable = available.filter(ta => !currentTeacherIds.has(ta.teacher.id));
+        const referenceData = await loadCoordinationReferenceData(rawFilteredAvailable.map(ta => ta.teacher.id));
+        const filteredAvailable = enrichAvailableTeachersForRequest(
+          rawFilteredAvailable,
+          slot.centreId,
+          referenceData,
+        );
+
+        setAvailableTeachers(filteredAvailable);
+        setUnavailableTeachers([]);
+
+        // Show toast with result
+        if (filteredAvailable.length > 0) {
+          addToast(getAvailableTeachersToastMessage(filteredAvailable), 'success');
+        } else {
+          addToast(TEACHER_SCHEDULE_LABELS.NO_AVAILABLE_TEACHER_IN_RANGE, 'info');
+        }
+      } catch (error) {
+        console.error('Error preparing teacher region data:', error);
+        addToast('Không thể tải dữ liệu khu vực giáo viên', 'error');
+      } finally {
+        setCalculatingTeachers(false);
       }
-    }, 0);
+    })();
 
     // Fetch full class quality data if this is a class slot
     if (slot.classId) {
@@ -2791,7 +2981,7 @@ export default function TeacherSchedulePage() {
           .finally(() => setClassQualityLoading(false));
       }
     }
-  }, [schedules, rawClasses, studentCommentAreas, exemptedSessions, exemptOneOnOneClasses, holidayPeriods, addToast]);
+  }, [schedules, rawClasses, studentCommentAreas, exemptedSessions, exemptOneOnOneClasses, holidayPeriods, addToast, enrichAvailableTeachersForRequest, loadCoordinationReferenceData]);
 
   const handleSearchAvailableTeachers = useCallback(() => {
     if (!coordinationRequest.date || !coordinationRequest.centreId) {
@@ -2801,33 +2991,45 @@ export default function TeacherSchedulePage() {
 
     setCalculatingTeachers(true);
     
-    setTimeout(() => {
-      const available = calculateAvailableTeachers(
-        schedules,
-        coordinationRequest.date,
-        coordinationRequest.startTime,
-        coordinationRequest.endTime,
-        coordinationRequest.centreId,
-        coordinationRequest.courseLineId // Pass course line for matching
-      );
-      
-      // If there's a selected slot, filter out its teacher
-      const selectedSlotTeacherIds = selectedSlot ? getSlotTeacherIds(selectedSlot) : new Set<string>();
-      const filteredAvailable = selectedSlot
-        ? available.filter(ta => !selectedSlotTeacherIds.has(ta.teacher.id))
-        : available;
-      
-      setAvailableTeachers(filteredAvailable);
-      setUnavailableTeachers([]);
-      setCalculatingTeachers(false);
-      
-      if (filteredAvailable.length > 0) {
-        addToast(`Tìm thấy ${filteredAvailable.length} giáo viên rảnh`, 'success');
-      } else {
-        addToast('Không có giáo viên rảnh trong khung giờ này', 'info');
+    void (async () => {
+      try {
+        const available = calculateAvailableTeachers(
+          schedules,
+          coordinationRequest.date,
+          coordinationRequest.startTime,
+          coordinationRequest.endTime,
+          coordinationRequest.centreId,
+          coordinationRequest.courseLineId // Pass course line for matching
+        );
+
+        // If there's a selected slot, filter out its teacher
+        const selectedSlotTeacherIds = selectedSlot ? getSlotTeacherIds(selectedSlot) : new Set<string>();
+        const filteredAvailable = selectedSlot
+          ? available.filter(ta => !selectedSlotTeacherIds.has(ta.teacher.id))
+          : available;
+        const referenceData = await loadCoordinationReferenceData(filteredAvailable.map(ta => ta.teacher.id));
+        const enrichedAvailable = enrichAvailableTeachersForRequest(
+          filteredAvailable,
+          coordinationRequest.centreId,
+          referenceData,
+        );
+
+        setAvailableTeachers(enrichedAvailable);
+        setUnavailableTeachers([]);
+
+        if (enrichedAvailable.length > 0) {
+          addToast(getAvailableTeachersToastMessage(enrichedAvailable), 'success');
+        } else {
+          addToast(TEACHER_SCHEDULE_LABELS.NO_AVAILABLE_TEACHER_IN_RANGE, 'info');
+        }
+      } catch (error) {
+        console.error('Error preparing teacher region data:', error);
+        addToast('Không thể tải dữ liệu khu vực giáo viên', 'error');
+      } finally {
+        setCalculatingTeachers(false);
       }
-    }, 0);
-  }, [coordinationRequest, schedules, selectedSlot, addToast]);
+    })();
+  }, [coordinationRequest, schedules, selectedSlot, addToast, enrichAvailableTeachersForRequest, loadCoordinationReferenceData]);
 
   const reloadClassSchedule = useCallback(async (
     classId: string,
@@ -2869,8 +3071,9 @@ export default function TeacherSchedulePage() {
           selectedSlot.centreId,
           selectedSlot.courseLine,
         ).filter(ta => !getSlotTeacherIds(selectedSlot).has(ta.teacher.id));
+        const referenceData = await loadCoordinationReferenceData(available.map(ta => ta.teacher.id));
 
-        setAvailableTeachers(available);
+        setAvailableTeachers(enrichAvailableTeachersForRequest(available, selectedSlot.centreId, referenceData));
         setUnavailableTeachers([]);
       }
 
@@ -2886,7 +3089,7 @@ export default function TeacherSchedulePage() {
     } finally {
       setReloadingClassId(null);
     }
-  }, [addToast, schedules, rawClasses, studentCommentAreas, fromDate, toDate, selectedCentres, selectedSlot, selectedTeachers, selectedCourseLines, scheduleTypeFilter, exemptedSessions, exemptOneOnOneClasses, holidayPeriods]);
+  }, [addToast, schedules, rawClasses, studentCommentAreas, fromDate, toDate, selectedCentres, selectedSlot, selectedTeachers, selectedCourseLines, scheduleTypeFilter, exemptedSessions, exemptOneOnOneClasses, holidayPeriods, enrichAvailableTeachersForRequest, loadCoordinationReferenceData]);
 
   const handleAddSupplyTeacher = useCallback(async (ta: TeacherAvailability) => {
     if (!selectedSlot) return;
@@ -2901,7 +3104,7 @@ export default function TeacherSchedulePage() {
 
     try {
       setAddingSupplyTeacherId(ta.teacher.id);
-      addToast('Đang thêm giáo viên vào lớp...', 'info');
+      addToast(TEACHER_SCHEDULE_LABELS.ADDING_TEACHER_TO_CLASS, 'info');
 
       const blockingSlot = findTeacherBlockingSlot(
         schedules,
@@ -3532,7 +3735,7 @@ export default function TeacherSchedulePage() {
                 }}
               >
                 <Icon.Search />
-                Tìm giáo viên rảnh
+                {TEACHER_SCHEDULE_LABELS.AVAILABLE_TEACHER_SHORT}
               </button>
             }
             toolbarSlot={
@@ -3801,7 +4004,7 @@ export default function TeacherSchedulePage() {
           setClassQualityData(null);
         }}>
           <ModalHeader
-            title={selectedSlot ? "Quản lý ca học" : "Tìm giáo viên rảnh"}
+            title={selectedSlot ? TEACHER_SCHEDULE_LABELS.MANAGE_CLASS_SESSION : TEACHER_SCHEDULE_LABELS.AVAILABLE_TEACHER_SHORT}
             subtitle={selectedSlot ? `${selectedSlot.className} - Buổi ${selectedSlot.sessionNumber || 'N/A'}` : "Nhập thông tin ca cần điều phối"}
             onClose={() => {
               setShowCoordinationPanel(false);
@@ -4541,7 +4744,7 @@ export default function TeacherSchedulePage() {
                   gap: 12
                 }}>
                   <Spinner size={24} />
-                  <div style={{ fontSize: 13 }}>Đang tính toán giáo viên rảnh...</div>
+                  <div style={{ fontSize: 13 }}>{TEACHER_SCHEDULE_LABELS.CALCULATING_AVAILABLE_TEACHERS}</div>
                 </div>
               )}
 
@@ -4550,19 +4753,15 @@ export default function TeacherSchedulePage() {
                 <div style={{ marginTop: 8, width: '100%', boxSizing: 'border-box', minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-3)', flexWrap: 'wrap', marginBottom: 16 }}>
                     <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-                      <span style={{ 
-                        background: 'rgba(5, 150, 105, 0.08)', 
-                        color: 'var(--status-success)', 
-                        padding: '4px 10px', 
-                        borderRadius: "var(--radius-comfortable)", 
-                        fontSize: 13,
-                        fontWeight: 600
-                      }}>
-                        {availableTeachers.length} giáo viên rảnh
-                      </span>
-                      <span style={{ fontSize: 12, color: 'var(--text-tertiary)', fontWeight: 400 }}>
-                        (đã loại trừ giáo viên hiện tại)
-                      </span>
+                      <Badge variant="passed" size="lg">
+                        {sameCourseAvailableTeachersCount} {TEACHER_SCHEDULE_LABELS.AVAILABLE_SAME_COURSE_TEACHERS_COUNT}
+                      </Badge>
+                      <Badge variant="default" size="sm">
+                        {availableTeachers.length} {TEACHER_SCHEDULE_LABELS.AVAILABLE_TOTAL_REFERENCE}
+                      </Badge>
+                      <Badge variant="exempt" size="sm">
+                        {TEACHER_SCHEDULE_LABELS.EXCLUDED_CURRENT_TEACHERS}
+                      </Badge>
                     </div>
                     {!selectedSlot && (() => {
                       const courseLineOptions = [
@@ -4592,373 +4791,315 @@ export default function TeacherSchedulePage() {
                       ? availableTeachers.filter(t => {
                           const teacherSchedule = schedules.find(s => s.teacher.id === t.teacher.id);
                           if (!teacherSchedule) return false;
-                          const categories = new Set(teacherSchedule.slots.map(s => getCourseLineCategory(s.courseLine, s.className)));
-                          return coordinationCourseLineFilter.some(cl => categories.has(cl as any));
+                          const categories = new Set<string>(teacherSchedule.slots.map(s => getCourseLineCategory(s.courseLine, s.className)));
+                          return coordinationCourseLineFilter.some(cl => categories.has(cl));
                         })
                       : availableTeachers;
 
                     if (filteredTeachers.length === 0) {
                       return (
                         <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 13 }}>
-                          Không có giáo viên rảnh phù hợp với bộ lọc Khối.
+                          {TEACHER_SCHEDULE_LABELS.NO_AVAILABLE_TEACHER_BY_COURSE}
                         </div>
                       );
                     }
 
-                    // Separate by course line match
-                    const withMatch = filteredTeachers.filter(t => t.courseLineMatch);
-                    const withoutMatch = filteredTeachers.filter(t => !t.courseLineMatch);
-                    
-                    // Define category order for display
-                    const categoryOrder = [
-                      'has-class-same-centre-adjacent',   // Có lớp liền kề tại cùng cơ sở (ưu tiên cao nhất)
-                      'has-class-same-centre',            // Có lớp sau/trước tại cùng cơ sở (không liền kề)
-                      'completely-free',                  // Hoàn toàn rảnh
-                      'has-class-other-centre',           // Có lớp sau/trước tại cơ sở khác (không liền kề)
-                      'has-class-other-centre-adjacent',  // Có lớp liền kề tại cơ sở khác
-                      'currently-at-centre',              // Đang dạy cùng cơ sở
-                      'currently-at-other-centre',        // Đang dạy khác cơ sở
-                    ];
+                    const requestCentreId = selectedSlot?.centreId || coordinationRequest.centreId;
+                    const requestRegionNames = getCentreRegionNames(centreRegionMap, requestCentreId);
                     
                     const categoryLabels: Record<string, { label: string; icon: React.ReactNode }> = {
-                      'has-class-same-centre-adjacent': { 
-                        label: 'Có lớp sau/trước tại cùng cơ sở (liền kề)', 
-                        icon: <Icon.Building size={12} /> 
+                      'has-class-same-centre-adjacent': {
+                        label: TEACHER_AVAILABILITY_CATEGORY_LABELS.HAS_CLASS_SAME_CENTRE_ADJACENT,
+                        icon: <Icon.Building size={12} />
                       },
-                      'has-class-same-centre': { 
-                        label: 'Có lớp sau/trước tại cùng cơ sở (không liền kề)', 
-                        icon: <Icon.Building size={12} /> 
+                      'has-class-same-centre': {
+                        label: TEACHER_AVAILABILITY_CATEGORY_LABELS.HAS_CLASS_SAME_CENTRE,
+                        icon: <Icon.Building size={12} />
                       },
-                      'completely-free': { 
-                        label: 'Hoàn toàn rảnh trong ngày', 
-                        icon: <Icon.User size={12} /> 
+                      'completely-free': {
+                        label: TEACHER_AVAILABILITY_CATEGORY_LABELS.COMPLETELY_FREE,
+                        icon: <Icon.User size={12} />
                       },
-                      'has-class-other-centre': { 
-                        label: 'Có lớp sau/trước tại cơ sở khác (không liền kề)', 
-                        icon: <Icon.Building size={12} /> 
+                      'has-class-other-centre': {
+                        label: TEACHER_AVAILABILITY_CATEGORY_LABELS.HAS_CLASS_OTHER_CENTRE,
+                        icon: <Icon.Building size={12} />
                       },
-                      'has-class-other-centre-adjacent': { 
-                        label: 'Có lớp sau/trước tại cơ sở khác (liền kề)', 
-                        icon: <Icon.MapPin size={12} /> 
+                      'has-class-other-centre-adjacent': {
+                        label: TEACHER_AVAILABILITY_CATEGORY_LABELS.HAS_CLASS_OTHER_CENTRE_ADJACENT,
+                        icon: <Icon.MapPin size={12} />
                       },
-                      'currently-at-centre': { 
-                        label: 'Đang dạy tại cùng cơ sở', 
-                        icon: <Icon.Monitor size={12} /> 
+                      'currently-at-centre': {
+                        label: TEACHER_AVAILABILITY_CATEGORY_LABELS.CURRENTLY_AT_CENTRE,
+                        icon: <Icon.Monitor size={12} />
                       },
-                      'currently-at-other-centre': { 
-                        label: 'Đang dạy tại cơ sở khác', 
-                        icon: <Icon.Monitor size={12} /> 
+                      'currently-at-other-centre': {
+                        label: TEACHER_AVAILABILITY_CATEGORY_LABELS.CURRENTLY_AT_OTHER_CENTRE,
+                        icon: <Icon.Monitor size={12} />
                       },
                     };
-                    
-                    const renderGroup = (teachers: typeof availableTeachers, groupKey: string, groupTitle: string, groupIcon: React.ReactNode) => {
-                      if (teachers.length === 0) return null;
-                      
-                      const isExpanded = expandedGroups[groupKey] !== false; // Default expanded unless explicitly set to false
-                      
-                      const toggleGroup = () => {
-                        setExpandedGroups(prev => ({ ...prev, [groupKey]: !prev[groupKey] }));
-                      };
-                      
-                      const toggleCategory = (categoryKey: string) => {
-                        setExpandedCategories(prev => ({ ...prev, [categoryKey]: !prev[categoryKey] }));
-                      };
-                      
-                      // Group by category
-                      const grouped = teachers.reduce((acc, ta) => {
-                        const cat = ta.category || 'has-class-other-centre';
-                        if (!acc[cat]) acc[cat] = [];
-                        acc[cat].push(ta);
-                        return acc;
-                      }, {} as Record<string, typeof teachers>);
-                      
+
+                    const sortedTeachers = [...filteredTeachers].sort((a, b) => {
+                      const courseLineDelta = Number(Boolean(b.courseLineMatch)) - Number(Boolean(a.courseLineMatch));
+                      if (courseLineDelta !== 0) return courseLineDelta;
+                      const sameRegionDelta = Number(Boolean(b.teacher.sameRegionAsRequest)) - Number(Boolean(a.teacher.sameRegionAsRequest));
+                      if (sameRegionDelta !== 0) return sameRegionDelta;
+                      return b.score - a.score;
+                    });
+
+                    const teacherGroups = [
+                      {
+                        key: 'same-course-same-region',
+                        title: requestRegionNames.length > 0
+                          ? `${TEACHER_SCHEDULE_LABELS.PRIORITY_SAME_COURSE_SAME_REGION_GROUP} (${requestRegionNames.join(', ')})`
+                          : TEACHER_SCHEDULE_LABELS.PRIORITY_SAME_COURSE_SAME_REGION_GROUP,
+                        icon: <Icon.CheckCircle size={14} />,
+                        color: 'var(--status-success)',
+                        teachers: sortedTeachers.filter(ta => ta.courseLineMatch && ta.teacher.sameRegionAsRequest),
+                      },
+                      {
+                        key: 'same-course-other-region',
+                        title: TEACHER_SCHEDULE_LABELS.SAME_COURSE_OTHER_REGION_GROUP,
+                        icon: <Icon.MapPin size={14} />,
+                        color: 'var(--brand-indigo)',
+                        teachers: sortedTeachers.filter(ta => ta.courseLineMatch && !ta.teacher.sameRegionAsRequest && ta.teacher.mainCentreId),
+                      },
+                      {
+                        key: 'same-course-unknown-region',
+                        title: TEACHER_SCHEDULE_LABELS.SAME_COURSE_UNKNOWN_REGION_GROUP,
+                        icon: <Icon.AlertCircle size={14} />,
+                        color: 'var(--text-tertiary)',
+                        teachers: sortedTeachers.filter(ta => ta.courseLineMatch && !ta.teacher.sameRegionAsRequest && !ta.teacher.mainCentreId),
+                      },
+                      {
+                        key: 'other-course',
+                        title: TEACHER_SCHEDULE_LABELS.OTHER_COURSE_GROUP,
+                        icon: <Icon.XCircle size={14} />,
+                        color: 'var(--text-tertiary)',
+                        teachers: sortedTeachers.filter(ta => !ta.courseLineMatch),
+                      },
+                    ].filter(group => group.teachers.length > 0);
+
+                    const renderTeacherRow = (ta: TeacherAvailability, index: number, total: number) => {
+                      const teacherName = ta.teacher.fullName || ta.teacher.username;
+                      const workCentres = ta.teacher.workCentres?.filter(centre => centre.id !== ta.teacher.mainCentreId) || [];
+                      const regionText = ta.teacher.regionNames?.length ? ta.teacher.regionNames.join(', ') : TEACHER_SCHEDULE_LABELS.UNKNOWN_REGION;
+                      const relatedSlotText = ta.relatedSlot
+                        ? `${ta.isRelatedSlotBefore ? TEACHER_SCHEDULE_LABELS.TAUGHT_PREFIX : TEACHER_SCHEDULE_LABELS.WILL_TEACH_PREFIX}: ${ta.relatedSlot.className} (${formatTime(ta.relatedSlot.startTime)} - ${formatTime(ta.relatedSlot.endTime)})${ta.relatedSlot.centreId !== requestCentreId ? ` tại ${ta.relatedSlot.centreShortName}` : ''}`
+                        : null;
+
                       return (
-                        <div style={{ 
-                          marginBottom: 'var(--space-4)',
-                          border: '1px solid var(--border-primary)',
-                          borderRadius: "var(--radius-card)",
-                          overflow: 'hidden',
-                          background: 'var(--bg-surface)',
-                          width: '100%',
-                          boxSizing: 'border-box',
-                          minWidth: 0
-                        }}>
-                          {/* Panel Title Bar */}
-                          <div 
-                            style={{ 
-                              padding: 'var(--space-3) var(--space-4)',
-                              background: 'var(--bg-elevated)',
-                              borderBottom: isExpanded ? '1px solid var(--border-primary)' : 'none',
-                              cursor: 'pointer',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: 'var(--space-3)',
-                              transition: 'background 0.15s ease',
-                              userSelect: 'none'
-                            }}
-                            onClick={toggleGroup}
-                            onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-panel)')}
-                            onMouseLeave={e => (e.currentTarget.style.background = 'var(--bg-elevated)')}
-                          >
-                            {/* Icon */}
-                            <span style={{ display: 'flex', alignItems: 'center', color: 'var(--text-secondary)' }}>
-                              {groupIcon}
-                            </span>
-                            
-                            {/* Title */}
-                            <span style={{ 
-                              fontSize: 14, 
-                              fontWeight: 600, 
-                              color: 'var(--text-primary)',
-                              flex: 1
-                            }}>
-                              {groupTitle}
-                            </span>
-                            
-                            {/* Count Badge */}
-                            <span style={{
-                              fontSize: 12,
+                        <div
+                          key={ta.teacher.id}
+                          style={{
+                            display: 'grid',
+                            gridTemplateColumns: isMobile ? '1fr' : 'minmax(210px, 1fr) minmax(150px, 0.75fr) minmax(280px, 1.45fr) auto',
+                            gap: isMobile ? 'var(--space-2)' : 'var(--space-3)',
+                            padding: 'var(--space-3) var(--space-4)',
+                            borderBottom: index < total - 1 ? '1px solid var(--border-secondary)' : 'none',
+                            background: 'var(--bg-surface)',
+                            alignItems: 'center',
+                          }}
+                        >
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{
+                              fontSize: 13,
                               fontWeight: 600,
-                              color: 'var(--text-tertiary)',
-                              background: 'var(--bg-surface)',
-                              padding: '3px 10px',
-                              borderRadius: 12,
-                              border: '1px solid var(--border-secondary)'
+                              color: 'var(--text-primary)',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
                             }}>
-                              {teachers.length}
-                            </span>
-                            
-                            {/* Chevron */}
-                            <span style={{ 
-                              transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)', 
-                              transition: 'transform 0.2s ease',
-                              display: 'flex',
-                              alignItems: 'center',
-                              color: 'var(--text-tertiary)'
-                            }}>
-                              <Icon.ChevronDown />
-                            </span>
-                          </div>
-                          
-                          {/* Panel Content */}
-                          {isExpanded && (
-                            <div style={{ padding: '16px', width: '100%', boxSizing: 'border-box', overflow: 'hidden' }}>
-                              {categoryOrder.map(category => {
-                                const categoryTeachers = grouped[category];
-                                if (!categoryTeachers || categoryTeachers.length === 0) return null;
-                                
-                                const categoryKey = `${groupKey}-${category}`;
-                                const isCategoryExpanded = expandedCategories[categoryKey] !== false; // Default expanded
-                            
-                            return (
-                              <div key={category} style={{ marginBottom: 12 }}>
-                                {/* Category Header with Chevron */}
-                                <div 
-                                  style={{ 
-                                    fontSize: 11, 
-                                    fontWeight: 600, 
-                                    color: 'var(--text-secondary)', 
-                                    marginBottom: isCategoryExpanded ? 6 : 0,
-                                    padding: '6px 8px',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: 'var(--space-2)',
-                                    cursor: 'pointer',
-                                    borderRadius: "var(--radius-standard)",
-                                    transition: 'background 0.15s ease'
-                                  }}
-                                  onClick={() => toggleCategory(categoryKey)}
-                                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-elevated)')}
-                                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-                                >
-                                  <span style={{ 
-                                    transform: isCategoryExpanded ? 'rotate(180deg)' : 'rotate(0deg)', 
-                                    transition: 'transform 0.2s ease',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    fontSize: 10
-                                  }}>
-                                    <Icon.ChevronDown />
-                                  </span>
-                                  {categoryLabels[category]?.icon}
-                                  <span>{categoryLabels[category]?.label || category}</span>
-                                  <span style={{ 
-                                    fontSize: 9, 
-                                    fontWeight: 510, 
-                                    color: 'var(--text-quaternary)',
-                                    background: 'var(--bg-elevated)',
-                                    padding: '1px 5px',
-                                    borderRadius: 'var(--radius-standard)',
-                                    marginLeft: 4
-                                  }}>
-                                    {categoryTeachers.length}
-                                  </span>
-                                </div>
-                                
-                                {/* Teachers Table - Horizontal Scroll on Mobile */}
-                                {isCategoryExpanded && (
-                                  <div style={{ 
-                                    width: '100%',
-                                    overflowX: 'auto',
-                                    WebkitOverflowScrolling: 'touch',
-                                    border: '1px solid var(--border-primary)', 
-                                    borderRadius: "var(--radius-comfortable)", 
-                                    background: 'var(--bg-surface)'
-                                  }}>
-                                    <div style={{ minWidth: 600, width: '100%' }}>
-                                      {/* Table Header */}
-                                      <div style={{
-                                        display: 'grid',
-                                        gridTemplateColumns: '200px 1fr',
-                                        padding: '8px 12px',
-                                        background: 'var(--bg-elevated)',
-                                        borderBottom: '1px solid var(--border-primary)',
-                                        fontSize: 10,
-                                        fontWeight: 600,
-                                        color: 'var(--text-quaternary)',
-                                        textTransform: 'uppercase',
-                                        letterSpacing: '0.04em',
-                                        position: 'sticky',
-                                        top: 0,
-                                        zIndex: 1
-                                      }}>
-                                        <div>Giáo viên</div>
-                                        <div>Lý do & Thông tin</div>
-                                      </div>
-                                      
-                                      {/* Table Rows */}
-                                      {categoryTeachers.map((ta, idx) => (
-                                        <div
-                                          key={ta.teacher.id}
-                                          style={{
-                                            display: 'grid',
-                                            gridTemplateColumns: '200px 1fr',
-                                            padding: '10px 12px',
-                                            borderBottom: idx < categoryTeachers.length - 1 ? '1px solid var(--border-secondary)' : 'none',
-                                            background: 'var(--bg-surface)',
-                                            transition: 'background 0.1s ease',
-                                            alignItems: 'start'
-                                          }}
-                                          onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-elevated)')}
-                                          onMouseLeave={e => (e.currentTarget.style.background = 'var(--bg-surface)')}
-                                        >
-                                          {/* Teacher Info */}
-                                          <div>
-                                            <div style={{ fontSize: 12, fontWeight: 590, color: 'var(--text-primary)', marginBottom: 2 }}>
-                                              {ta.teacher.fullName || ta.teacher.username}
-                                            </div>
-                                            <div style={{ fontSize: 10, color: 'var(--text-tertiary)', wordBreak: 'break-word' }}>
-                                              {ta.teacher.email}
-                                            </div>
-                                            
-                                            {/* Add to Class Button - Only show if we have a selected slot */}
-                                            {selectedSlot && (
-                                              <button
-                                                onClick={() => handleAddSupplyTeacher(ta)}
-                                                disabled={addingSupplyTeacherId !== null}
-                                                style={{
-                                                  marginTop: 6,
-                                                  padding: '4px 10px',
-                                                  fontSize: 10,
-                                                  fontWeight: 510,
-                                                  color: 'white',
-                                                  background: addingSupplyTeacherId === ta.teacher.id ? 'var(--text-quaternary)' : 'var(--brand-indigo)',
-                                                  border: 'none',
-                                                  borderRadius: 'var(--radius-comfortable)',
-                                                  cursor: addingSupplyTeacherId !== null ? 'not-allowed' : 'pointer',
-                                                  transition: 'all 0.15s ease',
-                                                  opacity: addingSupplyTeacherId !== null && addingSupplyTeacherId !== ta.teacher.id ? 0.5 : 1,
-                                                }}
-                                                onMouseEnter={e => {
-                                                  if (addingSupplyTeacherId === null) {
-                                                    e.currentTarget.style.background = 'var(--accent-hover)';
-                                                    e.currentTarget.style.transform = 'translateY(-1px)';
-                                                  }
-                                                }}
-                                                onMouseLeave={e => {
-                                                  e.currentTarget.style.background = addingSupplyTeacherId === ta.teacher.id ? 'var(--text-quaternary)' : 'var(--brand-indigo)';
-                                                  if (addingSupplyTeacherId === null) e.currentTarget.style.transform = 'translateY(0)';
-                                                }}
-                                              >
-                                                {addingSupplyTeacherId === ta.teacher.id ? (
-                                                  <>
-                                                    <Spinner size={10} /> Đang thêm...
-                                                  </>
-                                                ) : (
-                                                  <>
-                                                    <Icon.Plus size={10} /> Thêm vào lớp
-                                                  </>
-                                                )}
-                                              </button>
-                                            )}
-                                          </div>
-                                          
-                                          {/* Reason & Details */}
-                                          <div>
-                                            <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 'var(--space-1)', lineHeight: 1.4 }}>
-                                              {ta.reason}
-                                            </div>
-                                            
-                                            {/* Additional Info */}
-                                            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
-                                              {ta.totalHoursToday !== undefined && ta.totalHoursToday > 0 && (
-                                                <div style={{ fontSize: 9, color: 'var(--text-quaternary)' }}>
-                                                  <Icon.Clock size={9} /> Đã dạy {ta.totalHoursToday}h trong ngày
-                                                </div>
-                                              )}
-                                              {ta.conflictSlots && ta.conflictSlots.length > 0 && (
-                                                <div style={{ 
-                                                  fontSize: 9, 
-                                                  color: 'var(--status-warning)', 
-                                                  fontWeight: 510,
-                                                  display: 'flex',
-                                                  alignItems: 'flex-start',
-                                                  gap: 3
-                                                }}>
-                                                  <span style={{ marginTop: 1, flexShrink: 0 }}>
-                                                    <Icon.Monitor size={9} />
-                                                  </span>
-                                                  <span>Đang dạy: {ta.conflictSlots[0].className} ({formatTime(ta.conflictSlots[0].startTime)} - {formatTime(ta.conflictSlots[0].endTime)})</span>
-                                                </div>
-                                              )}
-                                              {ta.relatedSlot && (
-                                                <div style={{ 
-                                                  fontSize: 9, 
-                                                  color: ta.relatedSlot.centreId === selectedSlot?.centreId ? 'var(--status-emerald)' : '#3b82f6', 
-                                                  fontWeight: 510,
-                                                  display: 'flex',
-                                                  alignItems: 'flex-start',
-                                                  gap: 3
-                                                }}>
-                                                  <span style={{ marginTop: 1, flexShrink: 0 }}>
-                                                    <Icon.Building size={9} />
-                                                  </span>
-                                                  <span>
-                                                    {ta.isRelatedSlotBefore ? 'Đã dạy' : 'Sẽ dạy'}: {ta.relatedSlot.className} ({formatTime(ta.relatedSlot.startTime)} - {formatTime(ta.relatedSlot.endTime)})
-                                                    {ta.relatedSlot.centreId !== selectedSlot?.centreId && ` tại ${ta.relatedSlot.centreShortName}`}
-                                                  </span>
-                                                </div>
-                                              )}
-                                            </div>
-                                          </div>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })}
+                              {teacherName}
                             </div>
+                            <div style={{
+                              fontSize: 11,
+                              color: 'var(--text-tertiary)',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                            }}>
+                              {ta.teacher.email}
+                            </div>
+                          </div>
+
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: 12, fontWeight: 590, color: ta.teacher.sameRegionAsRequest ? 'var(--status-success)' : 'var(--text-secondary)' }}>
+                              {ta.teacher.mainCentreName || TEACHER_SCHEDULE_LABELS.NO_MAIN_CENTRE}
+                            </div>
+                            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2, lineHeight: 1.35, whiteSpace: 'normal', overflowWrap: 'anywhere' }}>
+                              {TEACHER_SCHEDULE_LABELS.REGION}: {regionText}
+                            </div>
+                            {workCentres.length > 0 && (
+                              <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2, lineHeight: 1.35, whiteSpace: 'normal', overflowWrap: 'anywhere' }}>
+                                {TEACHER_SCHEDULE_LABELS.WORK_CENTRES}: {workCentres.map(centre => centre.name).join(', ')}
+                              </div>
+                            )}
+                          </div>
+
+                          <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)', fontSize: 11, color: 'var(--text-tertiary)' }}>
+                              {(relatedSlotText || (ta.conflictSlots && ta.conflictSlots.length > 0) || (ta.totalHoursToday !== undefined && ta.totalHoursToday > 0)) && (
+                                <>
+                                {ta.totalHoursToday !== undefined && ta.totalHoursToday > 0 && (
+                                  <span style={{ display: 'inline-flex', alignItems: 'flex-start', gap: 4 }}>
+                                    <Icon.Clock size={10} />
+                                    <span>{TEACHER_SCHEDULE_LABELS.HOURS_TAUGHT_TODAY} {ta.totalHoursToday}{TEACHER_SCHEDULE_LABELS.HOURS_IN_DAY}</span>
+                                  </span>
+                                )}
+                                {relatedSlotText && (
+                                  <span style={{ display: 'inline-flex', alignItems: 'flex-start', gap: 4 }}>
+                                    <Icon.Building size={10} />
+                                    <span>{relatedSlotText}</span>
+                                  </span>
+                                )}
+                                {ta.conflictSlots && ta.conflictSlots.length > 0 && (
+                                  <span style={{ display: 'inline-flex', alignItems: 'flex-start', gap: 4, color: 'var(--status-warning)' }}>
+                                    <Icon.Monitor size={10} />
+                                    <span>{TEACHER_SCHEDULE_LABELS.TEACHING_PREFIX}: {ta.conflictSlots[0].className} ({formatTime(ta.conflictSlots[0].startTime)} - {formatTime(ta.conflictSlots[0].endTime)})</span>
+                                  </span>
+                                )}
+                                </>
+                              )}
+                            </div>
+                          </div>
+
+                          {selectedSlot && (
+                            <button
+                              type="button"
+                              className={styles.primaryBtn}
+                              onClick={() => handleAddSupplyTeacher(ta)}
+                              disabled={addingSupplyTeacherId !== null}
+                              style={{
+                                justifyContent: 'center',
+                                width: isMobile ? '100%' : 'auto',
+                                opacity: addingSupplyTeacherId !== null && addingSupplyTeacherId !== ta.teacher.id ? 0.5 : 1,
+                              }}
+                            >
+                              {addingSupplyTeacherId === ta.teacher.id ? (
+                                <>
+                                  <Spinner size={12} /> {TEACHER_SCHEDULE_LABELS.ADDING_TEACHER}
+                                </>
+                              ) : (
+                                <>
+                                  <Icon.Plus size={12} /> {TEACHER_SCHEDULE_LABELS.ADD_TO_CLASS}
+                                </>
+                              )}
+                            </button>
                           )}
                         </div>
                       );
                     };
-                    
+
+                    const renderShortlistGroup = (group: (typeof teacherGroups)[number]) => {
+                      const isExpanded = expandedGroups[group.key] !== false;
+                      const toggleGroup = () => {
+                        setExpandedGroups(prev => ({ ...prev, [group.key]: !prev[group.key] }));
+                      };
+                      const groupedByCategory = group.teachers.reduce((acc, ta) => {
+                        const category = ta.category || 'has-class-other-centre';
+                        if (!acc[category]) acc[category] = [];
+                        acc[category].push(ta);
+                        return acc;
+                      }, {} as Record<string, typeof group.teachers>);
+                      const primaryCategories = TEACHER_AVAILABILITY_CATEGORY_ORDER
+                        .map(categoryKey => ({
+                          key: categoryKey,
+                          teachers: groupedByCategory[categoryKey],
+                          label: categoryLabels[categoryKey],
+                          color: group.color,
+                        }))
+                        .filter(category => category.teachers?.length);
+                      const referenceCategories = TEACHER_AVAILABILITY_REFERENCE_CATEGORY_ORDER
+                        .map(categoryKey => ({
+                          key: categoryKey,
+                          teachers: groupedByCategory[categoryKey],
+                          label: categoryLabels[categoryKey],
+                          color: 'var(--text-tertiary)',
+                        }))
+                        .filter(category => category.teachers?.length);
+                      const orderedCategories = [...primaryCategories, ...referenceCategories];
+
+                      return (
+                        <div key={group.key} className={styles.tableSection} style={{ marginBottom: 'var(--space-3)' }}>
+                          <TableGroupHeader
+                            title={group.title}
+                            count={group.teachers.length}
+                            icon={group.icon}
+                            isExpanded={isExpanded}
+                            onToggle={toggleGroup}
+                          />
+                          <AnimatePresence initial={false}>
+                            {isExpanded && (
+                              <motion.div
+                                initial={{ height: 0, opacity: 0 }}
+                                animate={{ height: 'auto', opacity: 1 }}
+                                exit={{ height: 0, opacity: 0 }}
+                                style={{ overflow: 'hidden' }}
+                              >
+                                <div className={styles.tableScrollWrapper}>
+                                  <div style={{ minWidth: isMobile ? 0 : 860 }}>
+                                    <div style={{
+                                      display: isMobile ? 'none' : 'grid',
+                                      gridTemplateColumns: 'minmax(210px, 1fr) minmax(150px, 0.75fr) minmax(280px, 1.45fr) auto',
+                                      gap: 'var(--space-3)',
+                                      padding: '8px 16px',
+                                      background: 'var(--bg-panel)',
+                                      borderBottom: '1px solid var(--border-primary)',
+                                      fontSize: 10,
+                                      fontWeight: 700,
+                                      color: 'var(--text-quaternary)',
+                                      textTransform: 'uppercase',
+                                      letterSpacing: '0.02em',
+                                    }}>
+                                      <div>{TEACHER_SCHEDULE_LABELS.TEACHER_COLUMN}</div>
+                                      <div>{TEACHER_SCHEDULE_LABELS.MAIN_CENTRE}</div>
+                                      <div>{TEACHER_SCHEDULE_LABELS.REASON_INFO_COLUMN}</div>
+                                      <div>{TEACHER_SCHEDULE_LABELS.ADD_TO_CLASS}</div>
+                                    </div>
+
+                                    {orderedCategories.map(category => {
+                                      const categoryTeachers = category.teachers;
+                                      if (!categoryTeachers || categoryTeachers.length === 0) return null;
+
+                                      const subGroupKey = `${group.key}-${category.key}`;
+                                      const subExpanded = expandedGroups[subGroupKey] !== false;
+                                      return (
+                                        <Fragment key={subGroupKey}>
+                                          <SubTableGroupHeader
+                                            title={category.label?.label || category.key}
+                                            count={categoryTeachers.length}
+                                            icon={category.label?.icon}
+                                            color={category.color}
+                                            isExpanded={subExpanded}
+                                            onToggle={() => setExpandedGroups(prev => ({ ...prev, [subGroupKey]: !prev[subGroupKey] }))}
+                                          />
+                                          <AnimatePresence initial={false}>
+                                            {subExpanded && (
+                                              <motion.div
+                                                initial={{ height: 0, opacity: 0 }}
+                                                animate={{ height: 'auto', opacity: 1 }}
+                                                exit={{ height: 0, opacity: 0 }}
+                                                style={{ overflow: 'hidden' }}
+                                              >
+                                                {categoryTeachers.map((ta, index) => renderTeacherRow(ta, index, categoryTeachers.length))}
+                                              </motion.div>
+                                            )}
+                                          </AnimatePresence>
+                                        </Fragment>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
+                        </div>
+                      );
+                    };
+
                     return (
                       <>
-                        {renderGroup(withMatch, 'match', 'Đúng khối', <span style={{ color: 'var(--status-success)' }}><Icon.CheckCircle size={14} /></span>)}
-                        {renderGroup(withoutMatch, 'no-match', 'Khối khác', <span style={{ color: 'var(--text-tertiary)' }}><Icon.XCircle size={14} /></span>)}
+                        {teacherGroups.map(group => renderShortlistGroup(group))}
                       </>
                     );
                   })()}
@@ -4967,19 +5108,16 @@ export default function TeacherSchedulePage() {
 
               {/* No results message */}
               {!calculatingTeachers && availableTeachers.length === 0 && selectedSlot && (
-                <div style={{ 
-                  padding: '16px', 
-                  background: 'rgba(220, 38, 38, 0.08)', 
-                  border: '1px solid rgba(220, 38, 38, 0.3)', 
-                  borderRadius: "var(--radius-comfortable)",
-                  textAlign: 'center'
+                <div style={{
+                  border: '1px solid var(--border-primary)',
+                  borderRadius: 'var(--radius-comfortable)',
+                  background: 'var(--bg-surface)',
                 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--status-error)', marginBottom: 4 }}>
-                    Không tìm thấy giáo viên rảnh
-                  </div>
-                  <div style={{ fontSize: 12, color: 'rgba(153, 27, 27, 1)' }}>
-                    Tất cả giáo viên đều đã có lịch trong khung giờ này
-                  </div>
+                  <EmptyState
+                    icon={<Icon.AlertCircle size={32} />}
+                    title={TEACHER_SCHEDULE_LABELS.NO_AVAILABLE_TEACHER}
+                    subtitle={TEACHER_SCHEDULE_LABELS.NO_AVAILABLE_TEACHER_DESC}
+                  />
                 </div>
               )}
             </div>

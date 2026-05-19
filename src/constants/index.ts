@@ -154,6 +154,44 @@ export const LABELS = {
   CAN_ADVANCE: 'Đủ điều kiện lên lớp',
 } as const;
 
+export const JUDGE_REQUEST_LABELS = {
+  PAGE_TITLE: 'Giám khảo Cuối khoá',
+  TABLE_TITLE: 'Danh sách buổi cuối khoá',
+  BATCH_SESSION_SUFFIX: 'buổi cuối khoá',
+  CLOSED_BATCH_NOTE: 'Đợt đăng ký này đã đóng',
+  EMPTY_BATCH_TITLE: 'Chưa có buổi nào trong đợt này',
+  EMPTY_BATCH_SUBTITLE: 'Admin chưa thêm buổi. Quay lại sau.',
+  NOT_FOUND_TITLE: 'Không tìm thấy đợt đăng ký',
+  NOT_FOUND_SUBTITLE: 'Link có thể đã hết hạn hoặc không hợp lệ',
+  LOAD_ERROR_TITLE: 'Không thể tải đợt đăng ký',
+  LOAD_ERROR_SUBTITLE: 'Vui lòng thử lại sau',
+  LOADING: 'Đang tải...',
+  JUDGE: 'Giám khảo',
+  FINAL_SESSION: 'Buổi cuối khoá',
+  NOTES: 'Ghi chú',
+  CLOSED: 'Đã đóng',
+  REGISTERED: 'Đã đăng ký',
+  HAS_JUDGE: 'Đã có giám khảo',
+  REQUEST_ACTION: 'Đăng ký làm giám khảo',
+  REQUEST_SUCCESS: 'Đã gửi đăng ký làm giám khảo',
+  REQUEST_DUPLICATE: 'Bạn đã đăng ký cho buổi này rồi',
+  REQUEST_ERROR: 'Không thể gửi đăng ký',
+  CANCEL_SUCCESS: 'Đã huỷ đăng ký',
+  CANCEL_ERROR: 'Không thể huỷ đăng ký',
+  LOAD_ERROR: 'Không thể tải dữ liệu',
+} as const;
+
+export const WEEKDAY_LABELS_VI = ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'] as const;
+
+export const DAY_SESSION_LABELS = ['Sáng', 'Chiều', 'Tối'] as const;
+export type DaySessionLabel = typeof DAY_SESSION_LABELS[number];
+
+export const DAY_SESSION_ORDER: Record<DaySessionLabel, number> = {
+  Sáng: 0,
+  Chiều: 1,
+  Tối: 2,
+};
+
 /**
  * TEACHER SCHEDULE — Page-specific labels and options.
  * Keep route UI text here so `/admin/operations` stays aligned with
@@ -182,7 +220,72 @@ export const TEACHER_SCHEDULE_LABELS = {
   TEACHING_SLOTS_IN_RANGE: 'Ca dạy trong kỳ',
   AVG_SLOTS_PER_TEACHER: 'Ca/giáo viên',
   RELOAD_DATA: 'Làm mới',
+  MANAGE_CLASS_SESSION: 'Quản lý ca học',
+  AVAILABLE_TEACHER_SHORT: 'Tìm giáo viên rảnh',
+  AVAILABLE_TEACHERS_COUNT: 'giáo viên rảnh',
+  AVAILABLE_SAME_COURSE_TEACHERS_COUNT: 'giáo viên đúng khối',
+  AVAILABLE_TOTAL_REFERENCE: 'giáo viên rảnh tổng',
+  OTHER_COURSE_REFERENCE_COUNT: 'giáo viên khối khác để tham khảo',
+  NO_SAME_COURSE_TEACHER: 'Không có giáo viên đúng khối',
+  EXCLUDED_CURRENT_TEACHERS: 'đã loại trừ giáo viên hiện tại',
+  CALCULATING_AVAILABLE_TEACHERS: 'Đang tính toán giáo viên rảnh...',
+  NO_AVAILABLE_TEACHER: 'Không tìm thấy giáo viên rảnh',
+  NO_AVAILABLE_TEACHER_DESC: 'Tất cả giáo viên đều đã có lịch trong khung giờ này',
+  NO_AVAILABLE_TEACHER_IN_RANGE: 'Không có giáo viên rảnh trong khung giờ này',
+  NO_AVAILABLE_TEACHER_BY_COURSE: 'Không có giáo viên rảnh phù hợp với bộ lọc Khối.',
+  ADDING_TEACHER_TO_CLASS: 'Đang thêm giáo viên vào lớp...',
+  SAME_REGION_AS_CLASS: 'Cùng khu vực lớp',
+  OTHER_REGION: 'Khu vực khác',
+  UNKNOWN_REGION: 'Chưa xác định khu vực',
+  TEACHER_COLUMN: 'Giáo viên',
+  REASON_INFO_COLUMN: 'Lý do & Thông tin',
+  MAIN_CENTRE: 'Cơ sở chính',
+  WORK_CENTRES: 'Cơ sở làm việc',
+  REGION: 'Khu vực',
+  NO_MAIN_CENTRE: 'Chưa có',
+  COURSE_MATCH_GROUP: 'Đúng khối',
+  COURSE_OTHER_GROUP: 'Khối khác',
+  PRIORITY_SAME_COURSE_SAME_REGION_GROUP: 'ĐÚNG KHỐI + CÙNG KHU VỰC',
+  SAME_COURSE_OTHER_REGION_GROUP: 'ĐÚNG KHỐI + KHÁC KHU VỰC',
+  SAME_COURSE_UNKNOWN_REGION_GROUP: 'ĐÚNG KHỐI + CHƯA RÕ KHU VỰC',
+  OTHER_COURSE_GROUP: 'KHỐI KHÁC (ÍT ƯU TIÊN)',
+  ADD_TO_CLASS: 'Thêm vào lớp',
+  ADDING_TEACHER: 'Đang thêm...',
+  TAUGHT_PREFIX: 'Đã dạy',
+  WILL_TEACH_PREFIX: 'Sẽ dạy',
+  TEACHING_PREFIX: 'Đang dạy',
+  HOURS_TAUGHT_TODAY: 'Đã dạy',
+  HOURS_IN_DAY: 'h trong ngày',
+  AVAILABLE_TEACHER_REASON: 'Giáo viên rảnh',
+  SAME_CENTRE_CLASS_REASON: 'Có lớp tại cùng cơ sở',
+  SAME_CENTRE_ADJACENT_CLASS_REASON: 'Có lớp liền kề tại cùng cơ sở',
+  OTHER_CENTRE_CLASS_REASON: 'Có lớp tại cơ sở khác',
+  OTHER_CENTRE_ADJACENT_CLASS_REASON: 'Có lớp liền kề tại cơ sở khác',
+  HEAVY_WORKLOAD_REASON: 'Đã dạy nhiều giờ',
 } as const;
+
+export const TEACHER_AVAILABILITY_CATEGORY_LABELS = {
+  HAS_CLASS_SAME_CENTRE_ADJACENT: 'Có lớp sau/trước tại cùng cơ sở (liền kề)',
+  HAS_CLASS_SAME_CENTRE: 'Có lớp sau/trước tại cùng cơ sở (không liền kề)',
+  COMPLETELY_FREE: 'Hoàn toàn rảnh trong ngày',
+  HAS_CLASS_OTHER_CENTRE: 'Có lớp sau/trước tại cơ sở khác (không liền kề)',
+  HAS_CLASS_OTHER_CENTRE_ADJACENT: 'Có lớp sau/trước tại cơ sở khác (liền kề)',
+  CURRENTLY_AT_CENTRE: 'Đang dạy tại cùng cơ sở',
+  CURRENTLY_AT_OTHER_CENTRE: 'Đang dạy tại cơ sở khác',
+} as const;
+
+export const TEACHER_AVAILABILITY_CATEGORY_ORDER = [
+  'has-class-same-centre-adjacent',
+  'completely-free',
+  'has-class-other-centre',
+] as const;
+
+export const TEACHER_AVAILABILITY_REFERENCE_CATEGORY_ORDER = [
+  'has-class-same-centre',
+  'has-class-other-centre-adjacent',
+  'currently-at-centre',
+  'currently-at-other-centre',
+] as const;
 
 export const TEACHER_SCHEDULE_TYPE_OPTIONS = [
   { value: 'ALL', label: TEACHER_SCHEDULE_LABELS.ALL_SCHEDULES },

@@ -2175,6 +2175,17 @@
   /* Must not be clipped — resolved by removing overflow:hidden above */
 }
 
+.managerScheduleNoteTooltip {
+  width: max-content;
+  max-width: min(260px, 70vw);
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: left;
+  line-height: 1.35;
+  font-family: inherit;
+  box-shadow: var(--shadow-popover);
+}
+
 /* ══════════════════════════════════════════════════════════════════════════════
    MODAL — Level 5 dialog elevation (DESIGN.md §6)
    Overlay: rgba(0,0,0,0.85) per DESIGN.md §2 "Overlay Primary"
