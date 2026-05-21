@@ -37,6 +37,21 @@ export interface Class {
   slots: Session[];
   surveySessions?: ClassSurveySessionStatus[];
   courseProcess?: CourseProcess | null;
+  classStatusConfig?: ClassStatusConfig | null;
+}
+
+export interface ClassStatusConfigItem {
+  id?: string;
+  status: string;
+  nextStatuses?: string[];
+  description?: string | null;
+  allowActions?: string[];
+}
+
+export interface ClassStatusConfig {
+  id?: string;
+  code?: string;
+  statusConfigs?: ClassStatusConfigItem[];
 }
 
 export interface ClassSurveySessionStatus {
@@ -111,6 +126,49 @@ export interface StudentAttendance {
     gender: string;
     imageUrl: string;
   };
+}
+
+export interface StudentWorkRelatedUrl {
+  name?: string | null;
+  url?: string | null;
+}
+
+export interface StudentWorkLatestData {
+  title?: string | null;
+  thumbnail?: string | null;
+  videoUrls?: string[] | null;
+  imageUrl?: string | null;
+  attachmentUrls?: string[] | null;
+  comment?: string | null;
+  rejectReason?: string | null;
+  relatedUrls?: StudentWorkRelatedUrl[] | null;
+}
+
+export interface StudentWork {
+  id: string;
+  status?: string | null;
+  studentId?: string | null;
+  classSessionId?: string | null;
+  classId?: string | null;
+  version?: number | null;
+  displayOrder?: number | null;
+  latestData?: StudentWorkLatestData | null;
+  createdBy?: { displayName?: string | null } | null;
+  createdAt?: string | null;
+  lastModifiedBy?: { displayName?: string | null } | null;
+  lastModifiedAt?: string | null;
+}
+
+export interface FinalProductClassStats {
+  classId: string;
+  totalStudents: number;
+  isFinalSessionCompleted: boolean;
+  finalSessionDate?: string | null;
+  submittedCount: number;
+  approvedCount: number;
+  pendingCount: number;
+  rejectedCount: number;
+  missingCount: number;
 }
 
 // ─── CourseProcess (criteria templates) ───────────────────────────────────────

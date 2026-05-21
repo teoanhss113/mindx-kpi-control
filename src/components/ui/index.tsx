@@ -31,6 +31,10 @@ import {
   Globe as _Globe,
   Lock as _Lock,
   Unlock as _Unlock,
+  Image as _Image,
+  Video as _Video,
+  Link as _Link,
+  Paperclip as _Paperclip,
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useRouter } from 'next/navigation'
@@ -200,6 +204,10 @@ export const Icon = {
   Target:         (p?: P) => <_Target          size={p?.size ?? 16} color={p?.color} />,
   BookOpen:       (p?: P) => <_BookOpen        size={p?.size ?? 15} color={p?.color} />,
   Copy:           (p?: P) => <_Copy            size={p?.size ?? 14} color={p?.color} />,
+  Image:          (p?: P) => <_Image           size={p?.size ?? 14} color={p?.color} style={p?.style} />,
+  Video:          (p?: P) => <_Video           size={p?.size ?? 14} color={p?.color} style={p?.style} />,
+  Link:           (p?: P) => <_Link            size={p?.size ?? 14} color={p?.color} style={p?.style} />,
+  Paperclip:      (p?: P) => <_Paperclip       size={p?.size ?? 14} color={p?.color} style={p?.style} />,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

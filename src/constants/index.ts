@@ -422,6 +422,17 @@ export const CLASS_QUALITY_LABELS = {
   ATTENDANCE: 'Chuyên cần',
   SCHEDULE_CHANGES: 'Thay đổi lịch',
   CHECKPOINT_DEMO_SCORES: 'Điểm Checkpoint / Demo',
+  FINAL_PRODUCTS: 'Sản phẩm cuối khóa',
+  FINAL_PRODUCT_SUBMITTED: 'Đã đăng sản phẩm',
+  FINAL_PRODUCT_NOT_DUE: 'Chưa tới buổi cuối',
+  FINAL_PRODUCT_MISSING: 'Thiếu sản phẩm',
+  FINAL_PRODUCT_PENDING: 'Sản phẩm chờ xử lý',
+  FINAL_PRODUCT_REJECTED: 'Sản phẩm bị từ chối',
+  FINAL_PRODUCT_IMAGE: 'Ảnh',
+  FINAL_PRODUCT_THUMBNAIL: 'Ảnh thu nhỏ',
+  FINAL_PRODUCT_ATTACHMENT: 'Tệp',
+  FINAL_PRODUCT_VIDEOS: 'Video',
+  FINAL_PRODUCT_RELATED_URLS: 'Link liên quan',
   RESCHEDULED_SESSIONS: 'Buổi dời',
   STUDENT_COUNT: 'Số lượng học viên',
   COMMENT_DETAIL_FILTER: 'Lọc lỗi nhận xét',
@@ -664,6 +675,21 @@ export const COURSE_CATEGORY_ORDER: Record<Course, number> = {
 /**
  * CLASS STATUSES — Shared filtering rules for class-like LMS records
  */
+export const CLASS_STATUS_FILTER_OPTIONS = [
+  { value: 'NEW', label: 'NEW' },
+  { value: 'PREPARING', label: 'PREPARING' },
+  { value: 'PRE_OPEN', label: 'PRE_OPEN' },
+  { value: 'PENDING', label: 'PENDING' },
+  { value: 'REJECTED', label: 'REJECTED' },
+  { value: 'OPEN', label: 'OPEN' },
+  { value: 'RUNNING', label: 'RUNNING' },
+  { value: 'FINISHED', label: 'FINISHED' },
+  { value: 'SUSPENDED', label: 'SUSPENDED' },
+  { value: 'ABANDONED', label: 'ABANDONED' },
+] as const;
+
+export const DEFAULT_CLASS_STATUS_FILTER_VALUES = ['RUNNING', 'FINISHED'] as const;
+
 export const CLASS_INACTIVE_STATUSES = new Set(['ABANDONED', 'REJECTED', 'CANCELLED', 'SUSPENDED', 'PREPARING']);
 
 /**

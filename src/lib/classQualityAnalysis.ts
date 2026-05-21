@@ -1,4 +1,4 @@
-import { Class, Session, CommentAreaDef } from '@/types/classes';
+import { Class, Session, CommentAreaDef, StudentAttendance } from '@/types/classes';
 import { getCourseCategory } from '@/lib/courseCategories';
 import { COMMENT_SLA_HOURS, COURSE_CHECKPOINT_SESSIONS, COURSE_CODE_CHECKPOINT_SESSIONS } from '@/constants';
 import { computeTBCK, determineRank } from '@/lib/courseGrading';
@@ -7,6 +7,7 @@ import {
   parseCommentAreas,
   buildCommentAreaLookup,
   parseCommentByAreasStructured,
+  type CommentAreaLookup,
 } from '@/lib/commentContent';
 import type { TemplateMatch } from '@/lib/commentContent';
 import { 
@@ -634,8 +635,144 @@ function cleanText(value: string): string {
  */
 function parseScoreByLabel(comment: string, label: string): number | null {
   const text = cleanText(comment);
-  const match = text.match(new RegExp(`${label}\\s*:?\\s*([0-9]+(?:\\.[0-9]+)?)\\s*điểm`, 'i'));
-  return match ? Number.parseFloat(match[1]) : null;
+  const escapedLabel = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = text.match(new RegExp(`${escapedLabel}\\s*(?::|-)\\s*([0-9]+(?:[.,][0-9]+)?)(?:\\s*/\\s*5)?(?:\\s*điểm)?`, 'i'));
+  if (!match) return null;
+
+  const value = Number.parseFloat(match[1].replace(',', '.'));
+  return Number.isFinite(value) ? value : null;
+}
+
+function parseScoreByLabels(comment: string, labels: string[]): number | null {
+  for (const label of labels) {
+    const score = parseScoreByLabel(comment, label);
+    if (score !== null) return score;
+  }
+  return null;
+}
+
+function normalizeScoreLabel(value: string | null | undefined): string {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/đ/g, 'd')
+    .replace(/^\s*\[[^\]]+\]\s*/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function averageScores(scores: number[]): number | null {
+  return scores.length > 0 ? scores.reduce((sum, score) => sum + score, 0) / scores.length : null;
+}
+
+function isProductScoreLabel(label: string): boolean {
+  return label.includes('san pham')
+    || label.includes('du an cuoi khoa')
+    || label.includes('final project')
+    || label.includes('capstone');
+}
+
+const THEORY_SCORE_LABELS = [
+  'Điểm lý thuyết',
+  'Điểm lí thuyết',
+  'Điểm trắc nghiệm',
+  'Điểm bài kiểm tra',
+  'Điểm kiểm tra',
+  'Theory score',
+];
+
+const PRACTICE_SCORE_LABELS = [
+  'Điểm thực hành',
+  'Practice score',
+];
+
+function getStructuredScoreComponents(
+  attendance: StudentAttendance,
+  lookup: CommentAreaLookup
+): {
+  directCheckpoint: number | null;
+  directDemo: number | null;
+  theory: number | null;
+  practice: number | null;
+  ability: number | null;
+  product: number | null;
+} {
+  const abilityCandidates: number[] = [];
+  const productCandidates: number[] = [];
+  let directCheckpoint: number | null = null;
+  let directDemo: number | null = null;
+  let theory: number | null = null;
+  let practice: number | null = null;
+  let explicitAbility: number | null = null;
+  let explicitProduct: number | null = null;
+
+  (attendance.commentByAreas || []).forEach(cba => {
+    if (typeof cba.grade !== 'number') return;
+
+    const area = cba.commentAreaId ? lookup.byId.get(cba.commentAreaId)?.area : undefined;
+    const areaLabel = normalizeScoreLabel([
+      area?.name,
+      area?.fieldName,
+      area?.translations?.map(t => t.value).join(' '),
+    ].filter(Boolean).join(' '));
+    const groupLabel = normalizeScoreLabel(cba.courseProcessFinalEvaluationTitle);
+    const typeLabel = normalizeScoreLabel(cba.type);
+    const searchable = [areaLabel, groupLabel, typeLabel].filter(Boolean).join(' ');
+
+    if (
+      areaLabel.includes('ly thuyet')
+      || areaLabel.includes('li thuyet')
+      || areaLabel.includes('trac nghiem')
+      || areaLabel.includes('bai kiem tra')
+      || areaLabel.includes('diem kiem tra')
+      || areaLabel.includes('theory')
+    ) {
+      theory = cba.grade;
+      return;
+    }
+    if (areaLabel.includes('thuc hanh') || areaLabel.includes('practice')) {
+      practice = cba.grade;
+      return;
+    }
+    if (areaLabel.includes('nang luc') || areaLabel.includes('competenc') || areaLabel.includes('ability')) {
+      explicitAbility = cba.grade;
+      return;
+    }
+    if (isProductScoreLabel(areaLabel)) {
+      explicitProduct = cba.grade;
+      productCandidates.push(cba.grade);
+      return;
+    }
+    if (typeLabel === 'checkpoint' || areaLabel.includes('diem checkpoint') || /\bdiem cp\b/.test(areaLabel)) {
+      directCheckpoint = cba.grade;
+      return;
+    }
+    if (typeLabel === 'demo' || areaLabel.includes('diem demo')) {
+      directDemo = cba.grade;
+      return;
+    }
+
+    if (
+      cba.type === 'RATE'
+      && !searchable.includes('danh gia chung')
+      && !searchable.includes('nhan xet')
+      && !searchable.includes('comment')
+      && !searchable.includes('phu huynh')
+    ) {
+      abilityCandidates.push(cba.grade);
+    }
+  });
+
+  return {
+    directCheckpoint,
+    directDemo,
+    theory,
+    practice,
+    ability: explicitAbility ?? averageScores(abilityCandidates),
+    product: explicitProduct ?? averageScores(productCandidates),
+  };
 }
 
 /**
@@ -645,10 +782,8 @@ function parseScoreByLabel(comment: string, label: string): number | null {
  * Special case: If no theory/practice tests, use 100% ability score
  */
 function computeCpScore(theory: number | null, practice: number | null, ability: number | null): number | null {
-  // Align with fetch_classes.js logic: return null if any score component is missing.
-  if (theory === null || practice === null || ability === null) {
-    return null;
-  }
+  if (ability !== null && theory === null && practice === null) return ability;
+  if (theory === null || practice === null || ability === null) return null;
   
   // Formula: 0.2 * (theory + practice) + 0.6 * ability
   // Which is equivalent to: 0.4 * ((theory + practice) / 2) + 0.6 * ability
@@ -702,27 +837,52 @@ function getPreferredCheckpointSessions(cls: Class): { cp1: number; cp2: number;
   return { cp1: 4, cp2: 8, demo: Math.min(13, lastSessionIndex) };
 }
 
-function getCheckpointScoreCount(slot: Session | undefined): number {
+function getCheckpointScoreCount(slot: Session | undefined, lookup: CommentAreaLookup): number {
   if (!slot) return 0;
   return (slot.studentAttendance ?? []).reduce((count, attendance) => {
+    const structured = getStructuredScoreComponents(attendance, lookup);
+    if (structured.directCheckpoint !== null || computeCpScore(structured.theory, structured.practice, structured.ability) !== null) {
+      return count + 1;
+    }
+
     const commentContent = getStudentAttendanceCommentContent(attendance);
-    if (parseScoreByLabel(commentContent, 'Điểm Demo') !== null || parseScoreByLabel(commentContent, 'Điểm sản phẩm cuối khoá') !== null) {
+    if (
+      parseScoreByLabels(commentContent, ['Điểm Demo', 'Điểm demo', 'Demo']) !== null
+      || parseScoreByLabels(commentContent, ['Điểm sản phẩm cuối khoá', 'Điểm sản phẩm cuối khóa', 'Điểm sản phẩm']) !== null
+    ) {
       return count;
     }
-    const theory = parseScoreByLabel(commentContent, 'Điểm lý thuyết');
-    const practice = parseScoreByLabel(commentContent, 'Điểm thực hành');
+    const directCheckpoint = parseScoreByLabels(commentContent, [
+      'Điểm Checkpoint',
+      'Điểm checkpoint',
+      'Điểm CP1',
+      'Điểm CP2',
+      'Điểm CP',
+      'Checkpoint',
+    ]);
+    const theory = parseScoreByLabels(commentContent, THEORY_SCORE_LABELS);
+    const practice = parseScoreByLabels(commentContent, PRACTICE_SCORE_LABELS);
     const ability = parseScoreByLabel(commentContent, 'Điểm năng lực');
-    return count + (computeCpScore(theory, practice, ability) !== null ? 1 : 0);
+    return count + (directCheckpoint !== null || computeCpScore(theory, practice, ability) !== null ? 1 : 0);
   }, 0);
 }
 
-function getDemoScoreCount(slot: Session | undefined): number {
+function getDemoScoreCount(slot: Session | undefined, lookup: CommentAreaLookup): number {
   if (!slot) return 0;
   return (slot.studentAttendance ?? []).reduce((count, attendance) => {
+    const structured = getStructuredScoreComponents(attendance, lookup);
+    if (structured.directDemo !== null || computeDemoScore(structured.product, structured.ability) !== null) {
+      return count + 1;
+    }
+
     const commentContent = getStudentAttendanceCommentContent(attendance);
     // Align with fetch_classes.js: primarily look for "Điểm Demo"
-    const demoScore = parseScoreByLabel(commentContent, 'Điểm Demo');
-    const productScore = demoScore !== null ? null : parseScoreByLabel(commentContent, 'Điểm sản phẩm cuối khoá');
+    const demoScore = parseScoreByLabels(commentContent, ['Điểm Demo', 'Điểm demo', 'Demo']);
+    const productScore = demoScore !== null ? null : parseScoreByLabels(commentContent, [
+      'Điểm sản phẩm cuối khoá',
+      'Điểm sản phẩm cuối khóa',
+      'Điểm sản phẩm',
+    ]);
     
     return count + (demoScore !== null || productScore !== null ? 1 : 0);
   }, 0);
@@ -751,7 +911,7 @@ function pickBestSessionIndex(slots: Session[], preferredIndex: number, scoreCou
  * @param cls - Class data
  * @param sessionIndex - 0-indexed preferred session number
  */
-function analyzeCheckpoint(cls: Class, sessionIndex: number, excludedIndexes: number[] = []): CheckpointAnalysis {
+function analyzeCheckpoint(cls: Class, sessionIndex: number, lookup: CommentAreaLookup, excludedIndexes: number[] = []): CheckpointAnalysis {
   const slots = (cls.slots ?? [])
     .filter(s => s.date || s.startTime)
     .sort((a, b) => {
@@ -759,7 +919,7 @@ function analyzeCheckpoint(cls: Class, sessionIndex: number, excludedIndexes: nu
       const bTime = b.startTime || b.date;
       return new Date(aTime).getTime() - new Date(bTime).getTime();
     });
-  const actualSessionIndex = pickBestSessionIndex(slots, sessionIndex, getCheckpointScoreCount, excludedIndexes);
+  const actualSessionIndex = excludedIndexes.includes(sessionIndex) ? -1 : sessionIndex;
 
   const cpSlot = slots[actualSessionIndex];
   
@@ -816,15 +976,20 @@ function analyzeCheckpoint(cls: Class, sessionIndex: number, excludedIndexes: nu
   let missingScoreCount = 0;
 
   for (const attendance of students) {
+    const structured = getStructuredScoreComponents(attendance, lookup);
     const commentContent = getStudentAttendanceCommentContent(attendance);
-    const theory = parseScoreByLabel(commentContent, 'Điểm lý thuyết');
-    const practice = parseScoreByLabel(commentContent, 'Điểm thực hành');
-    const ability = parseScoreByLabel(commentContent, 'Điểm năng lực');
-    const cpScore = computeCpScore(theory, practice, ability);
-    
-    if (cpScore !== null) {
-      console.log(`[Analysis] Student ${attendance.student?.fullName} has CP score: ${cpScore} (T:${theory}, P:${practice}, A:${ability})`);
-    }
+    const directCheckpoint = parseScoreByLabels(commentContent, [
+      'Điểm Checkpoint',
+      'Điểm checkpoint',
+      'Điểm CP1',
+      'Điểm CP2',
+      'Điểm CP',
+      'Checkpoint',
+    ]);
+    const theory = structured.theory ?? parseScoreByLabels(commentContent, THEORY_SCORE_LABELS);
+    const practice = structured.practice ?? parseScoreByLabels(commentContent, PRACTICE_SCORE_LABELS);
+    const ability = structured.ability ?? parseScoreByLabel(commentContent, 'Điểm năng lực');
+    const cpScore = structured.directCheckpoint ?? directCheckpoint ?? computeCpScore(theory, practice, ability);
     
     const studentScore: StudentCheckpointScore = {
       studentId: attendance.student?.id || '',
@@ -895,7 +1060,7 @@ function computeDemoScore(productScore: number | null, ability: number | null): 
 /**
  * Analyze demo scores (final session, usually session 14)
  */
-function analyzeDemo(cls: Class, sessionIndex: number = 13): CheckpointAnalysis {
+function analyzeDemo(cls: Class, lookup: CommentAreaLookup, sessionIndex: number = 13): CheckpointAnalysis {
   const slots = (cls.slots ?? [])
     .filter(s => s.date || s.startTime)
     .sort((a, b) => {
@@ -903,15 +1068,17 @@ function analyzeDemo(cls: Class, sessionIndex: number = 13): CheckpointAnalysis 
       const bTime = b.startTime || b.date;
       return new Date(aTime).getTime() - new Date(bTime).getTime();
     });
-  const actualSessionIndex = pickBestSessionIndex(slots, sessionIndex, getDemoScoreCount);
+  const actualSessionIndex = sessionIndex;
 
   const demoSlot = slots[actualSessionIndex];
+  const demoSlotTime = demoSlot ? new Date(demoSlot.endTime || demoSlot.startTime || demoSlot.date).getTime() : NaN;
+  const isDemoSlotCompleted = Number.isFinite(demoSlotTime) && demoSlotTime <= Date.now();
   
-  if (!demoSlot) {
+  if (!demoSlot || !isDemoSlotCompleted) {
     return {
       classId: cls.id,
       sessionIndex: actualSessionIndex,
-      sessionDate: null,
+      sessionDate: demoSlot?.startTime || demoSlot?.date || null,
       hasSession: false,
       studentsWithScores: 0,
       passCount: 0,
@@ -960,21 +1127,27 @@ function analyzeDemo(cls: Class, sessionIndex: number = 13): CheckpointAnalysis 
   let missingScoreCount = 0;
 
   for (const attendance of students) {
+    const structured = getStructuredScoreComponents(attendance, lookup);
     const commentContent = getStudentAttendanceCommentContent(attendance);
     // Align with fetch_classes.js: primarily look for "Điểm Demo"
-    const demoScore = parseScoreByLabel(commentContent, 'Điểm Demo');
-    const productScore = demoScore !== null ? null : parseScoreByLabel(commentContent, 'Điểm sản phẩm cuối khoá');
+    const demoScore = structured.directDemo ?? parseScoreByLabels(commentContent, ['Điểm Demo', 'Điểm demo', 'Demo']);
+    const productScore = structured.product ?? (demoScore !== null ? null : parseScoreByLabels(commentContent, [
+      'Điểm sản phẩm cuối khoá',
+      'Điểm sản phẩm cuối khóa',
+      'Điểm sản phẩm',
+    ]));
+    const abilityScore = structured.ability ?? parseScoreByLabel(commentContent, 'Điểm năng lực');
     
     // In fetch_classes.js, Demo score is just the direct score. 
     // If we have "Điểm Demo", use it. Otherwise fallback to "Điểm sản phẩm cuối khoá".
-    const finalDemoScore = demoScore !== null ? demoScore : productScore;
+    const finalDemoScore = demoScore !== null ? demoScore : computeDemoScore(productScore, abilityScore);
     
     const studentScore: StudentDemoScore = {
       studentId: attendance.student?.id || '',
       studentName: attendance.student?.fullName || '',
       attendanceStatus: attendance.status || '',
       productScore,
-      abilityScore: parseScoreByLabel(commentContent, 'Điểm năng lực'),
+      abilityScore,
       demoScore: finalDemoScore,
       qualityBand: getDemoQualityBand(finalDemoScore),
       comment: commentContent
@@ -1026,9 +1199,10 @@ export function analyzeClassQuality(
   commentAreas: CommentAreaDef[] = []
 ): AnalyzedClassForQuality {
   const preferredSessions = getPreferredCheckpointSessions(cls);
-  const cp1Analysis = analyzeCheckpoint(cls, preferredSessions.cp1);
-  const cp2Analysis = analyzeCheckpoint(cls, preferredSessions.cp2, [cp1Analysis.sessionIndex]);
-  const demoAnalysis = analyzeDemo(cls, preferredSessions.demo);
+  const scoreCommentAreaLookup = buildCommentAreaLookup(cls.courseProcess, commentAreas);
+  const cp1Analysis = analyzeCheckpoint(cls, preferredSessions.cp1, scoreCommentAreaLookup);
+  const cp2Analysis = analyzeCheckpoint(cls, preferredSessions.cp2, scoreCommentAreaLookup, [cp1Analysis.sessionIndex]);
+  const demoAnalysis = analyzeDemo(cls, scoreCommentAreaLookup, preferredSessions.demo);
   
   // Calculate TBCK and rank for each demo student
   // by combining their CP1, CP2, and Demo scores

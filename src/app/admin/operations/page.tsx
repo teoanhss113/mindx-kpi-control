@@ -10,7 +10,7 @@ import {
 } from 'recharts';
 import { useAuth } from '@/lib/AuthContext';
 import { loadSession } from '@/services/authService';
-import { fetchAllClasses, fetchStudentCommentAreas, haveSlotInToUtcRange } from '@/services/classesService';
+import { fetchAllClasses, fetchClassStatusConfigs, fetchStudentCommentAreas, fetchStudentWorks, haveSlotInToUtcRange } from '@/services/classesService';
 import { fetchAllCentres, Centre } from '@/services/centresService';
 import { fetchOfficeHours } from '@/services/officeHoursService';
 import { getTeachers } from '@/services/teacherService';
@@ -22,11 +22,18 @@ import { useAllowedPages } from '@/hooks/useAllowedPages';
 import { addSupplyTeacherToSession, fetchClassTeacherSchedules, fetchTeacherSchedules, findAvailableTeachers, fetchClassByIdFull } from '@/services/teacherScheduleService';
 import { searchUsers } from '@/services/ticketService';
 import { TeacherSchedule, TeacherScheduleSlot, CoordinationRequest, TeacherAvailability, Teacher } from '@/types/teacherSchedule';
-import { Class, Session, CommentAreaDef } from '@/types/classes';
+import { Class, Session, CommentAreaDef, FinalProductClassStats, StudentWork } from '@/types/classes';
 import { AnalyzedClassForQuality } from '@/types/classQuality';
 import { analyzeClassQuality, DEFAULT_EXEMPTED_SESSIONS } from '@/lib/classQualityAnalysis';
 import type { ParsedArea } from '@/lib/commentContent';
 import { computeTBCK, determineRank } from '@/lib/courseGrading';
+import {
+  buildFinalProductClassStats,
+  getActiveClassStudents,
+  getStudentWorkAssetCount,
+  getStudentWorkFileName,
+  getStudentWorkStatusMeta,
+} from '@/lib/studentWorks';
 import { PageLayout } from '@/components/PageLayout';
 import { ClassQualityUnifiedTable } from '@/components/ClassQualityUnifiedTable';
 import { ProtectedPage } from '@/components/ProtectedPage';
@@ -87,6 +94,8 @@ import {
   TEACHER_SCHEDULE_TYPE_OPTIONS,
   TEACHER_SCHEDULE_VIEW_OPTIONS,
   TEACHER_SCHEDULE_CACHE_VERSION,
+  CLASS_STATUS_FILTER_OPTIONS,
+  DEFAULT_CLASS_STATUS_FILTER_VALUES,
 } from '@/constants';
 import { useSharedDateRange, useSharedCentres } from '@/hooks/useSharedFilterState';
 import { supabase } from '@/lib/supabase/client';
@@ -506,6 +515,26 @@ function generateOperationsContent(data: any): string {
 
 type ScheduleTypeFilter = typeof TEACHER_SCHEDULE_TYPE_OPTIONS[number]['value'];
 type TeacherScheduleViewMode = typeof TEACHER_SCHEDULE_VIEW_OPTIONS[number]['value'];
+type ClassStatusFilter = string;
+
+const DEFAULT_CLASS_STATUS_FILTERS: ClassStatusFilter[] = [...DEFAULT_CLASS_STATUS_FILTER_VALUES];
+const LMS_CLASS_STATUS_OPTIONS: SelectOption[] = CLASS_STATUS_FILTER_OPTIONS.map(option => ({ ...option }));
+
+function buildClassStatusFilterOptionsFromConfig(statusConfigs: { status: string; description?: string | null }[]): SelectOption[] {
+  const optionsByStatus = new Map<string, SelectOption>(
+    LMS_CLASS_STATUS_OPTIONS.map(option => [option.value, option])
+  );
+
+  statusConfigs.forEach(config => {
+    if (!config.status) return;
+    optionsByStatus.set(config.status, {
+      value: config.status,
+      label: config.status,
+    });
+  });
+
+  return Array.from(optionsByStatus.values());
+}
 
 function ScheduleTypeSelect({
   value,
@@ -521,6 +550,31 @@ function ScheduleTypeSelect({
       options={TEACHER_SCHEDULE_TYPE_OPTIONS}
       onChange={onChange}
     />
+  );
+}
+
+function ClassStatusFilterSelect({
+  selected,
+  onChange,
+  options,
+}: {
+  selected: ClassStatusFilter[];
+  onChange: (value: ClassStatusFilter[]) => void;
+  options: SelectOption[];
+}) {
+  const resolvedOptions = options.length > 0 ? options : LMS_CLASS_STATUS_OPTIONS;
+  return (
+    <div className={styles.dateControls}>
+      <span className={styles.dateLabel}>{LABELS.STATUS}</span>
+      <MultiSelect
+        menuPosition="fixed"
+        options={resolvedOptions}
+        selected={selected}
+        onChange={onChange}
+        placeholder={selected.length > 0 ? `${selected.length} trạng thái` : LABELS.ALL_STATUSES}
+        maxDisplay={1}
+      />
+    </div>
   );
 }
 
@@ -880,6 +934,25 @@ function pickDefaultClassSessionIndex(cls: Class): number {
   const now = Date.now();
   const latestPast = [...sessions].reverse().find(item => item.time <= now);
   return (latestPast || sessions[0]).index;
+}
+
+function getFinalClassSession(cls?: Class | null): { id: string; sessionNumber: number; date?: string } | null {
+  const sessions = [...(cls?.slots || [])]
+    .filter(slot => slot._id)
+    .sort((a, b) => new Date(a.date || a.startTime).getTime() - new Date(b.date || b.startTime).getTime());
+  const finalSession = sessions[sessions.length - 1];
+  if (!finalSession) return null;
+  return {
+    id: finalSession._id,
+    sessionNumber: sessions.length,
+    date: finalSession.date || finalSession.startTime,
+  };
+}
+
+function normalizeStudentWorkUrls(value?: string | string[] | null): string[] {
+  if (!value) return [];
+  if (Array.isArray(value)) return value.filter(Boolean);
+  return [value].filter(Boolean);
 }
 
 function createScheduleSlotFromClassSession(cls: Class, sessionIndex: number): TeacherScheduleSlot | null {
@@ -2512,6 +2585,8 @@ export default function TeacherSchedulePage() {
   const [appliedCalendarClassCodeSearch, setAppliedCalendarClassCodeSearch] = useState('');
   const [classCodeSearch, setClassCodeSearch] = useState('');
   const [scheduleTypeFilter, setScheduleTypeFilter] = useState<ScheduleTypeFilter>('ALL');
+  const [selectedClassStatuses, setSelectedClassStatuses] = useState<ClassStatusFilter[]>(DEFAULT_CLASS_STATUS_FILTERS);
+  const [classStatusFilterOptions, setClassStatusFilterOptions] = useState<SelectOption[]>(LMS_CLASS_STATUS_OPTIONS);
   const [rawClasses, setRawClasses] = useState<Class[]>([]);
   const [studentCommentAreas, setStudentCommentAreas] = useState<CommentAreaDef[]>([]);
   
@@ -2538,7 +2613,12 @@ export default function TeacherSchedulePage() {
   // ── Class quality states ────────────────────────────────────────────────────
   const [classQualityData, setClassQualityData] = useState<AnalyzedClassForQuality | null>(null);
   const [classQualityLoading, setClassQualityLoading] = useState(false);
-  const [qualityTab, setQualityTab] = useState<'comments' | 'attendance' | 'rescheduling'>('comments');
+  const [qualityTab, setQualityTab] = useState<'comments' | 'attendance' | 'rescheduling' | 'finalProducts'>('comments');
+  const [studentWorks, setStudentWorks] = useState<StudentWork[]>([]);
+  const [studentWorksLoading, setStudentWorksLoading] = useState(false);
+  const [studentWorksError, setStudentWorksError] = useState<string | null>(null);
+  const [classStudentWorks, setClassStudentWorks] = useState<StudentWork[]>([]);
+  const [classStudentWorksLoading, setClassStudentWorksLoading] = useState(false);
   const [commentModalSessionIndex, setCommentModalSessionIndex] = useState<number | null>(null);
   const [exemptedSessions, setExemptedSessions] = useState<number[]>(DEFAULT_EXEMPTED_SESSIONS);
   const [exemptOneOnOneClasses, setExemptOneOnOneClasses] = useState(true);
@@ -2580,6 +2660,7 @@ export default function TeacherSchedulePage() {
     if (tab === 'violations') setQualityTab('comments');
     if (tab === 'attendance') setQualityTab('attendance');
     if (tab === 'rescheduling') setQualityTab('rescheduling');
+    if (tab === 'final-products') setQualityTab('finalProducts');
   }, []);
 
   // ── Toggle collapse handler ────────────────────────────────────────────────
@@ -2732,6 +2813,7 @@ export default function TeacherSchedulePage() {
     setLoading(true);
     setProgress({ loaded: 0, total: 100 });
     const teacherIds = selectedTeachers.length > 0 ? [...selectedTeachers] : undefined;
+    const classStatuses = selectedClassStatuses.length > 0 ? [...selectedClassStatuses] : undefined;
     const shouldLoadClasses = scheduleTypeFilter !== 'TRIAL';
     const shouldLoadOfficeHours = scheduleTypeFilter !== 'CLASS';
 
@@ -2778,7 +2860,7 @@ export default function TeacherSchedulePage() {
         ? fetchAllClasses(
             {
               ...(monthHaveSlotIn ? { haveSlotIn: { from: monthHaveSlotIn.from, to: monthHaveSlotIn.to } } : {}),
-              statusIn: ['RUNNING', 'FINISHED'],
+              ...(classStatuses ? { statusIn: classStatuses } : {}),
               ...(centreIds && centreIds.length > 0 ? { centres: centreIds } : {}),
               ...(classCodeSearch.trim() ? { search: classCodeSearch.trim() } : {}),
             },
@@ -2858,6 +2940,7 @@ export default function TeacherSchedulePage() {
           selectedTeachers,
           selectedCourseLines,
           scheduleTypeFilter,
+          selectedClassStatuses,
           exemptedSessions,
           exemptOneOnOneClasses,
           holidayPeriods,
@@ -2876,7 +2959,7 @@ export default function TeacherSchedulePage() {
         setProgress({ loaded: 100, total: 100 });
       }
     }
-  }, [centres, selectedCentres, selectedTeachers, selectedCourseLines, scheduleTypeFilter, exemptedSessions, exemptOneOnOneClasses, holidayPeriods, addToast, classCodeSearch, fromDate, toDate]);
+  }, [centres, selectedCentres, selectedTeachers, selectedCourseLines, selectedClassStatuses, scheduleTypeFilter, exemptedSessions, exemptOneOnOneClasses, holidayPeriods, addToast, classCodeSearch, fromDate, toDate]);
 
   const handleCancelFetch = () => {
     if (abortRef.current) {
@@ -2912,6 +2995,8 @@ export default function TeacherSchedulePage() {
     setAvailableTeachers([]);
     setCalculatingTeachers(true);
     setClassQualityData(null);
+    setStudentWorks([]);
+    setStudentWorksError(null);
     setCommentModalSessionIndex(null);
     setQualityTab('comments');
     setCoordinationCourseLineFilter([]);
@@ -3061,6 +3146,7 @@ export default function TeacherSchedulePage() {
         selectedTeachers,
         selectedCourseLines,
         scheduleTypeFilter,
+        selectedClassStatuses,
         exemptedSessions,
         exemptOneOnOneClasses,
         holidayPeriods,
@@ -3097,7 +3183,7 @@ export default function TeacherSchedulePage() {
     } finally {
       setReloadingClassId(null);
     }
-  }, [addToast, schedules, rawClasses, studentCommentAreas, fromDate, toDate, selectedCentres, selectedSlot, selectedTeachers, selectedCourseLines, scheduleTypeFilter, exemptedSessions, exemptOneOnOneClasses, holidayPeriods, enrichAvailableTeachersForRequest, loadCoordinationReferenceData]);
+  }, [addToast, schedules, rawClasses, studentCommentAreas, fromDate, toDate, selectedCentres, selectedSlot, selectedTeachers, selectedCourseLines, selectedClassStatuses, scheduleTypeFilter, exemptedSessions, exemptOneOnOneClasses, holidayPeriods, enrichAvailableTeachersForRequest, loadCoordinationReferenceData]);
 
   const handleAddSupplyTeacher = useCallback(async (ta: TeacherAvailability) => {
     if (!selectedSlot) return;
@@ -3175,6 +3261,13 @@ export default function TeacherSchedulePage() {
           await setCache(CACHE_KEYS.CENTRES, { centres: freshCentres });
         }
 
+        const statusConfigs = await fetchClassStatusConfigs().catch(error => {
+          console.error('Error fetching class status configs:', error);
+          return [];
+        });
+        const statusOptions = buildClassStatusFilterOptionsFromConfig(statusConfigs);
+        if (statusOptions.length > 0) setClassStatusFilterOptions(statusOptions);
+
         const cached = await getCache(CACHE_KEYS.TEACHER_SCHEDULE);
         const cachedClassQuality = await getCache(CACHE_KEYS.CLASS_QUALITY);
         let hydratedRawClasses = false;
@@ -3184,6 +3277,7 @@ export default function TeacherSchedulePage() {
           if (cached.loadedCentreIds) setLoadedCentreIds(cached.loadedCentreIds);
           if (cached.calendarCentreFilter) setCalendarCentreFilter(cached.calendarCentreFilter);
           if (cached.scheduleTypeFilter) setScheduleTypeFilter(cached.scheduleTypeFilter);
+          if (cached.selectedClassStatuses) setSelectedClassStatuses(cached.selectedClassStatuses as ClassStatusFilter[]);
           if (cached.exemptedSessions) setExemptedSessions(cached.exemptedSessions);
           if (cached.exemptOneOnOneClasses !== undefined) setExemptOneOnOneClasses(cached.exemptOneOnOneClasses);
           if (cached.holidayPeriods) setHolidayPeriods(mergeHolidayPeriods(cached.holidayPeriods));
@@ -3240,7 +3334,7 @@ export default function TeacherSchedulePage() {
       loadedRange,
       timestamp: Date.now(),
     }).catch(console.error);
-  }, [loading, schedules, rawClasses, studentCommentAreas, loadedCentreIds, calendarCentreFilter, selectedTeachers, selectedCourseLines, scheduleTypeFilter, exemptedSessions, exemptOneOnOneClasses, holidayPeriods, loadedRange]);
+  }, [loading, schedules, rawClasses, studentCommentAreas, loadedCentreIds, calendarCentreFilter, selectedTeachers, selectedCourseLines, scheduleTypeFilter, selectedClassStatuses, exemptedSessions, exemptOneOnOneClasses, holidayPeriods, loadedRange]);
 
   // ── Derived Data ────────────────────────────────────────────────────────────
   // No longer need centreOptions - using CentreSelect component
@@ -3298,6 +3392,7 @@ export default function TeacherSchedulePage() {
         }
         if (scheduleTypeFilter === 'CLASS' && slot.type !== 'class') return false;
         if (scheduleTypeFilter === 'TRIAL' && slot.type !== 'office-hour') return false;
+        if (slot.type === 'class' && selectedClassStatuses.length > 0 && !selectedClassStatuses.some(status => status === slot.status)) return false;
         return true;
       });
       
@@ -3307,7 +3402,7 @@ export default function TeacherSchedulePage() {
       if (selectedTeachers.length > 0 && !selectedTeachers.includes(schedule.teacher.id)) return false;
       return true;
     });
-  }, [schedules, calendarCentreFilter, selectedTeachers, selectedCourseLines, scheduleTypeFilter, appliedCalendarClassCodeSearch]);
+  }, [schedules, calendarCentreFilter, selectedTeachers, selectedCourseLines, selectedClassStatuses, scheduleTypeFilter, appliedCalendarClassCodeSearch]);
 
   // ── Analyzed Classes for Quality Table ───────────────────────────────────────
   const analyzedClasses = useMemo(() => {
@@ -3320,6 +3415,102 @@ export default function TeacherSchedulePage() {
   useEffect(() => {
     analyzedClassesRef.current = analyzedClasses;
   }, [analyzedClasses]);
+
+  const selectedSlotClassId = selectedSlot?.classId || null;
+  const selectedSlotSessionId = selectedSlot?.sessionId || null;
+  const selectedSlotSessionNumber = selectedSlot?.sessionNumber || 0;
+  const selectedSlotStartTime = selectedSlot?.startTime || undefined;
+
+  const selectedClassForModal = useMemo(() => {
+    if (!selectedSlotClassId) return null;
+    if (classQualityData && classQualityData.cls.id === selectedSlotClassId) return classQualityData.cls;
+    return rawClasses.find(cls => cls.id === selectedSlotClassId) || null;
+  }, [classQualityData, rawClasses, selectedSlotClassId]);
+
+  const finalProductSession = useMemo(() => {
+    return getFinalClassSession(selectedClassForModal) || (
+      selectedSlotSessionId
+        ? {
+          id: selectedSlotSessionId,
+          sessionNumber: selectedSlotSessionNumber,
+          date: selectedSlotStartTime,
+        }
+        : null
+    );
+  }, [selectedClassForModal, selectedSlotSessionId, selectedSlotSessionNumber, selectedSlotStartTime]);
+
+  useEffect(() => {
+    if (!selectedSlotClassId || !finalProductSession?.id || !showCoordinationPanel) return;
+
+    const controller = new AbortController();
+    const resetLoading = window.setTimeout(() => {
+      setStudentWorksLoading(true);
+      setStudentWorksError(null);
+    }, 0);
+
+    fetchStudentWorks({
+      classId: selectedSlotClassId,
+      classSessionId: finalProductSession.id,
+    }, controller.signal)
+      .then(setStudentWorks)
+      .catch(error => {
+        if (controller.signal.aborted) return;
+        console.error('Error fetching student works:', error);
+        setStudentWorks([]);
+        setStudentWorksError(error instanceof Error ? error.message : 'Không thể tải dữ liệu sản phẩm cuối khóa');
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setStudentWorksLoading(false);
+      });
+
+    return () => {
+      window.clearTimeout(resetLoading);
+      controller.abort();
+    };
+  }, [finalProductSession?.id, selectedSlotClassId, showCoordinationPanel]);
+
+  useEffect(() => {
+    if (rawClasses.length === 0) {
+      setClassStudentWorks([]);
+      return;
+    }
+
+    const controller = new AbortController();
+    const classIds = rawClasses.map(cls => cls.id).filter(Boolean);
+    const loadingTimer = window.setTimeout(() => setClassStudentWorksLoading(true), 0);
+
+    fetchStudentWorks({ classIds }, controller.signal)
+      .then(setClassStudentWorks)
+      .catch(error => {
+        if (controller.signal.aborted) return;
+        console.error('Error fetching class student works:', error);
+        setClassStudentWorks([]);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setClassStudentWorksLoading(false);
+      });
+
+    return () => {
+      window.clearTimeout(loadingTimer);
+      controller.abort();
+    };
+  }, [rawClasses]);
+
+  const finalProductStatsByClassId = useMemo(() => {
+    const worksByClass = new Map<string, StudentWork[]>();
+    classStudentWorks.forEach(work => {
+      if (!work.classId) return;
+      const works = worksByClass.get(work.classId) || [];
+      works.push(work);
+      worksByClass.set(work.classId, works);
+    });
+
+    const stats = new Map<string, FinalProductClassStats>();
+    rawClasses.forEach(cls => {
+      stats.set(cls.id, buildFinalProductClassStats(cls, worksByClass.get(cls.id) || []));
+    });
+    return stats;
+  }, [classStudentWorks, rawClasses]);
 
   const normalQualityClasses = useMemo(() => {
     return analyzedClasses.filter(a => {
@@ -3702,6 +3893,11 @@ export default function TeacherSchedulePage() {
                 value={scheduleTypeFilter}
                 onChange={setScheduleTypeFilter}
               />
+              <ClassStatusFilterSelect
+                selected={selectedClassStatuses}
+                onChange={setSelectedClassStatuses}
+                options={classStatusFilterOptions}
+              />
             </div>
           }
         />
@@ -3930,6 +4126,9 @@ export default function TeacherSchedulePage() {
                     classes={analyzedClasses}
                     search={searchTerm}
                     onSearchChange={setSearchTerm}
+                    finalProductStatsByClassId={finalProductStatsByClassId}
+                    finalProductStatsLoading={classStudentWorksLoading}
+                    classStatusOptions={classStatusFilterOptions}
                     onRowClick={(a) => {
                       const carriedSlot = selectedSlot?.classId === a.cls.id ? selectedSlot : null;
                       const sessionIndex = getSlotSessionIndex(a.cls, carriedSlot) ?? pickDefaultClassSessionIndex(a.cls);
@@ -4010,6 +4209,9 @@ export default function TeacherSchedulePage() {
           setUnavailableTeachers([]);
           setCalculatingTeachers(false);
           setClassQualityData(null);
+          setStudentWorks([]);
+          setStudentWorksError(null);
+          setStudentWorksLoading(false);
         }}>
           <ModalHeader
             title={selectedSlot ? TEACHER_SCHEDULE_LABELS.MANAGE_CLASS_SESSION : TEACHER_SCHEDULE_LABELS.AVAILABLE_TEACHER_SHORT}
@@ -4020,6 +4222,9 @@ export default function TeacherSchedulePage() {
               setAvailableTeachers([]);
               setUnavailableTeachers([]);
               setCalculatingTeachers(false);
+              setStudentWorks([]);
+              setStudentWorksError(null);
+              setStudentWorksLoading(false);
             }}
           />
           <div className={styles.modalBody}>
@@ -4157,11 +4362,12 @@ export default function TeacherSchedulePage() {
 
                 {/* Tabs */}
                 <div style={{ display: 'flex', borderBottom: '1px solid var(--border-primary)', background: 'var(--bg-surface)' }}>
-                  {(['comments', 'attendance', 'rescheduling'] as const).map(tab => {
+                  {(['comments', 'attendance', 'rescheduling', 'finalProducts'] as const).map(tab => {
                     const labels = {
                       comments: CLASS_QUALITY_LABELS.TEACHER_COMMENTS,
                       attendance: CLASS_QUALITY_LABELS.ATTENDANCE,
                       rescheduling: CLASS_QUALITY_LABELS.SCHEDULE_CHANGES,
+                      finalProducts: CLASS_QUALITY_LABELS.FINAL_PRODUCTS,
                     };
                     const isActive = qualityTab === tab;
                     return (
@@ -4543,6 +4749,281 @@ export default function TeacherSchedulePage() {
                             </tbody>
                           </table>
                         </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* ── Final Products Tab ── */}
+                  {qualityTab === 'finalProducts' && (() => {
+                    const activeStudents = selectedClassForModal ? getActiveClassStudents(selectedClassForModal) : [];
+                    const worksByStudent = new Map<string, StudentWork>();
+                    studentWorks.forEach(work => {
+                      if (work.studentId) worksByStudent.set(work.studentId, work);
+                    });
+                    const stats = selectedClassForModal
+                      ? buildFinalProductClassStats(selectedClassForModal, studentWorks)
+                      : {
+                        submittedCount: studentWorks.length,
+                        approvedCount: 0,
+                        pendingCount: studentWorks.length,
+                        rejectedCount: 0,
+                        missingCount: 0,
+                        totalStudents: studentWorks.length,
+                      };
+
+                    return (
+                      <div>
+                        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 10, padding: '8px 10px', background: 'var(--bg-elevated)', borderRadius: 6 }}>
+                          {([
+                            ['Buổi cuối', finalProductSession?.sessionNumber ? `B${finalProductSession.sessionNumber}` : 'N/A', 'var(--text-primary)'],
+                            ['Đã đăng', `${stats.submittedCount}/${stats.totalStudents || studentWorks.length}`, stats.missingCount > 0 ? 'var(--status-warning)' : 'var(--status-success)'],
+                            ['Đã duyệt', stats.approvedCount, 'var(--status-success)'],
+                            ['Chờ xử lý', stats.pendingCount, stats.pendingCount > 0 ? 'var(--status-warning)' : 'var(--text-tertiary)'],
+                            ['Từ chối', stats.rejectedCount, stats.rejectedCount > 0 ? 'var(--status-error)' : 'var(--text-tertiary)'],
+                          ] as [string, string | number, string][]).map(([label, value, color]) => (
+                            <div key={label} style={{ minWidth: 80 }}>
+                              <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginBottom: 2 }}>{label}</div>
+                              <div style={{ fontSize: 13, fontWeight: 590, color }}>{value}</div>
+                            </div>
+                          ))}
+                        </div>
+
+                        {studentWorksLoading && (
+                          <div style={{ display: 'flex', justifyContent: 'center', padding: 20 }}>
+                            <Spinner size={20} />
+                          </div>
+                        )}
+
+                        {!studentWorksLoading && studentWorksError && (
+                          <div style={{ textAlign: 'center', color: 'var(--status-error)', fontSize: 12, padding: 16 }}>
+                            Không thể tải dữ liệu sản phẩm cuối khóa
+                          </div>
+                        )}
+
+                        {!studentWorksLoading && !studentWorksError && activeStudents.length === 0 && studentWorks.length === 0 && (
+                          <div style={{ textAlign: 'center', color: 'var(--text-quaternary)', fontSize: 12, padding: 16 }}>
+                            Chưa có dữ liệu học viên hoặc sản phẩm
+                          </div>
+                        )}
+
+                        {!studentWorksLoading && !studentWorksError && (activeStudents.length > 0 || studentWorks.length > 0) && (
+                          <div style={{ overflowX: 'auto' }}>
+                            <table className={styles.studentTable} style={{ width: '100%', fontSize: 12 }}>
+                              <thead>
+                                <tr>
+                                  <th style={{ minWidth: 140, textAlign: 'left' }}>Học viên</th>
+                                  <th style={{ minWidth: 96 }}>Đăng tải</th>
+                                  <th style={{ minWidth: 110 }}>Trạng thái</th>
+                                  <th style={{ minWidth: 220 }}>Sản phẩm</th>
+                                  <th style={{ minWidth: 180 }}>Nhận xét / chất lượng</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {(activeStudents.length > 0 ? activeStudents : studentWorks.map(work => ({
+                                  id: work.studentId || work.id,
+                                  name: work.studentId || 'Không rõ học viên',
+                                }))).map(student => {
+                                  const work = worksByStudent.get(student.id);
+                                  const statusMeta = getStudentWorkStatusMeta(work?.status);
+                                  const latest = work?.latestData;
+                                  const thumbnailPreviews = normalizeStudentWorkUrls(latest?.thumbnail).map((url, index) => ({
+                                    label: index === 0 ? CLASS_QUALITY_LABELS.FINAL_PRODUCT_THUMBNAIL : `${CLASS_QUALITY_LABELS.FINAL_PRODUCT_THUMBNAIL} ${index + 1}`,
+                                    url,
+                                  }));
+                                  const imagePreviews = normalizeStudentWorkUrls(latest?.imageUrl).map((url, index) => ({
+                                    label: index === 0 ? CLASS_QUALITY_LABELS.FINAL_PRODUCT_IMAGE : `${CLASS_QUALITY_LABELS.FINAL_PRODUCT_IMAGE} ${index + 1}`,
+                                    url,
+                                  }));
+                                  const relatedUrls = (latest?.relatedUrls || []).filter(item => item?.url).map((item, index) => ({
+                                    label: item?.name || `Link ${index + 1}`,
+                                    url: item?.url || '',
+                                  }));
+                                  const videoUrls = (latest?.videoUrls || []).map((url, index) => ({ label: `Video ${index + 1}`, url }));
+                                  const attachments = (latest?.attachmentUrls || []).map((url, index) => ({
+                                    label: getStudentWorkFileName(url, `${CLASS_QUALITY_LABELS.FINAL_PRODUCT_ATTACHMENT} ${index + 1}`),
+                                    url,
+                                  }));
+
+                                  return (
+                                    <tr key={student.id} style={{ background: work ? 'transparent' : 'rgba(245,158,11,0.03)' }}>
+                                      <td style={{ fontWeight: 510, fontSize: 12 }}>{student.name}</td>
+                                      <td>
+                                        {work ? (
+                                          <span style={{ color: 'var(--status-success)', fontWeight: 600 }}>Đã có</span>
+                                        ) : (
+                                          <span style={{ color: 'var(--status-warning)', fontWeight: 600 }}>Chưa có</span>
+                                        )}
+                                      </td>
+                                      <td>
+                                        {work ? (
+                                          <span style={{
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            padding: '2px 7px',
+                                            borderRadius: 999,
+                                            fontSize: 10,
+                                            fontWeight: 650,
+                                            color: statusMeta.color,
+                                            background: statusMeta.bg,
+                                          }}>
+                                            {statusMeta.label}
+                                          </span>
+                                        ) : (
+                                          <span style={{ color: 'var(--text-quaternary)', fontSize: 11 }}>-</span>
+                                        )}
+                                      </td>
+                                      <td style={{ lineHeight: 1.45 }}>
+                                        {work ? (
+                                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                            <div style={{ color: latest?.title ? 'var(--text-primary)' : 'var(--text-quaternary)', fontWeight: 510 }}>
+                                              {latest?.title || 'Chưa có tiêu đề'}
+                                            </div>
+                                            {thumbnailPreviews.length > 0 && (
+                                              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--text-tertiary)', fontSize: 11, fontWeight: 600 }}>
+                                                  <Icon.Image size={12} /> {CLASS_QUALITY_LABELS.FINAL_PRODUCT_THUMBNAIL}
+                                                </span>
+                                                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                                  {thumbnailPreviews.map(item => (
+                                                    <a
+                                                      key={`${student.id}-thumbnail-${item.url}`}
+                                                      href={item.url}
+                                                      target="_blank"
+                                                      rel="noreferrer"
+                                                      title={item.label}
+                                                      style={{ display: 'inline-flex', flexDirection: 'column', gap: 3, color: 'var(--text-secondary)', fontSize: 10, fontWeight: 600, textDecoration: 'none' }}
+                                                    >
+                                                      <img
+                                                        src={item.url}
+                                                        alt={item.label}
+                                                        loading="lazy"
+                                                        style={{
+                                                          width: 72,
+                                                          height: 48,
+                                                          objectFit: 'cover',
+                                                          borderRadius: 6,
+                                                          border: '1px solid var(--border-primary)',
+                                                          background: 'var(--bg-elevated)',
+                                                        }}
+                                                      />
+                                                    </a>
+                                                  ))}
+                                                </div>
+                                              </div>
+                                            )}
+                                            {imagePreviews.length > 0 && (
+                                              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--text-tertiary)', fontSize: 11, fontWeight: 600 }}>
+                                                  <Icon.Image size={12} /> {CLASS_QUALITY_LABELS.FINAL_PRODUCT_IMAGE}
+                                                </span>
+                                                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                                  {imagePreviews.map(item => (
+                                                    <a
+                                                      key={`${student.id}-image-${item.url}`}
+                                                      href={item.url}
+                                                      target="_blank"
+                                                      rel="noreferrer"
+                                                      title={item.label}
+                                                      style={{ display: 'inline-flex', flexDirection: 'column', gap: 3, color: 'var(--text-secondary)', fontSize: 10, fontWeight: 600, textDecoration: 'none' }}
+                                                    >
+                                                      <img
+                                                        src={item.url}
+                                                        alt={item.label}
+                                                        loading="lazy"
+                                                        style={{
+                                                          width: 88,
+                                                          height: 58,
+                                                          objectFit: 'cover',
+                                                          borderRadius: 6,
+                                                          border: '1px solid var(--border-primary)',
+                                                          background: 'var(--bg-elevated)',
+                                                        }}
+                                                      />
+                                                      <span>{item.label}</span>
+                                                    </a>
+                                                  ))}
+                                                </div>
+                                              </div>
+                                            )}
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                                              {videoUrls.length > 0 && (
+                                                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--text-tertiary)', fontSize: 11, fontWeight: 600 }}>
+                                                    <Icon.Video size={12} />
+                                                    {CLASS_QUALITY_LABELS.FINAL_PRODUCT_VIDEOS}:
+                                                  </span>
+                                                  {videoUrls.map(item => (
+                                                    <a
+                                                      key={`${student.id}-video-${item.url}`}
+                                                      href={item.url}
+                                                      target="_blank"
+                                                      rel="noreferrer"
+                                                      style={{ color: 'var(--brand-indigo)', fontSize: 11, fontWeight: 600 }}
+                                                    >
+                                                      {item.label}
+                                                    </a>
+                                                  ))}
+                                                </div>
+                                              )}
+                                              {relatedUrls.length > 0 && (
+                                                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--text-tertiary)', fontSize: 11, fontWeight: 600 }}>
+                                                    <Icon.Link size={12} />
+                                                    {CLASS_QUALITY_LABELS.FINAL_PRODUCT_RELATED_URLS}:
+                                                  </span>
+                                                  {relatedUrls.map(item => (
+                                                    <a
+                                                      key={`${student.id}-related-${item.url}`}
+                                                      href={item.url}
+                                                      target="_blank"
+                                                      rel="noreferrer"
+                                                      style={{ color: 'var(--brand-indigo)', fontSize: 11, fontWeight: 600 }}
+                                                    >
+                                                      {item.label}
+                                                    </a>
+                                                  ))}
+                                                </div>
+                                              )}
+                                              {attachments.length > 0 && (
+                                                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--text-tertiary)', fontSize: 11, fontWeight: 600 }}>
+                                                    <Icon.Paperclip size={12} />
+                                                    {CLASS_QUALITY_LABELS.FINAL_PRODUCT_ATTACHMENT}:
+                                                  </span>
+                                                  {attachments.map(item => (
+                                                    <a
+                                                      key={`${student.id}-attachment-${item.url}`}
+                                                      href={item.url}
+                                                      target="_blank"
+                                                      rel="noreferrer"
+                                                      style={{ color: 'var(--brand-indigo)', fontSize: 11, fontWeight: 600 }}
+                                                    >
+                                                      {item.label}
+                                                    </a>
+                                                  ))}
+                                                </div>
+                                              )}
+                                              {videoUrls.length === 0 && relatedUrls.length === 0 && attachments.length === 0 && imagePreviews.length === 0 && thumbnailPreviews.length === 0 && (
+                                                <span style={{ color: 'var(--text-quaternary)', fontSize: 11 }}>
+                                                  {getStudentWorkAssetCount(work)} tài nguyên
+                                                </span>
+                                              )}
+                                            </div>
+                                          </div>
+                                        ) : (
+                                          <span style={{ color: 'var(--text-quaternary)', fontSize: 11 }}>Chưa đăng sản phẩm</span>
+                                        )}
+                                      </td>
+                                      <td style={{ fontSize: 11, color: latest?.rejectReason ? 'var(--status-error)' : 'var(--text-secondary)', lineHeight: 1.45 }}>
+                                        {latest?.rejectReason || latest?.comment || (work ? 'Chưa có nhận xét' : '-')}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
                       </div>
                     );
                   })()}

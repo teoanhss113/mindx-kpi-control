@@ -5,7 +5,7 @@
  */
 
 import { lmsQuery } from './lmsClient';
-import { ClassesResponse, GetClassesVariables, Class, CommentAreaDef } from '@/types/classes';
+import { ClassesResponse, GetClassesVariables, Class, CommentAreaDef, StudentWork, ClassStatusConfigItem } from '@/types/classes';
 
 // ─── GraphQL Query ───────────────────────────────────────────────────────────
 
@@ -59,6 +59,17 @@ const GET_CLASSES_QUERY = /* graphql */ `
         classSites { _id name }
         operationMethod { id name }
         operator { id username firstName middleName lastName }
+        classStatusConfig {
+          id
+          code
+          statusConfigs {
+            id
+            status
+            nextStatuses
+            description
+            allowActions
+          }
+        }
         teachers {
           _id
           isActive
@@ -185,6 +196,150 @@ const STUDENT_COMMENT_AREAS_QUERY = /* graphql */ `
   }
 `;
 
+const GET_CLASS_STATUS_CONFIGS_QUERY = /* graphql */ `
+  query GetClassStatusConfigs($pageIndex: Int!, $itemsPerPage: Int!, $orderBy: String, $statusIn: [String]) {
+    classes(payload: { pageIndex: $pageIndex, itemsPerPage: $itemsPerPage, orderBy: $orderBy, status_in: $statusIn }) {
+      data {
+        status
+        classStatusConfig {
+          statusConfigs {
+            id
+            status
+            nextStatuses
+            description
+            allowActions
+          }
+        }
+      }
+    }
+  }
+`;
+
+interface ClassStatusConfigsResponse {
+  data: {
+    classes: {
+      data: {
+        status?: string;
+        classStatusConfig?: {
+          statusConfigs?: ClassStatusConfigItem[];
+        } | null;
+      }[];
+    };
+  };
+}
+
+export async function fetchClassStatusConfigs(signal?: AbortSignal): Promise<ClassStatusConfigItem[]> {
+  const statusSamples = [
+    undefined,
+    ['RUNNING'],
+    ['FINISHED'],
+    ['PREPARING'],
+    ['ABANDONED'],
+    ['REJECTED'],
+    ['SUSPENDED'],
+  ];
+  const configsByStatus = new Map<string, ClassStatusConfigItem>();
+
+  for (const statusIn of statusSamples) {
+    const response = await lmsQuery<ClassStatusConfigsResponse>({
+      query: GET_CLASS_STATUS_CONFIGS_QUERY,
+      operationName: 'GetClassStatusConfigs',
+      variables: {
+        pageIndex: 0,
+        itemsPerPage: 20,
+        orderBy: 'createdAt_desc',
+        ...(statusIn ? { statusIn } : {}),
+      },
+      signal,
+      allowPartialErrors: true,
+    });
+
+    response.data.classes.data.forEach(cls => {
+      (cls.classStatusConfig?.statusConfigs || []).forEach(config => {
+        if (config.status) configsByStatus.set(config.status, config);
+      });
+    });
+
+    if (configsByStatus.size > 2) break;
+  }
+
+  return Array.from(configsByStatus.values());
+}
+
+const FIND_ALL_STUDENT_WORKS_QUERY = /* graphql */ `
+  query findAllStudentWorks($studentId: String, $classSessionId: String, $classId: String, $classIds: [String]) {
+    findAllStudentWorks(payload: {
+      studentId_equals: $studentId,
+      classSessionId_equals: $classSessionId,
+      classId_equals: $classId,
+      classId_in: $classIds
+    }) {
+      data {
+        id
+        status
+        studentId
+        classSessionId
+        classId
+        version
+        displayOrder
+        latestData {
+          title
+          thumbnail
+          videoUrls
+          imageUrl
+          attachmentUrls
+          comment
+          rejectReason
+          relatedUrls {
+            name
+            url
+          }
+        }
+        createdBy { displayName }
+        createdAt
+        lastModifiedBy { displayName }
+        lastModifiedAt
+      }
+    }
+  }
+`;
+
+interface StudentWorksResponse {
+  data: {
+    findAllStudentWorks: {
+      data: StudentWork[];
+    };
+  };
+}
+
+export async function fetchStudentWorks(
+  variables: {
+    studentId?: string;
+    classSessionId?: string;
+    classId?: string;
+    classIds?: string[];
+  },
+  signal?: AbortSignal
+): Promise<StudentWork[]> {
+  if (variables.classIds && variables.classIds.length > 50) {
+    const chunks: string[][] = [];
+    for (let index = 0; index < variables.classIds.length; index += 50) {
+      chunks.push(variables.classIds.slice(index, index + 50));
+    }
+    const results = await Promise.all(chunks.map(classIds => fetchStudentWorks({ ...variables, classIds }, signal)));
+    return results.flat();
+  }
+
+  const response = await lmsQuery<StudentWorksResponse>({
+    query: FIND_ALL_STUDENT_WORKS_QUERY,
+    operationName: 'findAllStudentWorks',
+    variables,
+    signal,
+  });
+
+  return response.data.findAllStudentWorks.data || [];
+}
+
 interface StudentCommentAreasResponse {
   data: {
     studentCommentAreas: {
@@ -257,6 +412,17 @@ export const GET_CLASSES_LIGHT_QUERY = /* graphql */ `
         endDate
         course { id name shortName courseLine { id name } }
         centre { id name shortName }
+        classStatusConfig {
+          id
+          code
+          statusConfigs {
+            id
+            status
+            nextStatuses
+            description
+            allowActions
+          }
+        }
         teachers {
           isActive
           teacher { id fullName }

@@ -2,6 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { AnalyzedClassForQuality } from '@/types/classQuality';
+import type { FinalProductClassStats } from '@/types/classes';
 import {
   Badge,
   RescheduleStatusBadge,
@@ -36,15 +37,19 @@ function getActiveStudentCount(cls: AnalyzedClassForQuality['cls']): number {
   return (cls.students || []).filter(student => student.activeInClass).length;
 }
 
-type SortKey = 'name' | 'teacher' | 'studentCount' | 'progress' | 'commentIssues' | 'attendanceAlerts' | 'rescheduled' | 'cp';
+type SortKey = 'name' | 'teacher' | 'studentCount' | 'progress' | 'commentIssues' | 'attendanceAlerts' | 'rescheduled' | 'finalProducts' | 'cp';
 type QuickFilterKey = 'attendanceAlerts' | 'rescheduled';
 type CommentDetailFilter = (typeof COMMENT_DETAIL_FILTER_OPTIONS)[number]['value'];
+type FinalProductFilter = 'submitted' | 'missing' | 'pending' | 'rejected';
 
 interface Props {
   classes: AnalyzedClassForQuality[];
   search: string;
   onSearchChange: (v: string) => void;
   onRowClick?: (a: AnalyzedClassForQuality) => void;
+  finalProductStatsByClassId?: Map<string, FinalProductClassStats>;
+  finalProductStatsLoading?: boolean;
+  classStatusOptions?: { value: string; label: string }[];
 }
 
 type IssueTone = 'success' | 'warning' | 'error' | 'info' | 'default';
@@ -60,6 +65,13 @@ const ISSUE_VARIANT: Record<IssueTone, React.ComponentProps<typeof Badge>['varia
 const QUICK_FILTERS: { key: QuickFilterKey; label: string }[] = [
   { key: 'attendanceAlerts', label: CLASS_QUALITY_LABELS.ATTENDANCE_ALERTS },
   { key: 'rescheduled', label: CLASS_QUALITY_LABELS.RESCHEDULED },
+];
+
+const FINAL_PRODUCT_FILTER_OPTIONS: { value: FinalProductFilter; label: string }[] = [
+  { value: 'submitted', label: CLASS_QUALITY_LABELS.FINAL_PRODUCT_SUBMITTED },
+  { value: 'missing', label: CLASS_QUALITY_LABELS.FINAL_PRODUCT_MISSING },
+  { value: 'pending', label: CLASS_QUALITY_LABELS.FINAL_PRODUCT_PENDING },
+  { value: 'rejected', label: CLASS_QUALITY_LABELS.FINAL_PRODUCT_REJECTED },
 ];
 
 function getLatestPassedSessionIndex(a: AnalyzedClassForQuality): number | null {
@@ -93,18 +105,47 @@ function IssueChip({ label, count, tone }: { label: string; count: number; tone:
   );
 }
 
+function getEmptyFinalProductStats(classId: string, totalStudents: number): FinalProductClassStats {
+  return {
+    classId,
+    totalStudents,
+    isFinalSessionCompleted: false,
+    finalSessionDate: null,
+    submittedCount: 0,
+    approvedCount: 0,
+    pendingCount: 0,
+    rejectedCount: 0,
+    missingCount: totalStudents,
+  };
+}
+
+function getClassStatusLabel(a: AnalyzedClassForQuality) {
+  const config = (a.cls.classStatusConfig?.statusConfigs || []).find(item => item.status === a.cls.status);
+  return config?.description || a.cls.status;
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
-export function ClassQualityUnifiedTable({ classes, search, onSearchChange, onRowClick }: Props) {
+export function ClassQualityUnifiedTable({
+  classes,
+  search,
+  onSearchChange,
+  onRowClick,
+  finalProductStatsByClassId,
+  finalProductStatsLoading = false,
+  classStatusOptions = [],
+}: Props) {
   const [sortKey, setSortKey] = useState<SortKey>('commentIssues');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [quickFilter, setQuickFilter] = useState<QuickFilterKey | null>(null);
   const [commentDetailFilters, setCommentDetailFilters] = useState<CommentDetailFilter[]>([]);
   const [latestSessionCommentDetailFilters, setLatestSessionCommentDetailFilters] = useState<CommentDetailFilter[]>([]);
+  const [finalProductFilters, setFinalProductFilters] = useState<FinalProductFilter[]>([]);
   
   // Basic table filters
   const [selectedCentres, setSelectedCentres] = useState<string[]>([]);
   const [selectedCourses, setSelectedCourses] = useState<string[]>([]);
   const [selectedTeachers, setSelectedTeachers] = useState<string[]>([]);
+  const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -116,20 +157,26 @@ export function ClassQualityUnifiedTable({ classes, search, onSearchChange, onRo
     const centres = new Set<string>();
     const courses = new Set<string>();
     const teachers = new Set<string>();
+    const statuses = new Set<string>();
 
     classes.forEach(a => {
       if (a.cls.centre?.shortName) centres.add(a.cls.centre.shortName);
       if (a.courseLineName) courses.add(a.courseLineName);
       const teacher = getPrimaryTeacher(a.cls);
       if (teacher && teacher !== 'Không rõ') teachers.add(teacher);
+      if (a.cls.status) statuses.add(a.cls.status);
     });
 
     return {
       centres: Array.from(centres).sort().map(c => ({ value: c, label: c })),
       courses: Array.from(courses).sort().map(c => ({ value: c, label: c })),
       teachers: Array.from(teachers).sort().map(t => ({ value: t, label: t })),
+      statuses: classStatusOptions.length > 0 ? classStatusOptions : Array.from(statuses).sort().map(status => {
+        const match = classes.find(a => a.cls.status === status);
+        return { value: status, label: match ? getClassStatusLabel(match) : status };
+      }),
     };
-  }, [classes]);
+  }, [classes, classStatusOptions]);
 
   const baseList = useMemo(() => {
     let list = classes;
@@ -144,6 +191,9 @@ export function ClassQualityUnifiedTable({ classes, search, onSearchChange, onRo
     if (selectedTeachers.length > 0) {
       list = list.filter(a => selectedTeachers.includes(getPrimaryTeacher(a.cls)));
     }
+    if (selectedStatuses.length > 0) {
+      list = list.filter(a => a.cls.status && selectedStatuses.includes(a.cls.status));
+    }
     
     // Then apply search
     if (search.trim()) {
@@ -151,11 +201,15 @@ export function ClassQualityUnifiedTable({ classes, search, onSearchChange, onRo
       list = list.filter(a => a.cls.name.toLowerCase().includes(q) || a.cls.centre?.shortName?.toLowerCase().includes(q));
     }
     return list;
-  }, [classes, search, selectedCentres, selectedCourses, selectedTeachers]);
+  }, [classes, search, selectedCentres, selectedCourses, selectedTeachers, selectedStatuses]);
 
   const issueCounts = useMemo(() => {
     let attendanceAlerts = 0;
     let rescheduled = 0;
+    let finalProductSubmitted = 0;
+    let finalProductMissing = 0;
+    let finalProductPending = 0;
+    let finalProductRejected = 0;
     const commentDetails: Record<CommentDetailFilter, number> = {
       overdue: 0,
       duplicate_other: 0,
@@ -178,6 +232,12 @@ export function ClassQualityUnifiedTable({ classes, search, onSearchChange, onRo
     baseList.forEach(a => {
       if (a.attendanceAnalysis.totalAlerts > 0) attendanceAlerts += 1;
       if (a.reschedulingAnalysis.rescheduledSessions > 0) rescheduled += 1;
+      const finalStats = finalProductStatsByClassId?.get(a.cls.id) || getEmptyFinalProductStats(a.cls.id, getActiveStudentCount(a.cls));
+      if (!finalStats.isFinalSessionCompleted) return;
+      if (finalStats.missingCount === 0 && finalStats.pendingCount === 0 && finalStats.rejectedCount === 0) finalProductSubmitted += 1;
+      if (finalStats.missingCount > 0) finalProductMissing += 1;
+      if (finalStats.pendingCount > 0) finalProductPending += 1;
+      if (finalStats.rejectedCount > 0) finalProductRejected += 1;
       
       COMMENT_DETAIL_FILTER_OPTIONS.forEach(option => {
         if (hasCommentStatus(a, option.value)) commentDetails[option.value] += 1;
@@ -185,8 +245,8 @@ export function ClassQualityUnifiedTable({ classes, search, onSearchChange, onRo
       });
     });
 
-    return { attendanceAlerts, rescheduled, commentDetails, latestSessionCommentDetails };
-  }, [baseList]);
+    return { attendanceAlerts, rescheduled, finalProductSubmitted, finalProductMissing, finalProductPending, finalProductRejected, commentDetails, latestSessionCommentDetails };
+  }, [baseList, finalProductStatsByClassId]);
 
   const commentDetailOptions = useMemo(() => COMMENT_DETAIL_FILTER_OPTIONS.map(option => ({
     ...option,
@@ -198,6 +258,16 @@ export function ClassQualityUnifiedTable({ classes, search, onSearchChange, onRo
     label: `${option.label} (${issueCounts.latestSessionCommentDetails[option.value]})`,
   })), [issueCounts.latestSessionCommentDetails]);
 
+  const finalProductFilterOptions = useMemo(() => FINAL_PRODUCT_FILTER_OPTIONS.map(option => ({
+    ...option,
+    label: `${option.label} (${
+      option.value === 'submitted' ? issueCounts.finalProductSubmitted :
+      option.value === 'missing' ? issueCounts.finalProductMissing :
+      option.value === 'pending' ? issueCounts.finalProductPending :
+      issueCounts.finalProductRejected
+    })`,
+  })), [issueCounts.finalProductSubmitted, issueCounts.finalProductMissing, issueCounts.finalProductPending, issueCounts.finalProductRejected]);
+
   const visibleClasses = useMemo(() => {
     let list = baseList;
     if (quickFilter === 'attendanceAlerts') {
@@ -205,6 +275,18 @@ export function ClassQualityUnifiedTable({ classes, search, onSearchChange, onRo
     }
     if (quickFilter === 'rescheduled') {
       list = list.filter(a => a.reschedulingAnalysis.rescheduledSessions > 0);
+    }
+    if (finalProductFilters.length > 0) {
+      list = list.filter(a => {
+        const stats = finalProductStatsByClassId?.get(a.cls.id) || getEmptyFinalProductStats(a.cls.id, getActiveStudentCount(a.cls));
+        if (!stats.isFinalSessionCompleted) return false;
+        return finalProductFilters.some(status => {
+          if (status === 'submitted') return stats.missingCount === 0 && stats.pendingCount === 0 && stats.rejectedCount === 0;
+          if (status === 'missing') return stats.missingCount > 0;
+          if (status === 'pending') return stats.pendingCount > 0;
+          return stats.rejectedCount > 0;
+        });
+      });
     }
     if (commentDetailFilters.length > 0) {
       list = list.filter(a => commentDetailFilters.some(status => hasCommentStatus(a, status)));
@@ -214,7 +296,7 @@ export function ClassQualityUnifiedTable({ classes, search, onSearchChange, onRo
     }
 
     return list;
-  }, [baseList, quickFilter, commentDetailFilters, latestSessionCommentDetailFilters]);
+  }, [baseList, quickFilter, finalProductFilters, commentDetailFilters, latestSessionCommentDetailFilters, finalProductStatsByClassId]);
 
   const filtered = useMemo(() => {
     return [...visibleClasses].sort((a, b) => {
@@ -228,6 +310,13 @@ export function ClassQualityUnifiedTable({ classes, search, onSearchChange, onRo
       if (sortKey === 'commentIssues') return d * (aCI - bCI);
       if (sortKey === 'attendanceAlerts') return d * (a.attendanceAnalysis.totalAlerts - b.attendanceAnalysis.totalAlerts);
       if (sortKey === 'rescheduled') return d * (a.reschedulingAnalysis.rescheduledSessions - b.reschedulingAnalysis.rescheduledSessions);
+      if (sortKey === 'finalProducts') {
+        const aStats = finalProductStatsByClassId?.get(a.cls.id) || getEmptyFinalProductStats(a.cls.id, getActiveStudentCount(a.cls));
+        const bStats = finalProductStatsByClassId?.get(b.cls.id) || getEmptyFinalProductStats(b.cls.id, getActiveStudentCount(b.cls));
+        const aIssues = aStats.isFinalSessionCompleted ? aStats.missingCount + aStats.pendingCount + aStats.rejectedCount : 0;
+        const bIssues = bStats.isFinalSessionCompleted ? bStats.missingCount + bStats.pendingCount + bStats.rejectedCount : 0;
+        return d * (aIssues - bIssues);
+      }
       if (sortKey === 'cp') {
         const aCP = (a.cp1Analysis.averageScore ?? 0) + (a.cp2Analysis.averageScore ?? 0);
         const bCP = (b.cp1Analysis.averageScore ?? 0) + (b.cp2Analysis.averageScore ?? 0);
@@ -235,7 +324,7 @@ export function ClassQualityUnifiedTable({ classes, search, onSearchChange, onRo
       }
       return 0;
     });
-  }, [visibleClasses, sortKey, sortDir]);
+  }, [visibleClasses, sortKey, sortDir, finalProductStatsByClassId]);
 
   const visibleClassCodes = useMemo(() => visibleClasses.map(a => a.cls.name), [visibleClasses]);
 
@@ -265,6 +354,14 @@ export function ClassQualityUnifiedTable({ classes, search, onSearchChange, onRo
                   {f.label}
                 </FilterChip>
               ))}
+              <MultiSelect
+                menuPosition="fixed"
+                options={finalProductFilterOptions}
+                selected={finalProductFilters}
+                onChange={(values) => setFinalProductFilters(values as FinalProductFilter[])}
+                placeholder={finalProductFilters.length > 0 ? CLASS_QUALITY_LABELS.FINAL_PRODUCTS : 'Tất cả sản phẩm cuối khóa'}
+                maxDisplay={1}
+              />
               <MultiSelect
                 menuPosition="fixed"
                 options={commentDetailOptions}
@@ -309,17 +406,27 @@ export function ClassQualityUnifiedTable({ classes, search, onSearchChange, onRo
                 placeholder={selectedTeachers.length > 0 ? `${LABELS.TEACHER} (${selectedTeachers.length})` : 'Tất cả giáo viên'}
                 maxDisplay={1}
               />
+              <MultiSelect
+                menuPosition="fixed"
+                options={filterOptions.statuses}
+                selected={selectedStatuses}
+                onChange={setSelectedStatuses}
+                placeholder={selectedStatuses.length > 0 ? `${LABELS.STATUS} (${selectedStatuses.length})` : LABELS.ALL_STATUSES}
+                maxDisplay={1}
+              />
               <span className={styles.metricText}>{filtered.length}/{classes.length} {CLASS_QUALITY_LABELS.VISIBLE_CLASS_COUNT_SUFFIX}</span>
             </div>
           }
-          hasFilter={!!quickFilter || commentDetailFilters.length > 0 || latestSessionCommentDetailFilters.length > 0 || selectedCentres.length > 0 || selectedCourses.length > 0 || selectedTeachers.length > 0 || !!search.trim()}
+          hasFilter={!!quickFilter || finalProductFilters.length > 0 || commentDetailFilters.length > 0 || latestSessionCommentDetailFilters.length > 0 || selectedCentres.length > 0 || selectedCourses.length > 0 || selectedTeachers.length > 0 || selectedStatuses.length > 0 || !!search.trim()}
           onClearFilter={() => {
             setQuickFilter(null);
+            setFinalProductFilters([]);
             setCommentDetailFilters([]);
             setLatestSessionCommentDetailFilters([]);
             setSelectedCentres([]);
             setSelectedCourses([]);
             setSelectedTeachers([]);
+            setSelectedStatuses([]);
             onSearchChange('');
           }}
         />
@@ -374,13 +481,14 @@ export function ClassQualityUnifiedTable({ classes, search, onSearchChange, onRo
               <SortableHeader label={CLASS_QUALITY_LABELS.TEACHER_COMMENTS} sortKey="commentIssues" currentSortKey={sortKey} sortOrder={sortDir} onSort={(key) => handleSort(key as SortKey)} />
               <SortableHeader label={CLASS_QUALITY_LABELS.ATTENDANCE} sortKey="attendanceAlerts" currentSortKey={sortKey} sortOrder={sortDir} onSort={(key) => handleSort(key as SortKey)} />
               <SortableHeader label={CLASS_QUALITY_LABELS.SCHEDULE_CHANGES} sortKey="rescheduled" currentSortKey={sortKey} sortOrder={sortDir} onSort={(key) => handleSort(key as SortKey)} />
+              <SortableHeader label={CLASS_QUALITY_LABELS.FINAL_PRODUCTS} sortKey="finalProducts" currentSortKey={sortKey} sortOrder={sortDir} onSort={(key) => handleSort(key as SortKey)} />
               <SortableHeader label={CLASS_QUALITY_LABELS.CHECKPOINT_DEMO_SCORES} sortKey="cp" currentSortKey={sortKey} sortOrder={sortDir} onSort={(key) => handleSort(key as SortKey)} />
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={8}>
+                <td colSpan={9}>
                   <EmptyState title={LABELS.NO_DATA} subtitle={LABELS.NO_RESULTS} />
                 </td>
               </tr>
@@ -399,9 +507,18 @@ export function ClassQualityUnifiedTable({ classes, search, onSearchChange, onRo
               const consCount = aa.studentsWithAlerts.filter(s => s.alerts.includes('consecutive_absent')).length;
               const lateCount = aa.studentsWithAlerts.filter(s => s.alerts.includes('late_stage_absent')).length;
 
-              const hasCP1 = a.cp1Analysis.hasSession && a.cp1Analysis.studentsWithScores > 0;
-              const hasCP2 = a.cp2Analysis.hasSession && a.cp2Analysis.studentsWithScores > 0;
-              const hasDemo = a.demoAnalysis.hasSession && a.demoAnalysis.studentsWithScores > 0;
+              const isAnalysisDue = (sessionDate: string | null | undefined) => {
+                if (!sessionDate) return false;
+                const time = new Date(sessionDate).getTime();
+                return Number.isFinite(time) && time <= Date.now();
+              };
+              const shouldShowCP1 = a.cp1Analysis.hasSession && isAnalysisDue(a.cp1Analysis.sessionDate);
+              const shouldShowCP2 = a.cp2Analysis.hasSession && isAnalysisDue(a.cp2Analysis.sessionDate);
+              const shouldShowDemo = a.demoAnalysis.hasSession && a.demoAnalysis.studentsWithScores > 0;
+              const cp1MissingScoreCount = Math.max(a.cp1Analysis.missingScoreCount, studentCount - a.cp1Analysis.studentsWithScores);
+              const cp2MissingScoreCount = Math.max(a.cp2Analysis.missingScoreCount, studentCount - a.cp2Analysis.studentsWithScores);
+              const demoMissingScoreCount = Math.max(a.demoAnalysis.missingScoreCount, studentCount - a.demoAnalysis.studentsWithScores);
+              const finalStats = finalProductStatsByClassId?.get(a.cls.id) || getEmptyFinalProductStats(a.cls.id, studentCount);
 
               return (
                 <tr
@@ -473,41 +590,86 @@ export function ClassQualityUnifiedTable({ classes, search, onSearchChange, onRo
                     )}
                   </td>
 
+                  {/* Sản phẩm cuối khóa */}
+                  <td>
+                    {finalProductStatsLoading ? (
+                      <span className={styles.mutedText}>Đang tải...</span>
+                    ) : !finalStats.isFinalSessionCompleted ? (
+                      <Badge variant="default" size="sm">{CLASS_QUALITY_LABELS.FINAL_PRODUCT_NOT_DUE}</Badge>
+                    ) : finalStats.missingCount === 0 && finalStats.pendingCount === 0 && finalStats.rejectedCount === 0 ? (
+                      <div className={styles.inlineCluster}>
+                        <Badge variant="passed" size="sm">{CLASS_QUALITY_LABELS.FINAL_PRODUCT_SUBMITTED}</Badge>
+                      </div>
+                    ) : (
+                      <div className={styles.inlineCluster}>
+                        <IssueChip label={CLASS_QUALITY_LABELS.FINAL_PRODUCT_MISSING} count={finalStats.missingCount} tone="error" />
+                        <IssueChip label={CLASS_QUALITY_LABELS.FINAL_PRODUCT_PENDING} count={finalStats.pendingCount} tone="warning" />
+                        <IssueChip label={CLASS_QUALITY_LABELS.FINAL_PRODUCT_REJECTED} count={finalStats.rejectedCount} tone="error" />
+                      </div>
+                    )}
+                  </td>
+
                   {/* Điểm checkpoint / demo */}
                   <td>
                     <div className={styles.stackXs}>
                       <div className={styles.inlineCluster} style={{ gap: 'var(--space-4)', alignItems: 'flex-start' }}>
-                        {hasCP1 && (
+                        {shouldShowCP1 && (
                           <div className={styles.stackXs} style={{ gap: '2px', minWidth: '36px', alignItems: 'center' }}>
                             <span style={{ fontSize: '9px', fontWeight: 700, color: 'var(--text-quaternary)', textTransform: 'uppercase', letterSpacing: '0.02em' }}>CP1</span>
-                            <span style={{ 
-                              fontSize: '13px', 
-                              fontWeight: 700, 
-                              color: (a.cp1Analysis.averageScore ?? 0) >= 3.5 ? 'var(--status-success)' : 'var(--status-error)' 
-                            }}>
-                              {(a.cp1Analysis.averageScore ?? 0).toFixed(1)}
-                            </span>
-                            <span style={{ fontSize: '10px', color: 'var(--text-quaternary)', whiteSpace: 'nowrap' }}>
-                              {a.cp1Analysis.passCount}/{a.cp1Analysis.studentsWithScores}
-                            </span>
+                            {a.cp1Analysis.studentsWithScores > 0 ? (
+                              <>
+                                <span style={{ 
+                                  fontSize: '13px', 
+                                  fontWeight: 700, 
+                                  color: (a.cp1Analysis.averageScore ?? 0) >= 3.5 ? 'var(--status-success)' : 'var(--status-error)' 
+                                }}>
+                                  {(a.cp1Analysis.averageScore ?? 0).toFixed(1)}
+                                </span>
+                                <span style={{ fontSize: '10px', color: 'var(--text-quaternary)', whiteSpace: 'nowrap' }}>
+                                  Đạt {a.cp1Analysis.passCount}/{studentCount} HV
+                                </span>
+                                {cp1MissingScoreCount > 0 && (
+                                  <span style={{ fontSize: '10px', color: 'var(--status-warning)', whiteSpace: 'nowrap' }}>
+                                    Thiếu {cp1MissingScoreCount}
+                                  </span>
+                                )}
+                              </>
+                            ) : (
+                              <span style={{ fontSize: '10px', fontWeight: 650, color: 'var(--status-warning)', whiteSpace: 'nowrap' }}>
+                                Thiếu {cp1MissingScoreCount || studentCount}
+                              </span>
+                            )}
                           </div>
                         )}
-                        {hasCP2 && (
+                        {shouldShowCP2 && (
                           <div className={styles.stackXs} style={{ gap: '2px', minWidth: '36px', alignItems: 'center' }}>
                             <span style={{ fontSize: '9px', fontWeight: 700, color: 'var(--text-quaternary)', textTransform: 'uppercase', letterSpacing: '0.02em' }}>CP2</span>
-                            <span style={{ 
-                              fontSize: '13px', 
-                              fontWeight: 700, 
-                              color: (a.cp2Analysis.averageScore ?? 0) >= 3.5 ? 'var(--status-success)' : 'var(--status-error)' 
-                            }}>
-                              {(a.cp2Analysis.averageScore ?? 0).toFixed(1)}
-                            </span>
-                            <span style={{ fontSize: '10px', color: 'var(--text-quaternary)', whiteSpace: 'nowrap' }}>
-                              {a.cp2Analysis.passCount}/{a.cp2Analysis.studentsWithScores}
-                            </span>
+                            {a.cp2Analysis.studentsWithScores > 0 ? (
+                              <>
+                                <span style={{ 
+                                  fontSize: '13px', 
+                                  fontWeight: 700, 
+                                  color: (a.cp2Analysis.averageScore ?? 0) >= 3.5 ? 'var(--status-success)' : 'var(--status-error)' 
+                                }}>
+                                  {(a.cp2Analysis.averageScore ?? 0).toFixed(1)}
+                                </span>
+                                <span style={{ fontSize: '10px', color: 'var(--text-quaternary)', whiteSpace: 'nowrap' }}>
+                                  Đạt {a.cp2Analysis.passCount}/{studentCount} HV
+                                </span>
+                                {cp2MissingScoreCount > 0 && (
+                                  <span style={{ fontSize: '10px', color: 'var(--status-warning)', whiteSpace: 'nowrap' }}>
+                                    Thiếu {cp2MissingScoreCount}
+                                  </span>
+                                )}
+                              </>
+                            ) : (
+                              <span style={{ fontSize: '10px', fontWeight: 650, color: 'var(--status-warning)', whiteSpace: 'nowrap' }}>
+                                Thiếu {cp2MissingScoreCount || studentCount}
+                              </span>
+                            )}
                           </div>
                         )}
-                        {hasDemo && (
+                        {shouldShowDemo && (
                           <div className={styles.stackXs} style={{ gap: '2px', minWidth: '36px', alignItems: 'center' }}>
                             <span style={{ fontSize: '9px', fontWeight: 700, color: 'var(--text-quaternary)', textTransform: 'uppercase', letterSpacing: '0.02em' }}>Demo</span>
                             <span style={{ 
@@ -518,11 +680,16 @@ export function ClassQualityUnifiedTable({ classes, search, onSearchChange, onRo
                               {(a.demoAnalysis.averageScore ?? 0).toFixed(1)}
                             </span>
                             <span style={{ fontSize: '10px', color: 'var(--text-quaternary)', whiteSpace: 'nowrap' }}>
-                              {a.demoAnalysis.passCount}/{a.demoAnalysis.studentsWithScores}
+                              Đạt {a.demoAnalysis.passCount}/{studentCount} HV
                             </span>
+                            {demoMissingScoreCount > 0 && (
+                              <span style={{ fontSize: '10px', color: 'var(--status-warning)', whiteSpace: 'nowrap' }}>
+                                Thiếu {demoMissingScoreCount}
+                              </span>
+                            )}
                           </div>
                         )}
-                        {!hasCP1 && !hasCP2 && !hasDemo && (
+                        {!shouldShowCP1 && !shouldShowCP2 && !shouldShowDemo && (
                           <span className={styles.mutedText}>—</span>
                         )}
                       </div>
