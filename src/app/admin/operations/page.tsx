@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo, useCallback, useRef, memo, Fragment, useTransition, type ReactNode } from 'react';
+import { useEffect, useState, useMemo, useCallback, useRef, memo, Fragment, useTransition, useDeferredValue, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -2725,6 +2725,38 @@ export default function TeacherSchedulePage() {
   const [loadedRange, setLoadedRange] = useState<{ from: string; to: string } | null>(null);
   const analyzedClassesRef = useRef<AnalyzedClassForQuality[]>([]);
 
+  const deferredCalendarCentreFilter = useDeferredValue(calendarCentreFilter);
+  const deferredCalendarSelectedTeachers = useDeferredValue(calendarSelectedTeachers);
+  const deferredCalendarSelectedCourseLines = useDeferredValue(calendarSelectedCourseLines);
+  const deferredSelectedClassStatuses = useDeferredValue(selectedClassStatuses);
+  const deferredScheduleTypeFilter = useDeferredValue(scheduleTypeFilter);
+  const deferredAppliedCalendarClassCodeSearch = useDeferredValue(appliedCalendarClassCodeSearch);
+  const cacheFilterStateRef = useRef({
+    calendarCentreFilter,
+    calendarSelectedTeachers,
+    calendarSelectedCourseLines,
+    selectedTeachers,
+    selectedCourseLines,
+    scheduleTypeFilter,
+    selectedClassStatuses,
+    exemptedSessions,
+    exemptOneOnOneClasses,
+    holidayPeriods,
+  });
+
+  cacheFilterStateRef.current = {
+    calendarCentreFilter,
+    calendarSelectedTeachers,
+    calendarSelectedCourseLines,
+    selectedTeachers,
+    selectedCourseLines,
+    scheduleTypeFilter,
+    selectedClassStatuses,
+    exemptedSessions,
+    exemptOneOnOneClasses,
+    holidayPeriods,
+  };
+
   // ── Sync with URL parameters ──────────────────────────────────────────────
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -2785,6 +2817,38 @@ export default function TeacherSchedulePage() {
     setHolidayPeriods(DEFAULT_HOLIDAY_PERIODS);
     addToast('Đã khôi phục quy tắc miễn trừ mặc định', 'success');
   }, [addToast]);
+
+  const handleClearScheduleData = useCallback(() => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setLoading(false);
+    setProgress({ loaded: 0, total: 100 });
+    setSchedules([]);
+    setRawClasses([]);
+    setStudentCommentAreas([]);
+    setLoadedCentreIds([]);
+    setLoadedRange(null);
+    setCalendarCentreFilter([]);
+    setCalendarSelectedTeachers([]);
+    setCalendarSelectedCourseLines([]);
+    setCalendarClassCodeSearch('');
+    setAppliedCalendarClassCodeSearch('');
+    setSearchTerm('');
+    setClassStudentWorks([]);
+    setClassStudentWorksLoading(false);
+    setStudentWorks([]);
+    setStudentWorksLoading(false);
+    setStudentWorksError(null);
+    setClassQualityData(null);
+    setClassQualityLoading(false);
+    setSelectedSlot(null);
+    setShowCoordinationPanel(false);
+    setAvailableTeachers([]);
+    setUnavailableTeachers([]);
+    setCurrentWeekIndex(0);
+    setCollapsedTimeSlots(new Set());
+    clearCache(CACHE_KEYS.TEACHER_SCHEDULE).catch(console.error);
+  }, []);
 
   const teacherProfilesById = useMemo(() => {
     return new Map(teacherProfiles.map(teacher => [teacher.id, teacher]));
@@ -3485,19 +3549,11 @@ export default function TeacherSchedulePage() {
       rawClasses,
       studentCommentAreas,
       loadedCentreIds,
-      calendarCentreFilter,
-      calendarSelectedTeachers,
-      calendarSelectedCourseLines,
-      selectedTeachers,
-      selectedCourseLines,
-      scheduleTypeFilter,
-      exemptedSessions,
-      exemptOneOnOneClasses,
-      holidayPeriods,
+      ...cacheFilterStateRef.current,
       loadedRange,
       timestamp: Date.now(),
     }).catch(console.error);
-  }, [loading, schedules, rawClasses, studentCommentAreas, loadedCentreIds, calendarCentreFilter, calendarSelectedTeachers, calendarSelectedCourseLines, selectedTeachers, selectedCourseLines, scheduleTypeFilter, selectedClassStatuses, exemptedSessions, exemptOneOnOneClasses, holidayPeriods, loadedRange]);
+  }, [loading, schedules, rawClasses, studentCommentAreas, loadedCentreIds, isHydrated, loadedRange]);
 
   // ── Derived Data ────────────────────────────────────────────────────────────
   // No longer need centreOptions - using CentreSelect component
@@ -3536,9 +3592,9 @@ export default function TeacherSchedulePage() {
 
   // ── Filtered Schedules for Calendar ────────────────────────────────────────
   const filteredSchedulesForCalendar = useMemo(() => {
-    const classCodeQuery = appliedCalendarClassCodeSearch.toLowerCase();
-    const allStatusesSelected = isAllClassStatusesSelected(selectedClassStatuses, classStatusFilterOptions);
-    const selectedStatusSet = new Set(selectedClassStatuses.map(normalizeStatus));
+    const classCodeQuery = deferredAppliedCalendarClassCodeSearch.toLowerCase();
+    const allStatusesSelected = isAllClassStatusesSelected(deferredSelectedClassStatuses, classStatusFilterOptions);
+    const selectedStatusSet = new Set(deferredSelectedClassStatuses.map(normalizeStatus));
 
     return schedules.map(schedule => {
       const filteredSlots = schedule.slots.filter(slot => {
@@ -3550,13 +3606,13 @@ export default function TeacherSchedulePage() {
           ].filter(Boolean).join(' ').toLowerCase();
           if (!classSearchText.includes(classCodeQuery)) return false;
         }
-        if (calendarCentreFilter.length > 0 && !calendarCentreFilter.includes(slot.centreId)) return false;
-        if (calendarSelectedCourseLines.length > 0) {
+        if (deferredCalendarCentreFilter.length > 0 && !deferredCalendarCentreFilter.includes(slot.centreId)) return false;
+        if (deferredCalendarSelectedCourseLines.length > 0) {
           const category = getCourseLineCategory(slot.courseLine, slot.className);
-          if (!calendarSelectedCourseLines.includes(category)) return false;
+          if (!deferredCalendarSelectedCourseLines.includes(category)) return false;
         }
-        if (scheduleTypeFilter === 'CLASS' && slot.type !== 'class') return false;
-        if (scheduleTypeFilter === 'TRIAL' && slot.type !== 'office-hour') return false;
+        if (deferredScheduleTypeFilter === 'CLASS' && slot.type !== 'class') return false;
+        if (deferredScheduleTypeFilter === 'TRIAL' && slot.type !== 'office-hour') return false;
         if (
           slot.type === 'class'
           && selectedStatusSet.size > 0
@@ -3569,10 +3625,10 @@ export default function TeacherSchedulePage() {
       return { ...schedule, slots: filteredSlots };
     }).filter(schedule => {
       if (schedule.slots.length === 0) return false;
-      if (calendarSelectedTeachers.length > 0 && !calendarSelectedTeachers.includes(schedule.teacher.id)) return false;
+      if (deferredCalendarSelectedTeachers.length > 0 && !deferredCalendarSelectedTeachers.includes(schedule.teacher.id)) return false;
       return true;
     });
-  }, [schedules, calendarCentreFilter, calendarSelectedTeachers, calendarSelectedCourseLines, selectedClassStatuses, classStatusFilterOptions, scheduleTypeFilter, appliedCalendarClassCodeSearch]);
+  }, [schedules, deferredCalendarCentreFilter, deferredCalendarSelectedTeachers, deferredCalendarSelectedCourseLines, deferredSelectedClassStatuses, classStatusFilterOptions, deferredScheduleTypeFilter, deferredAppliedCalendarClassCodeSearch]);
 
   // ── Analyzed Classes for Quality Table ───────────────────────────────────────
   const analyzedClasses = useMemo(() => {
@@ -4048,11 +4104,7 @@ export default function TeacherSchedulePage() {
           loading={loading}
           progress={progress}
           hasData={schedules.length > 0 || rawClasses.length > 0}
-          onClearCache={() => {
-            setSchedules([]);
-            setRawClasses([]);
-            clearCache(CACHE_KEYS.TEACHER_SCHEDULE);
-          }}
+          onClearCache={handleClearScheduleData}
           showRegionQuickSelect={true}
           classCodeSearch={classCodeSearch}
           onClassCodeSearchChange={setClassCodeSearch}
