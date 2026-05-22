@@ -46,6 +46,7 @@ interface Props {
   classes: AnalyzedClassForQuality[];
   search: string;
   onSearchChange: (v: string) => void;
+  selectedCourseCategories?: string[];
   onRowClick?: (a: AnalyzedClassForQuality) => void;
   finalProductStatsByClassId?: Map<string, FinalProductClassStats>;
   finalProductStatsLoading?: boolean;
@@ -129,6 +130,7 @@ export function ClassQualityUnifiedTable({
   classes,
   search,
   onSearchChange,
+  selectedCourseCategories = [],
   onRowClick,
   finalProductStatsByClassId,
   finalProductStatsLoading = false,
@@ -188,6 +190,9 @@ export function ClassQualityUnifiedTable({
     if (selectedCourses.length > 0) {
       list = list.filter(a => a.courseLineName && selectedCourses.includes(a.courseLineName));
     }
+    if (selectedCourseCategories.length > 0) {
+      list = list.filter(a => a.courseLineName && selectedCourseCategories.includes(a.courseLineName));
+    }
     if (selectedTeachers.length > 0) {
       list = list.filter(a => selectedTeachers.includes(getPrimaryTeacher(a.cls)));
     }
@@ -201,7 +206,7 @@ export function ClassQualityUnifiedTable({
       list = list.filter(a => a.cls.name.toLowerCase().includes(q) || a.cls.centre?.shortName?.toLowerCase().includes(q));
     }
     return list;
-  }, [classes, search, selectedCentres, selectedCourses, selectedTeachers, selectedStatuses]);
+  }, [classes, search, selectedCentres, selectedCourses, selectedCourseCategories, selectedTeachers, selectedStatuses]);
 
   const issueCounts = useMemo(() => {
     let attendanceAlerts = 0;

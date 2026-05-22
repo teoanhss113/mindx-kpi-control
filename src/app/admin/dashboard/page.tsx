@@ -27,7 +27,7 @@ import {
   kpiColor,
   KPI_COLORS
 } from '@/lib/kpiScoring';
-import { fetchAllClasses, fetchPendingSurveyClasses, fetchStudentCommentAreas, dateRangeToUtcRange, GET_CLASSES_LIGHT_QUERY } from '@/services/classesService';
+import { fetchAllClasses, fetchPendingSurveyClasses, fetchStudentCommentAreas, dateStringRangeToUtcRange, lmsLocalDateStringToDate, GET_CLASSES_LIGHT_QUERY } from '@/services/classesService';
 import { fetchAllCentres, Centre } from '@/services/centresService';
 import { fetchTickets } from '@/services/ticketService';
 import { fetchOfficeHours } from '@/services/officeHoursService';
@@ -166,7 +166,7 @@ export default function DashboardPage() {
     try {
       const hasDateRange = Boolean(fromDate && toDate);
       const rangeParams = hasDateRange
-        ? dateRangeToUtcRange(new Date(fromDate), new Date(toDate))
+        ? dateStringRangeToUtcRange(fromDate, toDate)
         : {};
       const centreIds = selectedCentres.length > 0 ? selectedCentres : centres.map(c => c.id);
       let sheetUrl = `/api/google-sheets?_t=${Date.now()}`;
@@ -197,10 +197,8 @@ export default function DashboardPage() {
       const ticketsToastId = addToast(MESSAGES.LOADING.LOADING_TICKETS, 'loading');
       const teachersToastId = addToast('Đang tải dữ liệu giáo viên...', 'loading');
       
-      const dateFromObj = hasDateRange ? new Date(fromDate) : new Date('1970-01-01T00:00:00.000Z');
-      const dateToObj = hasDateRange ? new Date(toDate) : new Date('2100-12-31T23:59:59.999Z');
-      dateFromObj.setHours(0, 0, 0, 0);
-      dateToObj.setHours(23, 59, 59, 999);
+      const dateFromObj = hasDateRange ? lmsLocalDateStringToDate(fromDate) : new Date('1970-01-01T00:00:00.000Z');
+      const dateToObj = hasDateRange ? lmsLocalDateStringToDate(toDate, true) : new Date('2100-12-31T23:59:59.999Z');
       
       // 🚀 CONCURRENT FUSION: Fire ALL four massive data streams in parallel for ultimate speed!
       let schLoaded = 0, schTotal = 0;

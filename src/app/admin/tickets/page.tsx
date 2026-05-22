@@ -13,7 +13,7 @@ import { getNavItemsWithRouter } from '@/lib/navigation';
 import { useAllowedPages } from '@/hooks/useAllowedPages';
 import { surveyColor, surveyScore, SURVEY_LEGEND, teacherPointColor, teacherPointScore } from '@/lib/kpiScoring';
 import { fetchTickets, updateTicket, searchUsers } from '@/services/ticketService';
-import { fetchAllClasses, fetchPendingSurveyClasses } from '@/services/classesService';
+import { fetchAllClasses, fetchPendingSurveyClasses, lmsLocalDateStringToDate } from '@/services/classesService';
 import { classSurveyKey, fetchStudentClassSurveys, STUDENT_TEACHING_SURVEY_ID } from '@/services/classSurveyService';
 import { Ticket, LmsUser, TicketQuestion } from '@/types/ticket';
 import { Class } from '@/types/classes';
@@ -179,9 +179,9 @@ export default function TicketsDashboard() {
       return;
     }
     const hasDateRange = Boolean(start && end);
-    const dStart = hasDateRange ? new Date(start) : null;
-    const dEnd = hasDateRange ? new Date(end) : null;
-    if (dStart && dEnd && dStart > dEnd) {
+    const dStart = hasDateRange ? lmsLocalDateStringToDate(start) : null;
+    const dEnd = hasDateRange ? lmsLocalDateStringToDate(end, true) : null;
+    if (hasDateRange && start > end) {
       addToast(MESSAGES.ERROR.DATE_RANGE_INVALID, 'error');
       return;
     }
@@ -210,9 +210,6 @@ export default function TicketsDashboard() {
         await setCache(CACHE_KEYS.CENTRES, { centres: _centres });
       }
       
-      if (dStart) dStart.setHours(0, 0, 0, 0);
-      if (dEnd) dEnd.setHours(23, 59, 59, 999);
-
       // Construct google sheet URL based on current filter parameters
       let sheetUrl = `/api/google-sheets?_t=${Date.now()}`; 
       if (start) sheetUrl += `&fromDate=${encodeURIComponent(start)}`;
@@ -1017,8 +1014,8 @@ export default function TicketsDashboard() {
     }
 
     if (selectedSessions.length > 0 && selectedSessions.length !== sessionOptions.length) {
-      const dStart = new Date(fromDate); dStart.setHours(0, 0, 0, 0);
-      const dEnd = new Date(toDate); dEnd.setHours(23, 59, 59, 999);
+      const dStart = lmsLocalDateStringToDate(fromDate);
+      const dEnd = lmsLocalDateStringToDate(toDate, true);
       list = list.filter(c => {
         const slots = c.slots || [];
         const hasSession4 = Boolean(slots[3] && new Date(slots[3].date) >= dStart && new Date(slots[3].date) <= dEnd);
@@ -1097,8 +1094,8 @@ export default function TicketsDashboard() {
       g.classData = c;
       
       // Determine sessions in range
-      const dStart = new Date(fromDate); dStart.setHours(0,0,0,0);
-      const dEnd = new Date(toDate); dEnd.setHours(23,59,59,999);
+      const dStart = lmsLocalDateStringToDate(fromDate);
+      const dEnd = lmsLocalDateStringToDate(toDate, true);
       
       const slots = c.slots || [];
       // Session 4 is index 3, Session 8 is index 7

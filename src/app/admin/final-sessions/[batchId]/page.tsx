@@ -6,7 +6,7 @@ import { PageLayout } from '@/components/PageLayout';
 import { BatchStatusBadge, Badge, CourseCategoryBadge, DateMarkerBadge, JudgeRequestStatusBadge, useToast, ToastContainer, Modal, ModalHeader, ModalFooter, EmptyState, Toolbar, SortIcon, TableGroupHeader, UserSearchInput, ShiftRequestSuggestions, type ShiftRequest, type UserSearchResult, Icon, TableActionButton, TableActionGroup, DetailGrid, DetailField, DetailText, SortableColumnWithCopy } from '@/components/ui';
 import { motion, AnimatePresence } from 'framer-motion';
 import { authFetch } from '@/lib/auth/clientAuth';
-import { dateRangeToUtcRange, fetchAllClasses } from '@/services/classesService';
+import { dateStringRangeToUtcRange, fetchAllClasses } from '@/services/classesService';
 import { searchTeachers, type Teacher } from '@/services/officeHoursService';
 import { addJudgeTeacherToSession } from '@/services/teacherScheduleService';
 import { getCourseCategory } from '@/lib/courseCategories';
@@ -227,10 +227,7 @@ export default function BatchDetailPage() {
 
     (async () => {
       try {
-        const { endDateFrom, endDateTo } = dateRangeToUtcRange(
-          new Date(batch.week_from),
-          new Date(batch.week_to),
-        );
+        const { endDateFrom, endDateTo } = dateStringRangeToUtcRange(batch.week_from, batch.week_to);
         const classes = await fetchAllClasses({ endDateFrom, endDateTo }, undefined, controller.signal);
         const next: Record<string, string> = {};
         classes.forEach(cls => {
@@ -274,7 +271,7 @@ export default function BatchDetailPage() {
 
     try {
       const rangeParams = lmsDateFrom && lmsDateTo
-        ? dateRangeToUtcRange(new Date(lmsDateFrom), new Date(lmsDateTo))
+        ? dateStringRangeToUtcRange(lmsDateFrom, lmsDateTo)
         : {};
       const centreIds = lmsSelectedCentres.length > 0
         ? lmsSelectedCentres

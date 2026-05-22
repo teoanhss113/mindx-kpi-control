@@ -19,7 +19,60 @@ import {
   TeacherAvailability,
 } from '@/types/teacherSchedule';
 
+export const UNASSIGNED_TEACHER_ID = '__unassigned_teacher__';
+
+const UNASSIGNED_TEACHER: Teacher = {
+  id: UNASSIGNED_TEACHER_ID,
+  username: 'unassigned',
+  code: '',
+  fullName: 'Chưa phân công giáo viên',
+  email: '',
+  phoneNumber: '',
+  imageUrl: '',
+};
+
 // ─── Helper Functions ────────────────────────────────────────────────────────
+
+function normalizeSessionDateTime(slot: Class['slots'][number], fallbackSessionHour?: number): { startTime: string; endTime: string } | null {
+  const dateSource = slot.date || slot.startTime || slot.endTime;
+  const datePart = dateSource?.includes('T') ? dateSource.split('T')[0] : dateSource;
+  if (!datePart) return null;
+
+  const normalizeTimeValue = (value?: string | null) => {
+    if (!value) return null;
+    if (value.includes('T')) return value;
+    const normalizedTime = value.length === 5 ? `${value}:00` : value;
+    return `${datePart}T${normalizedTime}`;
+  };
+
+  const startTime = normalizeTimeValue(slot.startTime) || (slot.date?.includes('T') ? slot.date : null);
+  let endTime = normalizeTimeValue(slot.endTime);
+  if (!startTime) return null;
+
+  const sessionHour = slot.sessionHour || fallbackSessionHour;
+  if (!endTime && sessionHour) {
+    const startMs = new Date(startTime).getTime();
+    if (Number.isFinite(startMs)) {
+      endTime = new Date(startMs + sessionHour * 60 * 60 * 1000).toISOString();
+    }
+  }
+
+  if (!endTime) return null;
+
+  const startMs = new Date(startTime).getTime();
+  const endMs = new Date(endTime).getTime();
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return null;
+
+  return { startTime, endTime };
+}
+
+function getClassCourseSignal(cls: Class): string | undefined {
+  return [
+    cls.course?.courseLine?.name,
+    cls.course?.shortName,
+    cls.course?.name,
+  ].filter(Boolean).join(' ') || undefined;
+}
 
 /**
  * Convert Class slots to TeacherScheduleSlot format
@@ -27,17 +80,25 @@ import {
 function classToScheduleSlots(cls: Class): TeacherScheduleSlot[] {
   const slots: TeacherScheduleSlot[] = [];
   const classSiteId = cls.classSites?.[0]?._id;
+  const courseSignal = getClassCourseSignal(cls);
 
   // Sort sessions chronologically so sessionNumber reflects true order
   const sortedSessions = [...cls.slots].sort((a, b) =>
-    new Date(a.startTime || a.date).getTime() - new Date(b.startTime || b.date).getTime()
+    new Date(normalizeSessionDateTime(a, cls.sessionHour)?.startTime || a.date).getTime()
+      - new Date(normalizeSessionDateTime(b, cls.sessionHour)?.startTime || b.date).getTime()
   );
   const sessionIndexMap = new Map<string, number>(
     sortedSessions.map((s, i) => [s._id, i + 1])
   );
 
   cls.slots.forEach(slot => {
-    const sessionTeachers = slot.teachers
+    const normalizedTime = normalizeSessionDateTime(slot, cls.sessionHour);
+    if (!normalizedTime) return;
+
+    const activeSlotTeachers = (slot.teachers || []).filter(teacherSlot => teacherSlot.isActive);
+    const classLevelTeachers = (cls.teachers || []).filter(teacherSlot => teacherSlot.isActive);
+    const activeTeachers = activeSlotTeachers.length > 0 ? activeSlotTeachers : classLevelTeachers;
+    const sessionTeachers = activeTeachers
       .filter(teacherSlot => teacherSlot.isActive)
       .map(teacherSlot => ({
         teacher: {
@@ -54,7 +115,31 @@ function classToScheduleSlots(cls: Class): TeacherScheduleSlot[] {
         roleShortName: teacherSlot.role?.shortName,
       }));
 
-    slot.teachers.forEach(teacherSlot => {
+    if (activeTeachers.length === 0) {
+      slots.push({
+        id: `class-${cls.id}-${slot._id}-${UNASSIGNED_TEACHER_ID}`,
+        type: 'class',
+        teacher: UNASSIGNED_TEACHER,
+        sessionTeachers: [],
+        startTime: normalizedTime.startTime,
+        endTime: normalizedTime.endTime,
+        className: cls.name,
+        classId: cls.id,
+        classSiteId,
+        sessionId: slot._id,
+        centreId: cls.centre.id,
+        centreName: cls.centre.name,
+        centreShortName: cls.centre.shortName,
+        courseLine: courseSignal,
+        status: cls.status,
+        studentCount: cls.students.filter(s => s.activeInClass).length,
+        sessionHour: slot.sessionHour,
+        sessionNumber: sessionIndexMap.get(slot._id),
+      });
+      return;
+    }
+
+    activeTeachers.forEach(teacherSlot => {
       if (teacherSlot.isActive) {
         slots.push({
           id: `class-${cls.id}-${slot._id}-${teacherSlot.teacher.id}`,
@@ -69,8 +154,8 @@ function classToScheduleSlots(cls: Class): TeacherScheduleSlot[] {
             imageUrl: teacherSlot.teacher.imageUrl,
           },
           sessionTeachers,
-          startTime: slot.startTime,
-          endTime: slot.endTime,
+          startTime: normalizedTime.startTime,
+          endTime: normalizedTime.endTime,
           className: cls.name,
           classId: cls.id,
           classSiteId,
@@ -81,7 +166,7 @@ function classToScheduleSlots(cls: Class): TeacherScheduleSlot[] {
           centreId: cls.centre.id,
           centreName: cls.centre.name,
           centreShortName: cls.centre.shortName,
-          courseLine: cls.course.courseLine?.name,
+          courseLine: courseSignal,
           status: cls.status,
           studentCount: cls.students.filter(s => s.activeInClass).length,
           sessionHour: slot.sessionHour,

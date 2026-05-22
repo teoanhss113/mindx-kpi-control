@@ -467,9 +467,51 @@ export const DEFAULT_CENTRE_IDS = [
   '62d6dc936e356729147d7399',
 ];
 
-const ITEMS_PER_PAGE = 100; // Increased from 20 for better performance
+const ITEMS_PER_PAGE = 100; // Larger page size for faster admin data loading
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+const LMS_TIMEZONE_OFFSET_MS = 7 * 60 * 60 * 1000;
+
+function parseDateInputParts(value: string): [number, number, number] | null {
+  const [year, month, day] = value.split('-').map(Number);
+  if (!year || !month || !day) return null;
+  return [year, month, day];
+}
+
+function lmsLocalDateToUtcIso(value: string, endOfDay = false): string {
+  const parts = parseDateInputParts(value);
+  if (!parts) {
+    const fallback = new Date(value);
+    if (endOfDay) fallback.setHours(23, 59, 59, 999);
+    else fallback.setHours(0, 0, 0, 0);
+    return new Date(fallback.getTime() - LMS_TIMEZONE_OFFSET_MS).toISOString();
+  }
+
+  const [year, month, day] = parts;
+  const utcMs = endOfDay
+    ? Date.UTC(year, month - 1, day, 23, 59, 59, 999)
+    : Date.UTC(year, month - 1, day, 0, 0, 0, 0);
+  return new Date(utcMs - LMS_TIMEZONE_OFFSET_MS).toISOString();
+}
+
+export function lmsLocalDateStringToDate(value: string, endOfDay = false): Date {
+  return new Date(lmsLocalDateToUtcIso(value, endOfDay));
+}
+
+export function dateStringRangeToUtcRange(fromValue: string, toValue: string): { endDateFrom: string; endDateTo: string } {
+  return {
+    endDateFrom: lmsLocalDateToUtcIso(fromValue),
+    endDateTo: lmsLocalDateToUtcIso(toValue, true),
+  };
+}
+
+export function haveSlotInDateStringRangeToUtcRange(fromValue: string, toValue: string): { from: string; to: string } {
+  return {
+    from: lmsLocalDateToUtcIso(fromValue),
+    to: lmsLocalDateToUtcIso(toValue, true),
+  };
+}
 
 /**
  * Convert a local month (year, month 1-indexed) to UTC ISO range.
@@ -478,11 +520,11 @@ const ITEMS_PER_PAGE = 100; // Increased from 20 for better performance
 export function monthToUtcRange(year: number, month: number): { endDateFrom: string; endDateTo: string } {
   // Month start: 01-01 00:00 GMT+7 = previous day 17:00 UTC
   const startLocal = new Date(year, month - 1, 1, 0, 0, 0);
-  const endDateFrom = new Date(startLocal.getTime() - 7 * 60 * 60 * 1000).toISOString();
+  const endDateFrom = new Date(startLocal.getTime() - LMS_TIMEZONE_OFFSET_MS).toISOString();
 
   // Month end: last day 23:59:59.999 GMT+7 = same day 16:59:59.999 UTC
   const endLocal = new Date(year, month, 0, 23, 59, 59, 999);
-  const endDateTo = new Date(endLocal.getTime() - 7 * 60 * 60 * 1000).toISOString();
+  const endDateTo = new Date(endLocal.getTime() - LMS_TIMEZONE_OFFSET_MS).toISOString();
 
   return { endDateFrom, endDateTo };
 }
@@ -493,11 +535,11 @@ export function monthToUtcRange(year: number, month: number): { endDateFrom: str
 export function dateRangeToUtcRange(fromDate: Date, toDate: Date): { endDateFrom: string; endDateTo: string } {
   // fromDate start of day 00:00 GMT+7 -> previous day 17:00 UTC
   const startLocal = new Date(fromDate.getFullYear(), fromDate.getMonth(), fromDate.getDate(), 0, 0, 0);
-  const endDateFrom = new Date(startLocal.getTime() - 7 * 60 * 60 * 1000).toISOString();
+  const endDateFrom = new Date(startLocal.getTime() - LMS_TIMEZONE_OFFSET_MS).toISOString();
 
   // toDate end of day 23:59:59.999 GMT+7 -> current day 16:59:59.999 UTC
   const endLocal = new Date(toDate.getFullYear(), toDate.getMonth(), toDate.getDate(), 23, 59, 59, 999);
-  const endDateTo = new Date(endLocal.getTime() - 7 * 60 * 60 * 1000).toISOString();
+  const endDateTo = new Date(endLocal.getTime() - LMS_TIMEZONE_OFFSET_MS).toISOString();
 
   return { endDateFrom, endDateTo };
 }
@@ -509,10 +551,10 @@ export function dateRangeToUtcRange(fromDate: Date, toDate: Date): { endDateFrom
  */
 export function haveSlotInToUtcRange(fromDate: Date, toDate: Date): { from: string; to: string } {
   const startLocal = new Date(fromDate.getFullYear(), fromDate.getMonth(), fromDate.getDate(), 0, 0, 0);
-  const from = new Date(startLocal.getTime() - 7 * 60 * 60 * 1000).toISOString();
+  const from = new Date(startLocal.getTime() - LMS_TIMEZONE_OFFSET_MS).toISOString();
 
   const endLocal = new Date(toDate.getFullYear(), toDate.getMonth(), toDate.getDate(), 23, 59, 59, 999);
-  const to = new Date(endLocal.getTime() - 7 * 60 * 60 * 1000).toISOString();
+  const to = new Date(endLocal.getTime() - LMS_TIMEZONE_OFFSET_MS).toISOString();
 
   return { from, to };
 }
@@ -526,6 +568,7 @@ export async function fetchAllClasses(
   queryOverride?: string
 ): Promise<Class[]> {
   const allClasses: Class[] = [];
+  const debugPages: Array<{ pageIndex: number; count: number; total: number; names: string[] }> = [];
   let total = Infinity;
 
   const base: Omit<GetClassesVariables, 'pageIndex'> = {
@@ -542,7 +585,6 @@ export async function fetchAllClasses(
     unpassedSessionIndex: null,
     haveSlotIn: {},
     comments: { criteria: [] },
-    statusIn: [],
     ...overrides,
   };
 
@@ -558,13 +600,22 @@ export async function fetchAllClasses(
   const firstPage = firstResponse.data.classes;
   total = firstPage.pagination.total;
   allClasses.push(...firstPage.data);
+  debugPages.push({
+    pageIndex: 0,
+    count: firstPage.data.length,
+    total,
+    names: firstPage.data.map(cls => cls.name),
+  });
+  const effectivePageSize = firstPage.data.length > 0 && firstPage.data.length < ITEMS_PER_PAGE
+    ? firstPage.data.length
+    : ITEMS_PER_PAGE;
   
   // Report initial progress
   onProgress?.(allClasses.length, total, firstPage.data);
 
   // Step 2: Parallel fetch remaining pages if necessary
-  if (total > ITEMS_PER_PAGE) {
-    const totalPages = Math.ceil(total / ITEMS_PER_PAGE);
+  if (total > allClasses.length && effectivePageSize > 0) {
+    const totalPages = Math.ceil(total / effectivePageSize);
     const remainingPromises: Array<Promise<ClassesResponse>> = [];
     let accumulatedLoaded = allClasses.length;
 
@@ -580,6 +631,12 @@ export async function fetchAllClasses(
           // Update live progress AS EACH PROMISE RESOLVES individually!
           const incomingCount = response.data.classes.data.length;
           accumulatedLoaded += incomingCount;
+          debugPages.push({
+            pageIndex: i,
+            count: incomingCount,
+            total: response.data.classes.pagination.total,
+            names: response.data.classes.data.map(cls => cls.name),
+          });
           onProgress?.(accumulatedLoaded, total, response.data.classes.data);
           return response;
         })
@@ -593,6 +650,26 @@ export async function fetchAllClasses(
     for (const res of responses) {
       allClasses.push(...res.data.classes.data);
     }
+  }
+
+  if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'production') {
+    const diagnostics = {
+      operationName: queryOverride ? 'GetClassesLight' : 'GetClasses',
+      requestedVariables: base,
+      requestedItemsPerPage: ITEMS_PER_PAGE,
+      apiTotal: total,
+      fetchedCount: allClasses.length,
+      pages: debugPages.sort((a, b) => a.pageIndex - b.pageIndex),
+      classNames: allClasses.map(cls => cls.name),
+    };
+    (window as any).__lastLmsClassesFetch = diagnostics;
+    console.log('[LMS Classes Fetch]', diagnostics);
+    console.table(diagnostics.pages.map(page => ({
+      pageIndex: page.pageIndex,
+      count: page.count,
+      total: page.total,
+      names: page.names.join(', '),
+    })));
   }
 
   return allClasses;

@@ -10,7 +10,7 @@ import {
 } from 'recharts';
 import { useAuth } from '@/lib/AuthContext';
 import { loadSession } from '@/services/authService';
-import { fetchAllClasses, fetchClassStatusConfigs, fetchStudentCommentAreas, fetchStudentWorks, haveSlotInToUtcRange } from '@/services/classesService';
+import { fetchAllClasses, fetchClassStatusConfigs, fetchStudentCommentAreas, fetchStudentWorks, haveSlotInDateStringRangeToUtcRange } from '@/services/classesService';
 import { fetchAllCentres, Centre } from '@/services/centresService';
 import { fetchOfficeHours } from '@/services/officeHoursService';
 import { getTeachers } from '@/services/teacherService';
@@ -19,7 +19,7 @@ import { getCache, setCache, clearCache } from '@/lib/idb';
 import { getCourseLineCategory } from '@/lib/courseCategories';
 import { getNavItemsWithRouter } from '@/lib/navigation';
 import { useAllowedPages } from '@/hooks/useAllowedPages';
-import { addSupplyTeacherToSession, fetchClassTeacherSchedules, fetchTeacherSchedules, findAvailableTeachers, fetchClassByIdFull } from '@/services/teacherScheduleService';
+import { addSupplyTeacherToSession, fetchClassTeacherSchedules, fetchTeacherSchedules, findAvailableTeachers, fetchClassByIdFull, UNASSIGNED_TEACHER_ID } from '@/services/teacherScheduleService';
 import { searchUsers } from '@/services/ticketService';
 import { TeacherSchedule, TeacherScheduleSlot, CoordinationRequest, TeacherAvailability, Teacher } from '@/types/teacherSchedule';
 import { Class, Session, CommentAreaDef, FinalProductClassStats, StudentWork } from '@/types/classes';
@@ -536,6 +536,24 @@ function buildClassStatusFilterOptionsFromConfig(statusConfigs: { status: string
   return Array.from(optionsByStatus.values());
 }
 
+function normalizeStatus(value?: string | null): string {
+  return (value || '').trim().toUpperCase();
+}
+
+function isAllClassStatusesSelected(selected: ClassStatusFilter[], options: SelectOption[]): boolean {
+  if (selected.length === 0) return false;
+  const selectedValues = new Set(selected.map(normalizeStatus));
+  const defaultOptionValues = new Set(LMS_CLASS_STATUS_OPTIONS.map(option => normalizeStatus(option.value)));
+  const hasEveryDefaultStatus = defaultOptionValues.size > 0
+    && Array.from(defaultOptionValues).every(value => selectedValues.has(value));
+  if (hasEveryDefaultStatus) return true;
+
+  const optionValues = new Set(options.map(option => normalizeStatus(option.value)));
+  if (optionValues.size === 0) return false;
+  return optionValues.size === selectedValues.size
+    && Array.from(optionValues).every(value => selectedValues.has(value));
+}
+
 function ScheduleTypeSelect({
   value,
   onChange,
@@ -750,13 +768,13 @@ function QualityExemptionRulesPanel({
 }
 
 function ScheduleFilterSummary({
-  filteredTeacherCount,
+  filteredSlotCount,
   selectedCentres,
   selectedCourseLines,
   selectedTeachers,
   classCodeSearch,
 }: {
-  filteredTeacherCount: number;
+  filteredSlotCount: number;
   selectedCentres: string[];
   selectedCourseLines: string[];
   selectedTeachers: string[];
@@ -775,7 +793,7 @@ function ScheduleFilterSummary({
     <div className={styles.tableToolbar}>
       <span className={styles.metricText}>
         <Icon.Filter />
-        {FORMAT.number(filteredTeacherCount)} {TEACHER_SCHEDULE_LABELS.FILTERED_TEACHERS}
+        {FORMAT.number(filteredSlotCount)} lịch đang hiển thị
       </span>
       <div className={styles.inlineCluster}>
         {chips.map(chip => (
@@ -887,6 +905,31 @@ function formatSessionDateLabel(isoString: string): string {
   });
 }
 
+function parseLocalDateInput(value: string, endOfDay = false): Date {
+  const [year, month, day] = value.split('-').map(Number);
+  if (!year || !month || !day) return new Date(value);
+  return new Date(
+    year,
+    month - 1,
+    day,
+    endOfDay ? 23 : 0,
+    endOfDay ? 59 : 0,
+    endOfDay ? 59 : 0,
+    endOfDay ? 999 : 0,
+  );
+}
+
+function formatLocalDateKey(date: Date): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+  const getPart = (type: string) => parts.find(part => part.type === type)?.value || '';
+  return `${getPart('year')}-${getPart('month')}-${getPart('day')}`;
+}
+
 function getSessionDateTime(slot: Session) {
   const dateSource = slot.date || slot.startTime;
   const datePart = dateSource ? dateSource.split('T')[0] : '';
@@ -898,6 +941,32 @@ function getSessionDateTime(slot: Session) {
     : `${datePart}T${slot.endTime || '00:00'}:00`;
 
   return { startTime, endTime };
+}
+
+function getDiagnosticSessionDateTime(slot: Session, classSessionHour?: number) {
+  const dateSource = slot.date || slot.startTime || slot.endTime;
+  const datePart = dateSource?.includes('T') ? dateSource.split('T')[0] : dateSource;
+  const normalizeTimeValue = (value?: string | null) => {
+    if (!value || !datePart) return null;
+    if (value.includes('T')) return value;
+    const normalizedTime = value.length === 5 ? `${value}:00` : value;
+    return `${datePart}T${normalizedTime}`;
+  };
+  const startTime = normalizeTimeValue(slot.startTime) || (slot.date?.includes('T') ? slot.date : null);
+  let endTime = normalizeTimeValue(slot.endTime);
+  const sessionHour = slot.sessionHour || classSessionHour;
+  if (!endTime && startTime && sessionHour) {
+    const startMs = new Date(startTime).getTime();
+    if (Number.isFinite(startMs)) {
+      endTime = new Date(startMs + sessionHour * 60 * 60 * 1000).toISOString();
+    }
+  }
+  return {
+    startTime,
+    endTime,
+    startMs: startTime ? new Date(startTime).getTime() : NaN,
+    endMs: endTime ? new Date(endTime).getTime() : NaN,
+  };
 }
 
 function getSlotSessionIndex(cls: Class, slot?: Pick<TeacherScheduleSlot, 'sessionId' | 'startTime'> | null): number | null {
@@ -1034,6 +1103,10 @@ function sessionGapCrossesHoliday(
   });
 }
 
+function isOneOnOneClassName(name?: string | null): boolean {
+  return /\b1\s*:\s*1\b/.test(name || '');
+}
+
 function applyQualityExemptionRules(
   analysis: AnalyzedClassForQuality,
   options: {
@@ -1041,7 +1114,7 @@ function applyQualityExemptionRules(
     holidayPeriods: HolidayPeriod[];
   },
 ): AnalyzedClassForQuality {
-  const shouldExemptClass = options.exemptOneOnOneClasses && analysis.cls.name.includes('(1:1)');
+  const shouldExemptClass = options.exemptOneOnOneClasses && isOneOnOneClassName(analysis.cls.name);
   const sessions = analysis.reschedulingAnalysis.sessions.map((session, index) => {
     const isHolidayExempt = session.isRescheduled && sessionGapCrossesHoliday(
       analysis.reschedulingAnalysis.sessions,
@@ -1128,6 +1201,7 @@ function calculateAvailableTeachers(
   const requestEndMs = new Date(requestEnd).getTime();
   
   schedules.forEach(schedule => {
+    if (schedule.teacher.id === UNASSIGNED_TEACHER_ID) return;
     const conflictSourceSlots = conflictScheduleMap.get(schedule.teacher.id) || schedule.slots;
 
     // Get all slots for this teacher on the requested date
@@ -2574,6 +2648,8 @@ export default function TeacherSchedulePage() {
   const [selectedCourseLines, setSelectedCourseLines] = useState<string[]>([]);
   const [loadedCentreIds, setLoadedCentreIds] = useState<string[]>([]);
   const [calendarCentreFilter, setCalendarCentreFilter] = useState<string[]>([]);
+  const [calendarSelectedTeachers, setCalendarSelectedTeachers] = useState<string[]>([]);
+  const [calendarSelectedCourseLines, setCalendarSelectedCourseLines] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<TeacherScheduleViewMode>('calendar');
   
   // ── Week navigation state ──────────────────────────────────────────────────
@@ -2812,8 +2888,10 @@ export default function TeacherSchedulePage() {
 
     setLoading(true);
     setProgress({ loaded: 0, total: 100 });
-    const teacherIds = selectedTeachers.length > 0 ? [...selectedTeachers] : undefined;
-    const classStatuses = selectedClassStatuses.length > 0 ? [...selectedClassStatuses] : undefined;
+    const allStatusesSelected = isAllClassStatusesSelected(selectedClassStatuses, classStatusFilterOptions);
+    const classStatuses = selectedClassStatuses.length > 0 && !allStatusesSelected
+      ? [...selectedClassStatuses]
+      : undefined;
     const shouldLoadClasses = scheduleTypeFilter !== 'TRIAL';
     const shouldLoadOfficeHours = scheduleTypeFilter !== 'CLASS';
 
@@ -2836,18 +2914,14 @@ export default function TeacherSchedulePage() {
       // Note: Teachers are loaded on-demand in coordination panel, not here
       // to avoid API issues with empty search
 
-      // We need to fetch the FULL MONTH of classes so that `haveSlotIn` doesn't truncate the `slots` array
-      // to just 1 week. If it truncates to 1 week, we miss Checkpoint sessions (which only happen every ~5 sessions),
-      // and Checkpoint analysis will fail. This matches how `/admin/class-quality` works perfectly.
       const hasDateRange = Boolean(start && end);
-      const weekDateFrom = hasDateRange ? new Date(start) : new Date('1970-01-01T00:00:00.000Z');
-      const weekDateTo = hasDateRange ? new Date(end) : new Date('2100-12-31T23:59:59.999Z');
-      weekDateTo.setHours(23, 59, 59, 999);
-      const monthDateFrom = hasDateRange ? new Date(fromDate) : weekDateFrom;
-      const monthDateTo = hasDateRange ? new Date(toDate) : weekDateTo;
-      monthDateTo.setHours(23, 59, 59, 999);
-      const monthHaveSlotIn = hasDateRange ? haveSlotInToUtcRange(monthDateFrom, monthDateTo) : undefined;
-      const weekHaveSlotIn = hasDateRange ? haveSlotInToUtcRange(weekDateFrom, weekDateTo) : undefined;
+      const weekDateFrom = hasDateRange ? parseLocalDateInput(start) : new Date('1970-01-01T00:00:00.000Z');
+      const weekDateTo = hasDateRange ? parseLocalDateInput(end, true) : new Date('2100-12-31T23:59:59.999Z');
+      const visibleWeekStart = hasDateRange ? getWeekDates(weekDateFrom)[0] : weekDateFrom;
+      const visibleWeekEnd = hasDateRange ? getWeekDates(weekDateTo)[6] : weekDateTo;
+      visibleWeekStart.setHours(0, 0, 0, 0);
+      visibleWeekEnd.setHours(23, 59, 59, 999);
+      const toolbarHaveSlotIn = hasDateRange ? haveSlotInDateStringRangeToUtcRange(start, end) : undefined;
 
       let clsLoaded = 0, clsTotal = 0, ohLoaded = 0, ohTotal = 0;
       const refreshProgress = () => {
@@ -2859,7 +2933,7 @@ export default function TeacherSchedulePage() {
       const classesPromise = shouldLoadClasses
         ? fetchAllClasses(
             {
-              ...(monthHaveSlotIn ? { haveSlotIn: { from: monthHaveSlotIn.from, to: monthHaveSlotIn.to } } : {}),
+              ...(toolbarHaveSlotIn ? { haveSlotIn: { from: toolbarHaveSlotIn.from, to: toolbarHaveSlotIn.to } } : {}),
               ...(classStatuses ? { statusIn: classStatuses } : {}),
               ...(centreIds && centreIds.length > 0 ? { centres: centreIds } : {}),
               ...(classCodeSearch.trim() ? { search: classCodeSearch.trim() } : {}),
@@ -2876,7 +2950,7 @@ export default function TeacherSchedulePage() {
       const officeHoursPromise = shouldLoadOfficeHours
         ? fetchOfficeHours(
             {
-              ...(weekHaveSlotIn ? { timeFrom: weekHaveSlotIn.from, timeTo: weekHaveSlotIn.to } : {}),
+              ...(toolbarHaveSlotIn ? { timeFrom: toolbarHaveSlotIn.from, timeTo: toolbarHaveSlotIn.to } : {}),
               ...(centreIds && centreIds.length > 0 ? { centreIn: centreIds } : {}),
             },
             (loaded, total) => {
@@ -2910,7 +2984,7 @@ export default function TeacherSchedulePage() {
         weekDateFrom,
         weekDateTo,
         centreIds,
-        teacherIds,
+        undefined,
         undefined, // CPU computation only, no network required
         signal,
         scopedClasses, // preFetchedClasses
@@ -2920,6 +2994,91 @@ export default function TeacherSchedulePage() {
       console.log(`[TeacherSchedule] Loaded ${scopedClasses.length} scoped classes and ${classes.length} filtered classes for week ${start} to ${end}`);
       if (classes.length > 0) {
         console.log(`[TeacherSchedule] Example class ${classes[0].name} has ${classes[0].slots?.length} slots`);
+      }
+      const renderedClassIds = new Set<string>();
+      const renderedSlotsByClassId = new Map<string, number>();
+      result.forEach(schedule => {
+        schedule.slots.forEach(slot => {
+          if (slot.type !== 'class' || !slot.classId) return;
+          renderedClassIds.add(slot.classId);
+          renderedSlotsByClassId.set(slot.classId, (renderedSlotsByClassId.get(slot.classId) || 0) + 1);
+        });
+      });
+      const fetchedClassRows = classes.map(cls => ({
+        id: cls.id,
+        name: cls.name,
+        status: cls.status,
+        centre: cls.centre?.shortName,
+        course: cls.course?.name,
+        courseLine: cls.course?.courseLine?.name,
+        operationMethod: cls.operationMethod?.name,
+        slotsFromApi: cls.slots?.length || 0,
+        teachersFromApi: cls.teachers?.filter(teacherSlot => teacherSlot.isActive).length || 0,
+        renderedSlots: renderedSlotsByClassId.get(cls.id) || 0,
+        rendered: renderedClassIds.has(cls.id),
+      }));
+      const dateFromMs = weekDateFrom.getTime();
+      const dateToMs = weekDateTo.getTime();
+      const missingRenderedClassSlotDetails = classes
+        .filter(cls => !renderedClassIds.has(cls.id))
+        .map(cls => ({
+          id: cls.id,
+          name: cls.name,
+          status: cls.status,
+          sessionHour: cls.sessionHour,
+          slots: (cls.slots || []).map((slot, index) => {
+            const normalized = getDiagnosticSessionDateTime(slot, cls.sessionHour);
+            const inRequestedRange = Number.isFinite(normalized.startMs)
+              && normalized.startMs >= dateFromMs
+              && normalized.startMs <= dateToMs;
+            return {
+              index: index + 1,
+              id: slot._id,
+              rawDate: slot.date,
+              rawStartTime: slot.startTime,
+              rawEndTime: slot.endTime,
+              rawSessionHour: slot.sessionHour,
+              normalizedStartTime: normalized.startTime,
+              normalizedEndTime: normalized.endTime,
+              normalizedStartLocal: Number.isFinite(normalized.startMs) ? new Date(normalized.startMs).toLocaleString('vi-VN') : null,
+              inRequestedRange,
+              activeSlotTeachers: slot.teachers?.filter(teacherSlot => teacherSlot.isActive).length || 0,
+            };
+          }),
+        }));
+      const renderDiagnostics = {
+        requestedRange: { start, end },
+        requestedHaveSlotIn: toolbarHaveSlotIn,
+        visibleWeekRange: {
+          from: visibleWeekStart.toLocaleString('vi-VN'),
+          to: visibleWeekEnd.toLocaleString('vi-VN'),
+        },
+        requestedRangeMs: { from: dateFromMs, to: dateToMs },
+        requestedRangeLocal: {
+          from: weekDateFrom.toLocaleString('vi-VN'),
+          to: weekDateTo.toLocaleString('vi-VN'),
+        },
+        centres: centreIds,
+        scheduleTypeFilter,
+        selectedClassStatuses,
+        loadedClassCount: scopedClasses.length,
+        rawClassCount: classes.length,
+        renderedClassCount: renderedClassIds.size,
+        teacherScheduleCount: result.length,
+        officeHourCount: officeHoursResult.data.length,
+        missingRenderedClasses: fetchedClassRows.filter(row => !row.rendered),
+        missingRenderedClassSlotDetails,
+        fetchedClassRows,
+        lmsFetch: typeof window !== 'undefined' ? (window as any).__lastLmsClassesFetch : undefined,
+      };
+
+      if (typeof window !== 'undefined') {
+        (window as any).__teacherScheduleDiagnostics = renderDiagnostics;
+      }
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('[TeacherSchedule] Render diagnostic', renderDiagnostics);
+        console.table(fetchedClassRows);
+        console.log('[TeacherSchedule] Missing class slot details', missingRenderedClassSlotDetails);
       }
 
       if (!signal.aborted) {
@@ -2937,6 +3096,8 @@ export default function TeacherSchedulePage() {
           selectedCentres: centreIds || [],
           loadedCentreIds: centreIds,
           calendarCentreFilter: [],
+          calendarSelectedTeachers,
+          calendarSelectedCourseLines,
           selectedTeachers,
           selectedCourseLines,
           scheduleTypeFilter,
@@ -2946,7 +3107,7 @@ export default function TeacherSchedulePage() {
           holidayPeriods,
           timestamp: Date.now(),
         });
-        addToast(MESSAGES.LOADING.SUCCESS(result.length, ENTITIES.TEACHERS), 'success');
+        addToast(`Tải thành công ${classes.length} lớp, render ${renderedClassIds.size} lớp (${result.length} giáo viên).`, 'success');
       }
     } catch (err: any) {
       if (!signal.aborted) {
@@ -2959,7 +3120,7 @@ export default function TeacherSchedulePage() {
         setProgress({ loaded: 100, total: 100 });
       }
     }
-  }, [centres, selectedCentres, selectedTeachers, selectedCourseLines, selectedClassStatuses, scheduleTypeFilter, exemptedSessions, exemptOneOnOneClasses, holidayPeriods, addToast, classCodeSearch, fromDate, toDate]);
+  }, [centres, selectedCentres, calendarSelectedTeachers, calendarSelectedCourseLines, selectedTeachers, selectedCourseLines, selectedClassStatuses, classStatusFilterOptions, scheduleTypeFilter, exemptedSessions, exemptOneOnOneClasses, holidayPeriods, addToast, classCodeSearch, fromDate, toDate]);
 
   const handleCancelFetch = () => {
     if (abortRef.current) {
@@ -3271,31 +3432,31 @@ export default function TeacherSchedulePage() {
         const cached = await getCache(CACHE_KEYS.TEACHER_SCHEDULE);
         const cachedClassQuality = await getCache(CACHE_KEYS.CLASS_QUALITY);
         let hydratedRawClasses = false;
-        if (cached) {
+        if (cached?.version === TEACHER_SCHEDULE_CACHE_VERSION) {
           if (cached.selectedTeachers) setSelectedTeachers(cached.selectedTeachers);
           if (cached.selectedCourseLines) setSelectedCourseLines(cached.selectedCourseLines);
           if (cached.loadedCentreIds) setLoadedCentreIds(cached.loadedCentreIds);
           if (cached.calendarCentreFilter) setCalendarCentreFilter(cached.calendarCentreFilter);
+          if (cached.calendarSelectedTeachers) setCalendarSelectedTeachers(cached.calendarSelectedTeachers);
+          if (cached.calendarSelectedCourseLines) setCalendarSelectedCourseLines(cached.calendarSelectedCourseLines);
           if (cached.scheduleTypeFilter) setScheduleTypeFilter(cached.scheduleTypeFilter);
           if (cached.selectedClassStatuses) setSelectedClassStatuses(cached.selectedClassStatuses as ClassStatusFilter[]);
           if (cached.exemptedSessions) setExemptedSessions(cached.exemptedSessions);
           if (cached.exemptOneOnOneClasses !== undefined) setExemptOneOnOneClasses(cached.exemptOneOnOneClasses);
           if (cached.holidayPeriods) setHolidayPeriods(mergeHolidayPeriods(cached.holidayPeriods));
           if (cached.loadedRange) setLoadedRange(cached.loadedRange);
-          if (cached.version === TEACHER_SCHEDULE_CACHE_VERSION) {
-            if (cached.schedules) setSchedules(cached.schedules);
-            if (cached.rawClasses?.length) {
-              setRawClasses(cached.rawClasses);
-              hydratedRawClasses = true;
-            }
-            if (cached.studentCommentAreas) {
-              setStudentCommentAreas(cached.studentCommentAreas);
-            } else {
-              const commentAreas = await fetchStudentCommentAreas(
-                Array.from({ length: 30 }, (_, i) => String(i + 1)).concat('final')
-              ).catch(() => [] as CommentAreaDef[]);
-              setStudentCommentAreas(commentAreas);
-            }
+          if (cached.schedules) setSchedules(cached.schedules);
+          if (cached.rawClasses?.length) {
+            setRawClasses(cached.rawClasses);
+            hydratedRawClasses = true;
+          }
+          if (cached.studentCommentAreas) {
+            setStudentCommentAreas(cached.studentCommentAreas);
+          } else {
+            const commentAreas = await fetchStudentCommentAreas(
+              Array.from({ length: 30 }, (_, i) => String(i + 1)).concat('final')
+            ).catch(() => [] as CommentAreaDef[]);
+            setStudentCommentAreas(commentAreas);
           }
         }
 
@@ -3325,6 +3486,8 @@ export default function TeacherSchedulePage() {
       studentCommentAreas,
       loadedCentreIds,
       calendarCentreFilter,
+      calendarSelectedTeachers,
+      calendarSelectedCourseLines,
       selectedTeachers,
       selectedCourseLines,
       scheduleTypeFilter,
@@ -3334,7 +3497,7 @@ export default function TeacherSchedulePage() {
       loadedRange,
       timestamp: Date.now(),
     }).catch(console.error);
-  }, [loading, schedules, rawClasses, studentCommentAreas, loadedCentreIds, calendarCentreFilter, selectedTeachers, selectedCourseLines, scheduleTypeFilter, selectedClassStatuses, exemptedSessions, exemptOneOnOneClasses, holidayPeriods, loadedRange]);
+  }, [loading, schedules, rawClasses, studentCommentAreas, loadedCentreIds, calendarCentreFilter, calendarSelectedTeachers, calendarSelectedCourseLines, selectedTeachers, selectedCourseLines, scheduleTypeFilter, selectedClassStatuses, exemptedSessions, exemptOneOnOneClasses, holidayPeriods, loadedRange]);
 
   // ── Derived Data ────────────────────────────────────────────────────────────
   // No longer need centreOptions - using CentreSelect component
@@ -3374,6 +3537,8 @@ export default function TeacherSchedulePage() {
   // ── Filtered Schedules for Calendar ────────────────────────────────────────
   const filteredSchedulesForCalendar = useMemo(() => {
     const classCodeQuery = appliedCalendarClassCodeSearch.toLowerCase();
+    const allStatusesSelected = isAllClassStatusesSelected(selectedClassStatuses, classStatusFilterOptions);
+    const selectedStatusSet = new Set(selectedClassStatuses.map(normalizeStatus));
 
     return schedules.map(schedule => {
       const filteredSlots = schedule.slots.filter(slot => {
@@ -3386,23 +3551,28 @@ export default function TeacherSchedulePage() {
           if (!classSearchText.includes(classCodeQuery)) return false;
         }
         if (calendarCentreFilter.length > 0 && !calendarCentreFilter.includes(slot.centreId)) return false;
-        if (selectedCourseLines.length > 0) {
+        if (calendarSelectedCourseLines.length > 0) {
           const category = getCourseLineCategory(slot.courseLine, slot.className);
-          if (!selectedCourseLines.includes(category)) return false;
+          if (!calendarSelectedCourseLines.includes(category)) return false;
         }
         if (scheduleTypeFilter === 'CLASS' && slot.type !== 'class') return false;
         if (scheduleTypeFilter === 'TRIAL' && slot.type !== 'office-hour') return false;
-        if (slot.type === 'class' && selectedClassStatuses.length > 0 && !selectedClassStatuses.some(status => status === slot.status)) return false;
+        if (
+          slot.type === 'class'
+          && selectedStatusSet.size > 0
+          && !allStatusesSelected
+          && !selectedStatusSet.has(normalizeStatus(slot.status))
+        ) return false;
         return true;
       });
       
       return { ...schedule, slots: filteredSlots };
     }).filter(schedule => {
       if (schedule.slots.length === 0) return false;
-      if (selectedTeachers.length > 0 && !selectedTeachers.includes(schedule.teacher.id)) return false;
+      if (calendarSelectedTeachers.length > 0 && !calendarSelectedTeachers.includes(schedule.teacher.id)) return false;
       return true;
     });
-  }, [schedules, calendarCentreFilter, selectedTeachers, selectedCourseLines, selectedClassStatuses, scheduleTypeFilter, appliedCalendarClassCodeSearch]);
+  }, [schedules, calendarCentreFilter, calendarSelectedTeachers, calendarSelectedCourseLines, selectedClassStatuses, classStatusFilterOptions, scheduleTypeFilter, appliedCalendarClassCodeSearch]);
 
   // ── Analyzed Classes for Quality Table ───────────────────────────────────────
   const analyzedClasses = useMemo(() => {
@@ -3716,7 +3886,7 @@ export default function TeacherSchedulePage() {
   }, [filteredSchedulesForCalendar, allWeeks, currentWeekIndex]);
 
   const stats = useMemo(() => {
-    const totalTeachers = schedules.length;
+    const totalTeachers = schedules.filter(schedule => schedule.teacher.id !== UNASSIGNED_TEACHER_ID).length;
     const totalSlots = schedules.reduce((sum, schedule) => sum + schedule.slots.length, 0);
     const avgSlotsPerTeacher = totalTeachers > 0 ? (totalSlots / totalTeachers).toFixed(1) : '0';
     return { totalTeachers, totalSlots, avgSlotsPerTeacher };
@@ -3726,7 +3896,7 @@ export default function TeacherSchedulePage() {
     if (allWeeks.length === 0) return [];
     const weekDates = allWeeks[currentWeekIndex] || allWeeks[0];
     return weekDates.map(date => {
-      const dateStr = date.toISOString().split('T')[0];
+      const dateStr = formatLocalDateKey(date);
       const dayOfWeek = DAYS_OF_WEEK[date.getDay()];
       return {
         date: dateStr,
@@ -3745,7 +3915,7 @@ export default function TeacherSchedulePage() {
       schedule.slots.forEach((slot: any) => {
         const slotEndMs = new Date(slot.endTime).getTime();
         const slotStartMs = new Date(slot.startTime).getTime();
-        const slotDate = slot.startTime.split('T')[0];
+        const slotDate = formatLocalDateKey(new Date(slot.startTime));
         const startStr = FORMAT.time(new Date(slot.startTime));
         const endStr = FORMAT.time(new Date(slot.endTime));
         const durationMs = slotEndMs - slotStartMs;
@@ -3801,8 +3971,8 @@ export default function TeacherSchedulePage() {
     if (allWeeks.length === 0 || !allWeeks[currentWeekIndex]) return map;
 
     const currentWeekDates = allWeeks[currentWeekIndex];
-    const weekStartStr = currentWeekDates[0].toISOString().split('T')[0];
-    const weekEndStr = currentWeekDates[6].toISOString().split('T')[0];
+    const weekStartStr = formatLocalDateKey(currentWeekDates[0]);
+    const weekEndStr = formatLocalDateKey(currentWeekDates[6]);
 
     allSlotsEntryMap.forEach(entry => {
       if (entry.slotDate < weekStartStr || entry.slotDate > weekEndStr) return;
@@ -3821,7 +3991,7 @@ export default function TeacherSchedulePage() {
           if (a.type !== b.type) return a.type === 'class' ? -1 : 1;
           const getOrder = (s: any) => {
             const line = (s.courseLine || '').toUpperCase();
-            if (line.match(/C4K|C4T|JSA|JSI|PYA|WEB|GAME|PRO|CODING|PYTHON|CSB|CSI|1:1/)) return 1;
+            if (line.match(/C4K|C4T|JSA|JSI|PYA|WEB|GAME|PRO|CODING|PYTHON|CSB|CSI/)) return 1;
             if (line.includes('ROB')) return 2;
             if (line.includes('ART') || line.includes('XART')) return 3;
             return 4;
@@ -3835,6 +4005,16 @@ export default function TeacherSchedulePage() {
     });
     return map;
   }, [allSlotsEntryMap, allWeeks, currentWeekIndex]);
+
+  const calendarRenderedSlotCount = useMemo(() => {
+    let count = 0;
+    calendarSlotMap.forEach(centreMap => {
+      centreMap.forEach(slots => {
+        count += slots.length;
+      });
+    });
+    return count;
+  }, [calendarSlotMap]);
 
   const { allowedPages } = useAllowedPages();
   const navItems = getNavItemsWithRouter('teacher-schedule', router, allowedPages);
@@ -3917,7 +4097,7 @@ export default function TeacherSchedulePage() {
         {viewMode === 'calendar' && schedules.length > 0 && (
           <AdminTableSection
             title={TEACHER_SCHEDULE_LABELS.WEEKLY_SCHEDULE}
-            count={filteredSchedulesForCalendar.length}
+            count={calendarRenderedSlotCount}
             loading={loading}
             progress={progress}
             isExpanded={true}
@@ -3961,15 +4141,15 @@ export default function TeacherSchedulePage() {
                       />
                       <MultiSelect menuPosition="fixed"
                         options={courseLineOptions}
-                        selected={selectedCourseLines}
-                        onChange={(ids) => startTransition(() => setSelectedCourseLines(ids))}
+                        selected={calendarSelectedCourseLines}
+                        onChange={(ids) => startTransition(() => setCalendarSelectedCourseLines(ids))}
                         placeholder="Tất cả khối"
                         maxDisplay={1}
                       />
                       <MultiSelect menuPosition="fixed"
                         options={teacherOptions}
-                        selected={selectedTeachers}
-                        onChange={(ids) => startTransition(() => setSelectedTeachers(ids))}
+                        selected={calendarSelectedTeachers}
+                        onChange={(ids) => startTransition(() => setCalendarSelectedTeachers(ids))}
                         placeholder="Tất cả giáo viên"
                         searchable
                         searchPlaceholder="Tìm giáo viên..."
@@ -3982,27 +4162,27 @@ export default function TeacherSchedulePage() {
                       centres={centres}
                       selectedCentres={calendarCentreFilter}
                       onCentresChange={(ids) => startTransition(() => setCalendarCentreFilter(ids.filter(id => calendarFilterCentreIds.includes(id))))}
-                      selectedCourses={selectedCourseLines}
-                      onCoursesChange={(ids) => startTransition(() => setSelectedCourseLines(ids))}
+                      selectedCourses={calendarSelectedCourseLines}
+                      onCoursesChange={(ids) => startTransition(() => setCalendarSelectedCourseLines(ids))}
                       showCentres={true}
                       showCourses={true}
                     />
                   )}
-                  hasFilter={calendarCentreFilter.length > 0 || selectedTeachers.length > 0 || selectedCourseLines.length > 0 || calendarClassCodeSearch.trim() !== '' || appliedCalendarClassCodeSearch !== ''}
+                  hasFilter={calendarCentreFilter.length > 0 || calendarSelectedTeachers.length > 0 || calendarSelectedCourseLines.length > 0 || calendarClassCodeSearch.trim() !== '' || appliedCalendarClassCodeSearch !== ''}
                   onClearFilter={() => startTransition(() => {
                     setCalendarCentreFilter([]);
-                    setSelectedTeachers([]);
-                    setSelectedCourseLines([]);
+                    setCalendarSelectedTeachers([]);
+                    setCalendarSelectedCourseLines([]);
                     setCalendarClassCodeSearch('');
                     setAppliedCalendarClassCodeSearch('');
                   })}
                 />
 
                 <ScheduleFilterSummary
-                  filteredTeacherCount={filteredSchedulesForCalendar.length}
+                  filteredSlotCount={calendarRenderedSlotCount}
                   selectedCentres={calendarCentreFilter}
-                  selectedCourseLines={selectedCourseLines}
-                  selectedTeachers={selectedTeachers}
+                  selectedCourseLines={calendarSelectedCourseLines}
+                  selectedTeachers={calendarSelectedTeachers}
                   classCodeSearch={appliedCalendarClassCodeSearch}
                 />
               </>
@@ -4126,6 +4306,7 @@ export default function TeacherSchedulePage() {
                     classes={analyzedClasses}
                     search={searchTerm}
                     onSearchChange={setSearchTerm}
+                    selectedCourseCategories={selectedCourseLines}
                     finalProductStatsByClassId={finalProductStatsByClassId}
                     finalProductStatsLoading={classStudentWorksLoading}
                     classStatusOptions={classStatusFilterOptions}

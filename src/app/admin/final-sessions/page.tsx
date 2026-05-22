@@ -11,7 +11,7 @@ import {
   SortableColumnWithCopy,
 } from '@/components/ui';
 import { authFetch } from '@/lib/auth/clientAuth';
-import { dateRangeToUtcRange, fetchAllClasses } from '@/services/classesService';
+import { dateStringRangeToUtcRange, fetchAllClasses } from '@/services/classesService';
 import { getCourseCategory } from '@/lib/courseCategories';
 import { analyzeClassQuality } from '@/lib/classQualityAnalysis';
 import { getRankColor } from '@/lib/courseGrading';
@@ -232,7 +232,7 @@ export default function FinalSessionsAdminPage() {
 
     const centreIds = selectedCentres.length > 0 ? selectedCentres : centres.map(c => c.id);
     const rangeParams = dateFrom && dateTo
-      ? dateRangeToUtcRange(new Date(dateFrom), new Date(dateTo))
+      ? dateStringRangeToUtcRange(dateFrom, dateTo)
       : {};
 
     // The LMS filters by class end date, so this only loads classes whose final

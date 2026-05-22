@@ -28,6 +28,7 @@ import {
 } from '@/components/ui';
 import { LABELS, MESSAGES, ENTITIES, FORMAT, ANIMATION, CACHE_KEYS } from '@/constants';
 import { getTeachers } from '@/services/teacherService';
+import { lmsLocalDateStringToDate } from '@/services/classesService';
 import { fetchAllCentres, type Centre } from '@/services/centresService';
 import { getCache, setCache, clearCache } from '@/lib/idb';
 import { useQuickFilterChips } from '@/hooks/useUserPreferences';
@@ -153,11 +154,8 @@ export default function TeachersPage() {
 
       // Add date range filter if both dates are provided
       if (dateFrom && dateTo) {
-        // Convert to ISO format with timezone
-        const fromDate = new Date(dateFrom);
-        fromDate.setHours(0, 0, 0, 0);
-        const toDate = new Date(dateTo);
-        toDate.setHours(23, 59, 59, 999);
+        const fromDate = lmsLocalDateStringToDate(dateFrom);
+        const toDate = lmsLocalDateStringToDate(dateTo, true);
         
         baseVariables.joinedDate = [fromDate.toISOString(), toDate.toISOString()];
       }

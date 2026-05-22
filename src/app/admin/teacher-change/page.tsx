@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/lib/AuthContext';
 import { isAuthenticated, loadSession } from '@/services/authService';
-import { fetchAllClasses, haveSlotInToUtcRange, GET_CLASSES_LIGHT_QUERY } from '@/services/classesService';
+import { fetchAllClasses, haveSlotInDateStringRangeToUtcRange, GET_CLASSES_LIGHT_QUERY } from '@/services/classesService';
 import { fetchAllCentres, Centre } from '@/services/centresService';
 import { getCache, setCache, clearCache } from '@/lib/idb';
 import { getCourseCategory } from '@/lib/courseCategories';
@@ -257,9 +257,7 @@ export default function TeacherChangePage() {
   const handleFetch = async () => {
     if ((dateFrom && !dateTo) || (!dateFrom && dateTo)) { addToast(MESSAGES.ERROR.DATE_RANGE_REQUIRED, 'error'); return; }
     const hasDateRange = Boolean(dateFrom && dateTo);
-    const from = hasDateRange ? new Date(dateFrom) : null;
-    const to = hasDateRange ? new Date(dateTo) : null;
-    if (from && to && from > to) { addToast(MESSAGES.ERROR.DATE_RANGE_INVALID, 'error'); return; }
+    if (hasDateRange && dateFrom > dateTo) { addToast(MESSAGES.ERROR.DATE_RANGE_INVALID, 'error'); return; }
 
     const controller = new AbortController();
     setAbortController(controller);
@@ -269,7 +267,7 @@ export default function TeacherChangePage() {
     const tid = addToast(MESSAGES.LOADING.CONNECTING, 'loading');
     let accumulated: Class[] = [];
     try {
-      const haveSlotIn = from && to ? haveSlotInToUtcRange(from, to) : undefined;
+      const haveSlotIn = hasDateRange ? haveSlotInDateStringRangeToUtcRange(dateFrom, dateTo) : undefined;
       const centreIds = selectedCentres.length > 0 ? selectedCentres : centres.map(c => c.id);
       const result = await fetchAllClasses(
         { ...(haveSlotIn ? { haveSlotIn } : {}), centres: centreIds, ...(classCodeSearch.trim() ? { search: classCodeSearch.trim() } : {}) },

@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/lib/AuthContext';
 import { isAuthenticated, loadSession } from '@/services/authService';
-import { fetchAllClasses, dateRangeToUtcRange, GET_CLASSES_LIGHT_QUERY } from '@/services/classesService';
+import { fetchAllClasses, dateStringRangeToUtcRange, GET_CLASSES_LIGHT_QUERY } from '@/services/classesService';
 import { fetchAllCentres, Centre } from '@/services/centresService';
 import { getCache, setCache, clearCache } from '@/lib/idb';
 import { completionScore, completionColor, COMPLETION_LEGEND } from '@/lib/kpiScoring';
@@ -207,7 +207,7 @@ export default function DashboardPage() {
     const tid = addToast(MESSAGES.LOADING.CONNECTING, 'loading');
     try {
       const rangeParams = fromDate && toDate
-        ? dateRangeToUtcRange(new Date(fromDate), new Date(toDate))
+        ? dateStringRangeToUtcRange(fromDate, toDate)
         : {};
       const centreIds = selectedCentres.length > 0 ? selectedCentres : centres.map(c => c.id);
       const result = await fetchAllClasses({ ...rangeParams, centres: centreIds, ...(classCodeSearch.trim() ? { search: classCodeSearch.trim() } : {}) }, (loaded, total, chunk) => {

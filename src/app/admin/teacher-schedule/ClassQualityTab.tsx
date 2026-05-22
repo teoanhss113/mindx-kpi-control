@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { fetchAllClasses, haveSlotInToUtcRange } from '@/services/classesService';
+import { fetchAllClasses, haveSlotInDateStringRangeToUtcRange } from '@/services/classesService';
 import { Class } from '@/types/classes';
 import { AnalyzedClassForQuality } from '@/types/classQuality';
 import { analyzeClassQuality, DEFAULT_EXEMPTED_SESSIONS } from '@/lib/classQualityAnalysis';
@@ -61,7 +61,7 @@ export function ClassQualityTab({
     let accumulated: Class[] = [];
     try {
       const haveSlotIn = fromDate && toDate
-        ? haveSlotInToUtcRange(new Date(fromDate), new Date(toDate))
+        ? haveSlotInDateStringRangeToUtcRange(fromDate, toDate)
         : undefined;
       const centreIds = selectedCentres.length > 0 ? selectedCentres : centres.map(c => c.id);
       

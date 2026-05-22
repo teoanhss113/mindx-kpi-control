@@ -11,7 +11,7 @@ import {
 } from '@/components/ui';
 import { authFetch } from '@/lib/auth/clientAuth';
 import { searchTeachers, type Teacher } from '@/services/officeHoursService';
-import { dateRangeToUtcRange, fetchAllClasses } from '@/services/classesService';
+import { dateStringRangeToUtcRange, fetchAllClasses } from '@/services/classesService';
 import {
   COURSE_CATEGORY_COLORS,
   COURSE_CATEGORY_ORDER,
@@ -180,10 +180,7 @@ export default function JudgeRequestsSlugPage() {
 
     (async () => {
       try {
-        const { endDateFrom, endDateTo } = dateRangeToUtcRange(
-          new Date(batch.week_from),
-          new Date(batch.week_to),
-        );
+        const { endDateFrom, endDateTo } = dateStringRangeToUtcRange(batch.week_from, batch.week_to);
         const classes = await fetchAllClasses({ endDateFrom, endDateTo }, undefined, controller.signal);
         const next: Record<string, string> = {};
         classes.forEach(cls => {
