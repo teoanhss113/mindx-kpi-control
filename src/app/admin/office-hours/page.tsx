@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef, useDeferredValue } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -121,6 +121,12 @@ function OfficeHoursPageInner() {
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
   const [selectedGrades, setSelectedGrades] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const deferredTableSelectedCentres = useDeferredValue(tableSelectedCentres);
+  const deferredSelectedStatuses = useDeferredValue(selectedStatuses);
+  const deferredSelectedEvaluationStatuses = useDeferredValue(selectedEvaluationStatuses);
+  const deferredSelectedTypes = useDeferredValue(selectedTypes);
+  const deferredSelectedGrades = useDeferredValue(selectedGrades);
+  const deferredSearchQuery = useDeferredValue(searchQuery);
 
   // Toolbar-level course filter (separate from table-level)
   const [toolbarSelectedGrades, setToolbarSelectedGrades] = useState<string[]>([]);
@@ -680,38 +686,38 @@ function OfficeHoursPageInner() {
     let filtered = [...officeHours];
 
     // Centre filter (table-level)
-    if (tableSelectedCentres.length > 0) {
+    if (deferredTableSelectedCentres.length > 0) {
       filtered = filtered.filter(oh => 
-        oh.centre && tableSelectedCentres.includes(oh.centre.id)
+        oh.centre && deferredTableSelectedCentres.includes(oh.centre.id)
       );
     }
 
     // Status filter
-    if (selectedStatuses.length > 0 && selectedStatuses.length !== statusOptions.length) {
-      filtered = filtered.filter(oh => selectedStatuses.includes(oh.status));
+    if (deferredSelectedStatuses.length > 0 && deferredSelectedStatuses.length !== statusOptions.length) {
+      filtered = filtered.filter(oh => deferredSelectedStatuses.includes(oh.status));
     }
 
     // Evaluation status filter (appointment-level)
-    if (selectedEvaluationStatuses.length > 0 && selectedEvaluationStatuses.length !== evaluationStatusOptions.length) {
-      filtered = filtered.filter(oh => oh.appointments?.some(apt => selectedEvaluationStatuses.includes(apt.status)));
+    if (deferredSelectedEvaluationStatuses.length > 0 && deferredSelectedEvaluationStatuses.length !== evaluationStatusOptions.length) {
+      filtered = filtered.filter(oh => oh.appointments?.some(apt => deferredSelectedEvaluationStatuses.includes(apt.status)));
     }
 
     // Type filter
-    if (selectedTypes.length > 0 && selectedTypes.length !== typeOptions.length) {
-      filtered = filtered.filter(oh => selectedTypes.includes(oh.type));
+    if (deferredSelectedTypes.length > 0 && deferredSelectedTypes.length !== typeOptions.length) {
+      filtered = filtered.filter(oh => deferredSelectedTypes.includes(oh.type));
     }
 
     // Grade filter (by category: Coding, Robotics, Art, Others)
-    if (selectedGrades.length > 0 && selectedGrades.length !== courseLineOptions.length) {
+    if (deferredSelectedGrades.length > 0 && deferredSelectedGrades.length !== courseLineOptions.length) {
       filtered = filtered.filter(oh => {
         const category = getOfficeHourCategory(oh);
-        return selectedGrades.includes(category);
+        return deferredSelectedGrades.includes(category);
       });
     }
 
     // Search filter
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
+    if (deferredSearchQuery.trim()) {
+      const query = deferredSearchQuery.toLowerCase();
       filtered = filtered.filter(oh =>
         oh.teacher?.fullName?.toLowerCase().includes(query) ||
         oh.courses?.some(c => c.name?.toLowerCase().includes(query) || c.shortName?.toLowerCase().includes(query)) ||
@@ -772,7 +778,7 @@ function OfficeHoursPageInner() {
     });
 
     return filtered;
-  }, [officeHours, tableSelectedCentres, selectedStatuses, selectedEvaluationStatuses, selectedTypes, selectedGrades, searchQuery, sortBy, sortOrder, statusOptions, evaluationStatusOptions, typeOptions, courseLineOptions]);
+  }, [officeHours, deferredTableSelectedCentres, deferredSelectedStatuses, deferredSelectedEvaluationStatuses, deferredSelectedTypes, deferredSelectedGrades, deferredSearchQuery, sortBy, sortOrder, statusOptions, evaluationStatusOptions, typeOptions, courseLineOptions]);
 
   // Group by teacher for 'by-teacher' view
   const groupedByTeacher = useMemo(() => {

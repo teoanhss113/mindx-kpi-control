@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useEffect, useState, useMemo, useCallback, useDeferredValue } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/lib/AuthContext';
@@ -199,6 +199,13 @@ export default function TeacherChangePage() {
   const [selectedCentreIds,   setSelectedCentreIds]   = useState<string[]>([]);
   const [selectedLevels,      setSelectedLevels]      = useState<string[]>([]);
   const [selectedOperations,  setSelectedOperations]  = useState<string[]>([]);
+  const deferredSearch = useDeferredValue(search);
+  const deferredSelectedCourseLines = useDeferredValue(selectedCourseLines);
+  const deferredSelectedStatuses = useDeferredValue(selectedStatuses);
+  const deferredSelectedCentreIds = useDeferredValue(selectedCentreIds);
+  const deferredSelectedLevels = useDeferredValue(selectedLevels);
+  const deferredSelectedOperations = useDeferredValue(selectedOperations);
+  const deferredRateRange = useDeferredValue(rateRange);
   const [sortKey, setSortKey] = useState<'name' | 'total' | 'changed' | 'teachers' | 'status' | 'progress'>('changed');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [sortKeyInactive, setSortKeyInactive] = useState<'name' | 'centre' | 'status'>('name');
@@ -430,24 +437,24 @@ export default function TeacherChangePage() {
 
   const baseFilteredClasses = useMemo(() => {
     let list = activeClasses;
-    if (search.trim()) {
-      const q = search.toLowerCase();
+    if (deferredSearch.trim()) {
+      const q = deferredSearch.toLowerCase();
       list = list.filter(a => a.cls.name.toLowerCase().includes(q) || a.cls.centre?.name?.toLowerCase?.()?.includes(q));
     }
-    if (selectedCourseLines.length > 0 && selectedCourseLines.length !== courseLineOptions.length) list = list.filter(a => selectedCourseLines.includes(a.courseLineName));
-    if (selectedStatuses.length > 0 && selectedStatuses.length !== statusOptions.length) list = list.filter(a => selectedStatuses.includes(a.cls.status || ''));
-    if (selectedCentreIds.length > 0 && selectedCentreIds.length !== tableCentreIds.length) list = list.filter(a => selectedCentreIds.includes(a.cls.centre?.id || ''));
-    if (selectedLevels.length > 0 && selectedLevels.length !== levelOptions.length) list = list.filter(a => selectedLevels.includes(a.cls.level || ''));
-    if (selectedOperations.length > 0 && selectedOperations.length !== operationOptions.length) list = list.filter(a => selectedOperations.includes(a.cls.operationMethod?.id || ''));
-    if (rateRange[0] > 0 || rateRange[1] < 100) {
+    if (deferredSelectedCourseLines.length > 0 && deferredSelectedCourseLines.length !== courseLineOptions.length) list = list.filter(a => deferredSelectedCourseLines.includes(a.courseLineName));
+    if (deferredSelectedStatuses.length > 0 && deferredSelectedStatuses.length !== statusOptions.length) list = list.filter(a => deferredSelectedStatuses.includes(a.cls.status || ''));
+    if (deferredSelectedCentreIds.length > 0 && deferredSelectedCentreIds.length !== tableCentreIds.length) list = list.filter(a => deferredSelectedCentreIds.includes(a.cls.centre?.id || ''));
+    if (deferredSelectedLevels.length > 0 && deferredSelectedLevels.length !== levelOptions.length) list = list.filter(a => deferredSelectedLevels.includes(a.cls.level || ''));
+    if (deferredSelectedOperations.length > 0 && deferredSelectedOperations.length !== operationOptions.length) list = list.filter(a => deferredSelectedOperations.includes(a.cls.operationMethod?.id || ''));
+    if (deferredRateRange[0] > 0 || deferredRateRange[1] < 100) {
       // Range filter: on uniqueTeacherCount threshold (0-100 mapped to below/above 3 teachers)
       list = list.filter(a => {
         const pct = a.uniqueTeacherCount >= 3 ? 100 : 0;
-        return pct >= rateRange[0] && pct <= rateRange[1];
+        return pct >= deferredRateRange[0] && pct <= deferredRateRange[1];
       });
     }
     return list;
-  }, [activeClasses, search, selectedCourseLines, selectedStatuses, selectedCentreIds, selectedLevels, selectedOperations, rateRange]);
+  }, [activeClasses, deferredSearch, deferredSelectedCourseLines, deferredSelectedStatuses, deferredSelectedCentreIds, deferredSelectedLevels, deferredSelectedOperations, deferredRateRange]);
 
   const filteredClasses = useMemo(() => {
     let list = baseFilteredClasses;

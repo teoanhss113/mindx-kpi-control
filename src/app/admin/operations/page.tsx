@@ -4667,6 +4667,71 @@ export default function TeacherSchedulePage() {
                       Math.max(commentModalSessionIndex ?? fallbackIndex, 0),
                       Math.max(sessionStats.length - 1, 0),
                     );
+                    const scoreAnalysis =
+                      classQualityData.cp1Analysis.hasSession && classQualityData.cp1Analysis.sessionIndex === activeIndex
+                        ? { label: 'CP1', scoreKey: 'checkpointScore' as const, analysis: classQualityData.cp1Analysis }
+                        : classQualityData.cp2Analysis.hasSession && classQualityData.cp2Analysis.sessionIndex === activeIndex
+                          ? { label: 'CP2', scoreKey: 'checkpointScore' as const, analysis: classQualityData.cp2Analysis }
+                          : classQualityData.demoAnalysis.hasSession && classQualityData.demoAnalysis.sessionIndex === activeIndex
+                            ? { label: 'Demo', scoreKey: 'demoScore' as const, analysis: classQualityData.demoAnalysis }
+                            : null;
+                    const scoreByStudentId = new Map(
+                      scoreAnalysis?.analysis.students.map(student => [student.studentId, student]) || [],
+                    );
+                    const formatQualityScore = (score: number | null | undefined) => (
+                      typeof score === 'number' && Number.isFinite(score) ? score.toFixed(2).replace(/\.?0+$/, '') : '—'
+                    );
+                    const parseDisplayScore = (value: string | null | undefined): number | null => {
+                      const match = String(value || '').match(/([0-9]+(?:[.,][0-9]+)?)/);
+                      if (!match) return null;
+                      const score = Number.parseFloat(match[1].replace(',', '.'));
+                      return Number.isFinite(score) && score >= 0 && score <= 10 ? score : null;
+                    };
+                    const parseScoreByDisplayLabels = (
+                      text: string | null | undefined,
+                      labels: string[],
+                    ): number | null => {
+                      const cleaned = String(text || '').replace(/\s+/g, ' ').trim();
+                      for (const label of labels) {
+                        const escapedLabel = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                        const match = cleaned.match(new RegExp(`${escapedLabel}\\s*(?::|-)\\s*([0-9]+(?:[.,][0-9]+)?)(?:\\s*/\\s*10|\\s*/\\s*5)?(?:\\s*điểm)?`, 'i'));
+                        const score = parseDisplayScore(match?.[1]);
+                        if (score !== null) return score;
+                      }
+                      return null;
+                    };
+                    const getCommentDisplayScore = (
+                      comment: NonNullable<(typeof ca.students)[number]['comments'][number]> | undefined,
+                      scoreKey: 'checkpointScore' | 'demoScore',
+                    ): number | null => {
+                      if (!comment) return null;
+                      const textLabels = scoreKey === 'demoScore'
+                        ? ['Điểm Demo', 'Điểm demo', 'Demo']
+                        : ['Điểm Checkpoint', 'Điểm checkpoint', 'Điểm CP1', 'Điểm CP2', 'Điểm CP', 'Checkpoint'];
+                      const directTextScore = parseScoreByDisplayLabels(comment.text, textLabels);
+                      if (directTextScore !== null) return directTextScore;
+
+                      const labelMatchers = scoreKey === 'demoScore'
+                        ? ['demo', 'san pham', 'sản phẩm', 'cuoi khoa', 'cuối khoá', 'cuối khóa']
+                        : ['checkpoint', 'cp1', 'cp2', 'cp'];
+                      const parsedAreaScores = (comment.parsedAreas || []).flatMap(area => (
+                        area.criteria.map(criterion => {
+                          const label = `${area.name || ''} ${area.sectionTitle || ''} ${criterion.name || ''}`;
+                          const normalizedLabel = label
+                            .normalize('NFD')
+                            .replace(/[\u0300-\u036f]/g, '')
+                            .toLowerCase();
+                          const isMatchingScore = labelMatchers.some(matcher => normalizedLabel.includes(matcher));
+                          return isMatchingScore && typeof criterion.score === 'number' ? criterion.score : null;
+                        })
+                      )).filter((score): score is number => typeof score === 'number' && Number.isFinite(score));
+                      if (parsedAreaScores.length > 0) {
+                        return parsedAreaScores.reduce((sum, score) => sum + score, 0) / parsedAreaScores.length;
+                      }
+
+                      const genericPointScore = String(comment.text || '').match(/([0-9]+(?:[.,][0-9]+)?)\s*điểm/i);
+                      return parseDisplayScore(genericPointScore?.[1]);
+                    };
 
                     return (
                       <div>
@@ -4739,6 +4804,7 @@ export default function TeacherSchedulePage() {
                                 <tr>
                                   <th>Học viên</th>
                                   <th>Trạng thái</th>
+                                  {scoreAnalysis && <th style={{ minWidth: 72, textAlign: 'center' }}>Điểm {scoreAnalysis.label}</th>}
                                   <th style={{ minWidth: 200 }}>Nội dung</th>
                                 </tr>
                               </thead>
@@ -4746,6 +4812,12 @@ export default function TeacherSchedulePage() {
                                 {ca.students.map(st => {
                                   const c = st.comments.find(x => x.sessionIndex === activeIndex);
                                   const status = c?.status ?? 'not_required';
+                                  const scoreStudent = scoreByStudentId.get(st.studentId) as any;
+                                  const score = scoreAnalysis
+                                    ? scoreAnalysis.scoreKey === 'demoScore'
+                                      ? scoreStudent?.demoScore ?? getCommentDisplayScore(c, scoreAnalysis.scoreKey)
+                                      : scoreStudent?.checkpointScore ?? getCommentDisplayScore(c, scoreAnalysis.scoreKey)
+                                    : null;
                                   return (
                                     <tr key={st.studentId}>
                                       <td style={{ fontWeight: 510, fontSize: 12 }}>{st.studentName}</td>
@@ -4761,6 +4833,19 @@ export default function TeacherSchedulePage() {
                                           </div>
                                         )}
                                       </td>
+                                      {scoreAnalysis && (
+                                        <td style={{ textAlign: 'center', verticalAlign: 'middle' }}>
+                                          <span style={{ fontSize: 12, fontWeight: 600, color: typeof score === 'number' ? 'var(--text-primary)' : 'var(--text-quaternary)' }}>
+                                            {formatQualityScore(score)}
+                                          </span>
+                                          {scoreAnalysis.scoreKey === 'demoScore' && typeof scoreStudent?.tbck === 'number' && (
+                                            <div style={{ marginTop: 2, fontSize: 10, color: 'var(--text-tertiary)', whiteSpace: 'nowrap' }}>
+                                              TBCK {formatQualityScore(scoreStudent.tbck)}
+                                              {scoreStudent.rank ? ` • ${scoreStudent.rank}` : ''}
+                                            </div>
+                                          )}
+                                        </td>
+                                      )}
                                       <td style={{ fontSize: 11, color: c?.text ? 'var(--text-primary)' : 'var(--text-quaternary)', lineHeight: 1.4, verticalAlign: 'top', paddingTop: 6 }}>
                                         {c?.text ? (
                                           <TeacherCommentCell text={c.text} parsedAreas={c.parsedAreas} />

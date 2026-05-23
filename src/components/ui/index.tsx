@@ -1460,7 +1460,7 @@ export function DateRangePicker({
 // TOOLBAR — standardised request filter bar
 // Order (canonical): [Cơ sở] [│] [Date from-to] [│] [Tải dữ liệu] [Làm mới]
 // ─────────────────────────────────────────────────────────────────────────────
-export function Toolbar({
+export const Toolbar = React.memo(function Toolbar({
   centres,
   centreOptions,
   selectedCentres,
@@ -1666,7 +1666,7 @@ export function Toolbar({
       </div>
     </div>
   )
-}
+})
 
 // ─────────────────────────────────────────────────────────────────────────────
 // STAT CARD

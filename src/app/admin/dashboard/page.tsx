@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef, useDeferredValue } from 'react';
 import { PageLayout } from '@/components/PageLayout';
 import { ProtectedPage } from '@/components/ProtectedPage';
 import { Icon, ToastContainer, useToast, Toolbar, KPIStatCard } from '@/components/ui';
@@ -60,6 +60,13 @@ export default function DashboardPage() {
   const [ticketsData, setTicketsData] = useState<any>(null);
   const [officeHoursData, setOfficeHoursData] = useState<any>(null);
   const [classQualityData, setClassQualityData] = useState<any>(null);
+  const [qualityCounts, setQualityCounts] = useState<{
+    commentViolationsCount: number | null;
+    attendanceAlertsCount: number | null;
+  }>({ commentViolationsCount: null, attendanceAlertsCount: null });
+  const deferredFromDate = useDeferredValue(fromDate);
+  const deferredToDate = useDeferredValue(toDate);
+  const deferredSelectedCentres = useDeferredValue(selectedCentres);
 
   // Load centres on mount
   useEffect(() => {
@@ -206,10 +213,14 @@ export default function DashboardPage() {
       let ticLoaded = 0, ticTotal = 0;
       let pendingLoaded = 0, pendingTotal = 0;
       let teaLoaded = 0, teaTotal = 0;
+      let lastProgressUpdate = 0;
 
       const refreshAggProgress = () => {
         const finalLoaded = schLoaded + clsLoaded + ticLoaded + pendingLoaded + teaLoaded;
         const finalTotal = Math.max((schTotal || 0) + (clsTotal || 0) + (ticTotal || 0) + (pendingTotal || 0) + (teaTotal || 0), 1);
+        const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+        if (now - lastProgressUpdate < 100 && finalLoaded < finalTotal) return;
+        lastProgressUpdate = now;
         setProgress({ loaded: finalLoaded, total: finalTotal });
       };
 
@@ -461,22 +472,22 @@ export default function DashboardPage() {
       const rows = buildTeacherPointRowsFromGoogleSheets({
         rawData: ticketsData.googleSheetsRawData,
         classes: ticketsData.pendingClasses,
-        fromDate,
-        toDate,
+        fromDate: deferredFromDate,
+        toDate: deferredToDate,
         centres,
-        selectedCentres,
+        selectedCentres: deferredSelectedCentres,
       });
       return calcTeacherPointRate({
         classes: ticketsData.pendingClasses,
         rows,
-        fromDate,
-        toDate,
+        fromDate: deferredFromDate,
+        toDate: deferredToDate,
       });
     } catch (err) {
       console.error('Error calculating teacher survey rate:', err);
       return null;
     }
-  }, [ticketsData, fromDate, toDate, centres, selectedCentres]);
+  }, [ticketsData, deferredFromDate, deferredToDate, centres, deferredSelectedCentres]);
 
   const conversionKpi = useMemo(() => {
     if (!officeHoursData?.officeHours) return null;
@@ -504,50 +515,64 @@ export default function DashboardPage() {
     return KPI_COLORS[1]; // Red
   };
 
-  // Comment violations count
-  const commentViolationsCount = useMemo(() => {
-    if (!classQualityData?.classes) return null;
-    try {
-      const activeClasses = classQualityData.classes.filter((cls: any) => 
-        !CLASS_INACTIVE_STATUSES.has(cls.status?.toUpperCase?.())
-      );
-      
-      // Use EXACT logic from class-quality page - use analyzeComments function
-      let violationCount = 0;
-      activeClasses.forEach((cls: any) => {
-        const analysis = analyzeComments(cls);
-        const issues = analysis.emptyCount + analysis.briefCount + analysis.duplicateCount + analysis.overdueCount;
-        if (issues > 0) violationCount++;
-      });
-      
-      return violationCount;
-    } catch (err) {
-      console.error('Error calculating comment violations:', err);
-      return null;
+  useEffect(() => {
+    if (!classQualityData?.classes) {
+      setQualityCounts({ commentViolationsCount: null, attendanceAlertsCount: null });
+      return;
     }
-  }, [classQualityData]);
 
-  // Attendance alerts count
-  const attendanceAlertsCount = useMemo(() => {
-    if (!classQualityData?.classes) return null;
-    try {
-      const activeClasses = classQualityData.classes.filter((cls: any) => 
-        !CLASS_INACTIVE_STATUSES.has(cls.status?.toUpperCase?.())
-      );
-      
-      // Use EXACT logic from class-quality page - use analyzeAttendance function
-      let alertCount = 0;
-      activeClasses.forEach((cls: any) => {
-        const analysis = analyzeAttendance(cls);
-        if (analysis.totalAlerts > 0) alertCount++;
-      });
-      
-      return alertCount;
-    } catch (err) {
-      console.error('Error calculating attendance alerts:', err);
-      return null;
-    }
-  }, [classQualityData]);
+    let cancelled = false;
+    const activeClasses = classQualityData.classes.filter((cls: any) =>
+      !CLASS_INACTIVE_STATUSES.has(cls.status?.toUpperCase?.())
+    );
+    let index = 0;
+    let commentViolationsCount = 0;
+    let attendanceAlertsCount = 0;
+
+    setQualityCounts({ commentViolationsCount: null, attendanceAlertsCount: null });
+
+    const processChunk = () => {
+      const start = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      try {
+        while (index < activeClasses.length) {
+          const cls = activeClasses[index];
+          const commentAnalysis = analyzeComments(cls);
+          const issues = commentAnalysis.emptyCount
+            + commentAnalysis.briefCount
+            + commentAnalysis.duplicateCount
+            + commentAnalysis.overdueCount;
+          if (issues > 0) commentViolationsCount++;
+
+          const attendanceAnalysis = analyzeAttendance(cls);
+          if (attendanceAnalysis.totalAlerts > 0) attendanceAlertsCount++;
+
+          index++;
+          const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+          if (now - start >= 12) break;
+        }
+
+        if (cancelled) return;
+        if (index < activeClasses.length) {
+          window.setTimeout(processChunk, 0);
+        } else {
+          setQualityCounts({ commentViolationsCount, attendanceAlertsCount });
+        }
+      } catch (err) {
+        console.error('Error calculating class quality counts:', err);
+        if (!cancelled) {
+          setQualityCounts({ commentViolationsCount: null, attendanceAlertsCount: null });
+        }
+      }
+    };
+
+    window.setTimeout(processChunk, 0);
+    return () => {
+      cancelled = true;
+    };
+  }, [classQualityData?.classes]);
+
+  const commentViolationsCount = qualityCounts.commentViolationsCount;
+  const attendanceAlertsCount = qualityCounts.attendanceAlertsCount;
 
   // New tickets count
   const newTicketsCount = useMemo(() => {

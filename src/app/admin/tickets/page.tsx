@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useMemo, useCallback, useRef, useDeferredValue } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/lib/AuthContext';
@@ -114,6 +114,15 @@ export default function TicketsDashboard() {
   const [selectedSessions, setSelectedSessions] = useState<string[]>([]);
   const [search, setSearch] = useState('');
   const [classCodeSearch, setClassCodeSearch] = useState('');
+  const deferredTableSelectedCentres = useDeferredValue(tableSelectedCentres);
+  const deferredSelectedCourseLines = useDeferredValue(selectedCourseLines);
+  const deferredSelectedStatuses = useDeferredValue(selectedStatuses);
+  const deferredSelectedFeedbackTopics = useDeferredValue(selectedFeedbackTopics);
+  const deferredSelectedSessions = useDeferredValue(selectedSessions);
+  const deferredSearch = useDeferredValue(search);
+  const deferredFromDate = useDeferredValue(fromDate);
+  const deferredToDate = useDeferredValue(toDate);
+  const deferredSelectedCentres = useDeferredValue(selectedCentres);
   
   // Storage for post-processed Google Sheet data pulled UP from the child component!
   const [sheetProcessedRows, setSheetProcessedRows] = useState<any[]>([]);
@@ -634,12 +643,12 @@ export default function TicketsDashboard() {
     return buildTeacherPointRowsFromGoogleSheets({
       rawData: googleSheetsRawData,
       classes: pendingClasses,
-      fromDate,
-      toDate,
+      fromDate: deferredFromDate,
+      toDate: deferredToDate,
       centres,
-      selectedCentres,
+      selectedCentres: deferredSelectedCentres,
     });
-  }, [googleSheetsRawData, pendingClasses, fromDate, toDate, centres, selectedCentres]);
+  }, [googleSheetsRawData, pendingClasses, deferredFromDate, deferredToDate, centres, deferredSelectedCentres]);
 
   // Memoize expensive ticket processing with individual ticket caching
   const mappedTickets = useMemo(() => {
@@ -783,13 +792,13 @@ export default function TicketsDashboard() {
   const baseFilteredTickets = useMemo(() => {
     return mappedTickets.filter(t => {
       // tableSelectedCentres filters client-side within loaded data (NOT the same as request-level selectedCentres)
-      if (tableSelectedCentres.length > 0 && tableSelectedCentres.length !== tableCentreIds.length && !tableSelectedCentres.includes(t.ticketSource?.centreId || '')) return false;
-      if (selectedCourseLines.length > 0 && selectedCourseLines.length !== courseLineOptions.length && !selectedCourseLines.includes(t.courseCategory)) return false;
-      if (selectedStatuses.length > 0 && selectedStatuses.length !== statusOptions.length && !selectedStatuses.includes(t.status || '')) return false;
-      if (selectedFeedbackTopics.length > 0 && selectedFeedbackTopics.length !== feedbackTopicEnumOptions.length && !selectedFeedbackTopics.includes(t.feedbackTopic || '')) return false;
+      if (deferredTableSelectedCentres.length > 0 && deferredTableSelectedCentres.length !== tableCentreIds.length && !deferredTableSelectedCentres.includes(t.ticketSource?.centreId || '')) return false;
+      if (deferredSelectedCourseLines.length > 0 && deferredSelectedCourseLines.length !== courseLineOptions.length && !deferredSelectedCourseLines.includes(t.courseCategory)) return false;
+      if (deferredSelectedStatuses.length > 0 && deferredSelectedStatuses.length !== statusOptions.length && !deferredSelectedStatuses.includes(t.status || '')) return false;
+      if (deferredSelectedFeedbackTopics.length > 0 && deferredSelectedFeedbackTopics.length !== feedbackTopicEnumOptions.length && !deferredSelectedFeedbackTopics.includes(t.feedbackTopic || '')) return false;
       return true;
     });
-  }, [mappedTickets, tableSelectedCentres, selectedCourseLines, selectedStatuses, selectedFeedbackTopics]);
+  }, [mappedTickets, deferredTableSelectedCentres, deferredSelectedCourseLines, deferredSelectedStatuses, deferredSelectedFeedbackTopics]);
 
   const stats = useMemo(() => {
     let newTickets = 0;
@@ -925,8 +934,8 @@ export default function TicketsDashboard() {
   // ── Table filtering & Sorting ───────────────────────────────────────────────
   const filteredTickets = useMemo(() => {
     let list = baseFilteredTickets.filter(t => !(t as any)._isGoogleSheet);
-    if (search.trim()) {
-      const q = search.toLowerCase();
+    if (deferredSearch.trim()) {
+      const q = deferredSearch.toLowerCase();
       list = list.filter(t => 
         (t.ticketCode?.toLowerCase().includes(q)) ||
         (t.ticketSource?.className?.toLowerCase().includes(q)) ||
@@ -950,7 +959,7 @@ export default function TicketsDashboard() {
       if (va > vb) return sortDir === 'asc' ? 1 : -1;
       return 0;
     });
-  }, [baseFilteredTickets, search, sortKey, sortDir, quickFilter]);
+  }, [baseFilteredTickets, deferredSearch, sortKey, sortDir, quickFilter]);
 
   const lowScoreCount = useMemo(() => {
     return baseFilteredTickets.filter(t => (t as any)._groupScores?.some((g: any) => {
@@ -996,8 +1005,8 @@ export default function TicketsDashboard() {
   const filteredPendingClasses = useMemo(() => {
     let list = pendingClasses;
 
-    if (search.trim()) {
-      const q = search.toLowerCase();
+    if (deferredSearch.trim()) {
+      const q = deferredSearch.toLowerCase();
       list = list.filter(c =>
         c.name.toLowerCase().includes(q) ||
         c.course?.name?.toLowerCase().includes(q) ||
@@ -1005,30 +1014,30 @@ export default function TicketsDashboard() {
       );
     }
 
-    if (tableSelectedCentres.length > 0) {
-      list = list.filter(c => tableSelectedCentres.includes(c.centre?.id));
+    if (deferredTableSelectedCentres.length > 0) {
+      list = list.filter(c => deferredTableSelectedCentres.includes(c.centre?.id));
     }
 
-    if (selectedCourseLines.length > 0 && selectedCourseLines.length !== courseLineOptions.length) {
-      list = list.filter(c => selectedCourseLines.includes(getCourseCategory(c)));
+    if (deferredSelectedCourseLines.length > 0 && deferredSelectedCourseLines.length !== courseLineOptions.length) {
+      list = list.filter(c => deferredSelectedCourseLines.includes(getCourseCategory(c)));
     }
 
-    if (selectedSessions.length > 0 && selectedSessions.length !== sessionOptions.length) {
-      const dStart = lmsLocalDateStringToDate(fromDate);
-      const dEnd = lmsLocalDateStringToDate(toDate, true);
+    if (deferredSelectedSessions.length > 0 && deferredSelectedSessions.length !== sessionOptions.length) {
+      const dStart = lmsLocalDateStringToDate(deferredFromDate);
+      const dEnd = lmsLocalDateStringToDate(deferredToDate, true);
       list = list.filter(c => {
         const slots = c.slots || [];
         const hasSession4 = Boolean(slots[3] && new Date(slots[3].date) >= dStart && new Date(slots[3].date) <= dEnd);
         const hasSession8 = Boolean(slots[7] && new Date(slots[7].date) >= dStart && new Date(slots[7].date) <= dEnd);
         return (
-          (selectedSessions.includes('4') && hasSession4) ||
-          (selectedSessions.includes('8') && hasSession8)
+          (deferredSelectedSessions.includes('4') && hasSession4) ||
+          (deferredSelectedSessions.includes('8') && hasSession8)
         );
       });
     }
 
     return list;
-  }, [pendingClasses, search, tableSelectedCentres, selectedCourseLines, courseLineOptions.length, selectedSessions, fromDate, toDate]);
+  }, [pendingClasses, deferredSearch, deferredTableSelectedCentres, deferredSelectedCourseLines, courseLineOptions.length, deferredSelectedSessions, deferredFromDate, deferredToDate]);
 
   const groupedByClass = useMemo(() => {
     // We use a Map to merge tickets and class data. 
@@ -1055,19 +1064,19 @@ export default function TicketsDashboard() {
 
     // 2. Process pending classes (to get total students and session context)
     let filteredPending = pendingClasses;
-    if (search.trim()) {
-      const q = search.toLowerCase();
+    if (deferredSearch.trim()) {
+      const q = deferredSearch.toLowerCase();
       filteredPending = filteredPending.filter(c => 
         c.name.toLowerCase().includes(q) || 
         c.course?.name?.toLowerCase().includes(q) ||
         c.centre?.shortName?.toLowerCase().includes(q)
       );
     }
-    if (tableSelectedCentres.length > 0 && tableSelectedCentres.length !== tableCentreIds.length) {
-      filteredPending = filteredPending.filter(c => tableSelectedCentres.includes(c.centre?.id));
+    if (deferredTableSelectedCentres.length > 0 && deferredTableSelectedCentres.length !== tableCentreIds.length) {
+      filteredPending = filteredPending.filter(c => deferredTableSelectedCentres.includes(c.centre?.id));
     }
-    if (selectedCourseLines.length > 0 && selectedCourseLines.length !== courseLineOptions.length) {
-      filteredPending = filteredPending.filter(c => selectedCourseLines.includes(getCourseCategory(c)));
+    if (deferredSelectedCourseLines.length > 0 && deferredSelectedCourseLines.length !== courseLineOptions.length) {
+      filteredPending = filteredPending.filter(c => deferredSelectedCourseLines.includes(getCourseCategory(c)));
     }
 
     filteredPending.forEach(c => {
@@ -1094,8 +1103,8 @@ export default function TicketsDashboard() {
       g.classData = c;
       
       // Determine sessions in range
-      const dStart = lmsLocalDateStringToDate(fromDate);
-      const dEnd = lmsLocalDateStringToDate(toDate, true);
+      const dStart = lmsLocalDateStringToDate(deferredFromDate);
+      const dEnd = lmsLocalDateStringToDate(deferredToDate, true);
       
       const slots = c.slots || [];
       // Session 4 is index 3, Session 8 is index 7
@@ -1205,22 +1214,22 @@ export default function TicketsDashboard() {
         return b.count - a.count;
       });
 
-    if (selectedSessions.length > 0 && selectedSessions.length !== sessionOptions.length) {
+    if (deferredSelectedSessions.length > 0 && deferredSelectedSessions.length !== sessionOptions.length) {
       return result.filter(g => {
         const hasSession4 = g.sessionsInRange.includes(4);
         const hasSession8 = g.sessionsInRange.includes(8);
         const isOther = g.sessionsInRange.length === 0 && g.count > 0;
         
         return (
-          (selectedSessions.includes('4') && hasSession4) ||
-          (selectedSessions.includes('8') && hasSession8) ||
-          (selectedSessions.includes('other') && isOther)
+          (deferredSelectedSessions.includes('4') && hasSession4) ||
+          (deferredSelectedSessions.includes('8') && hasSession8) ||
+          (deferredSelectedSessions.includes('other') && isOther)
         );
       });
     }
 
     return result;
-  }, [filteredTickets, pendingClasses, search, tableSelectedCentres, tableCentreIds, fromDate, toDate, selectedSessions, centres, teacherSurveyRows]);
+  }, [filteredTickets, pendingClasses, deferredSearch, deferredTableSelectedCentres, tableCentreIds, deferredSelectedCourseLines, courseLineOptions.length, deferredFromDate, deferredToDate, deferredSelectedSessions, centres, teacherSurveyRows]);
 
   const activeGroups = useMemo(() =>
     groupedByClass.filter(g => !CLASS_INACTIVE_STATUSES.has(g.classStatus?.toUpperCase?.() || '')),

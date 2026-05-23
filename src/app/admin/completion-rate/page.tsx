@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useEffect, useState, useMemo, useCallback, useDeferredValue } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/lib/AuthContext';
@@ -110,6 +110,12 @@ export default function DashboardPage() {
   const [rateRange, setRateRange] = useState<[number, number]>([0, 100]);
   const [showDemoOnly, setShowDemoOnly] = useState(false);
   const [classCodeSearch, setClassCodeSearch] = useState('');
+  const deferredSearch = useDeferredValue(search);
+  const deferredSelectedCourseLines = useDeferredValue(selectedCourseLines);
+  const deferredFilterCentres = useDeferredValue(filterCentres);
+  const deferredFilterReasons = useDeferredValue(filterReasons);
+  const deferredRateRange = useDeferredValue(rateRange);
+  const deferredShowDemoOnly = useDeferredValue(showDemoOnly);
 
   // Table collapse states
   const [showActiveTable, setShowActiveTable] = useState(true);
@@ -343,13 +349,13 @@ export default function DashboardPage() {
   const filteredNormalClasses = useMemo(() => {
     let filtered = normalClasses.filter(c => {
       if (c.isExcludedByCourse) return false;
-      if (search && !c.name.toLowerCase().includes(search.toLowerCase())) return false;
-      if (selectedCourseLines.length > 0 && selectedCourseLines.length !== availableCourseLines.length && !selectedCourseLines.includes(c.courseLineName)) return false;
-      if (filterCentres.length > 0 && filterCentres.length !== tableCentreIds.length && !filterCentres.includes(c.centre?.id)) return false;
+      if (deferredSearch && !c.name.toLowerCase().includes(deferredSearch.toLowerCase())) return false;
+      if (deferredSelectedCourseLines.length > 0 && deferredSelectedCourseLines.length !== availableCourseLines.length && !deferredSelectedCourseLines.includes(c.courseLineName)) return false;
+      if (deferredFilterCentres.length > 0 && deferredFilterCentres.length !== tableCentreIds.length && !deferredFilterCentres.includes(c.centre?.id)) return false;
       // Note: filterReasons uses tableReasonOptions, but computing it matches keys. If not ALL are selected, filter it.
-      if (filterReasons.length > 0 && filterReasons.length !== Object.keys(reasonCounts).length && !filterReasons.some(r => Object.keys(c.reasonsSummary).includes(r))) return false;
-      if (c.rate < rateRange[0] || c.rate > rateRange[1]) return false;
-      if (showDemoOnly && !Object.keys(c.reasonsSummary).includes(DEMO_REASON_KEY)) return false;
+      if (deferredFilterReasons.length > 0 && deferredFilterReasons.length !== Object.keys(reasonCounts).length && !deferredFilterReasons.some(r => Object.keys(c.reasonsSummary).includes(r))) return false;
+      if (c.rate < deferredRateRange[0] || c.rate > deferredRateRange[1]) return false;
+      if (deferredShowDemoOnly && !Object.keys(c.reasonsSummary).includes(DEMO_REASON_KEY)) return false;
       return true;
     });
     filtered.sort((a, b) => {
@@ -365,7 +371,7 @@ export default function DashboardPage() {
       return 0;
     });
     return filtered;
-  }, [normalClasses, search, selectedCourseLines, filterCentres, filterReasons, rateRange, showDemoOnly, sortKey, sortOrder]);
+  }, [normalClasses, deferredSearch, deferredSelectedCourseLines, deferredFilterCentres, deferredFilterReasons, deferredRateRange, deferredShowDemoOnly, sortKey, sortOrder]);
 
   // ─── Stats ────────────────────────────────────────────────────────────────
   const filteredStats = useMemo(() => {
