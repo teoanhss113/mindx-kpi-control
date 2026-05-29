@@ -155,6 +155,7 @@ export function ClassQualityTab({
             classes={normalClasses} 
             search={search} 
             onSearchChange={setSearch}
+            selectedTeacherId={teacherFilter.selectedTeacherId}
             onRowClick={onRowClick}
           />
         )}

@@ -2,13 +2,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { UserSearchResult } from '@/components/ui/UserSearchInput';
 import { searchTeachers, Teacher } from '@/services/officeHoursService';
 
+export type TeacherFilterSelection = Partial<Teacher> & UserSearchResult & { id: string };
+
 function getTeacherLabel(teacher: Teacher): string {
   const name = teacher.fullName || teacher.username || teacher.email || teacher.code || teacher.id;
   return teacher.code ? `${name} (${teacher.code})` : name;
 }
 
 export function useTeacherFilterOptions() {
-  const [selectedTeacher, setSelectedTeacher] = useState<Teacher | null>(null);
+  const [selectedTeacher, setSelectedTeacher] = useState<TeacherFilterSelection | null>(null);
   const [search, setSearch] = useState('');
   const [results, setResults] = useState<Teacher[]>([]);
   const [loading, setLoading] = useState(false);
@@ -47,10 +49,22 @@ export function useTeacherFilterOptions() {
   }, []);
 
   const handleSelect = useCallback((teacher: UserSearchResult) => {
-    const selected = teacher as Teacher;
+    const selected = teacher as TeacherFilterSelection;
     setSelectedTeacher(selected);
     setSearch('');
-    setResults([selected]);
+    setResults([selected as Teacher]);
+  }, []);
+
+  const hydrateSelectedTeacher = useCallback((teacher: TeacherFilterSelection | null) => {
+    if (!teacher) {
+      setSelectedTeacher(null);
+      setResults([]);
+      return;
+    }
+
+    setSelectedTeacher(teacher);
+    setSearch('');
+    setResults([teacher as Teacher]);
   }, []);
 
   const clear = useCallback(() => {
@@ -62,7 +76,7 @@ export function useTeacherFilterOptions() {
   }, []);
 
   const selectedTeacherName = useMemo(() => (
-    selectedTeacher ? getTeacherLabel(selectedTeacher) : undefined
+    selectedTeacher ? getTeacherLabel(selectedTeacher as Teacher) : undefined
   ), [selectedTeacher]);
 
   return {
@@ -74,5 +88,6 @@ export function useTeacherFilterOptions() {
     onTeacherSearchChange: handleSearchChange,
     onTeacherSelect: handleSelect,
     onTeacherClear: clear,
+    hydrateSelectedTeacher,
   };
 }

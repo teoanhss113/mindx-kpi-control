@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { AnalyzedClassForQuality } from '@/types/classQuality';
 import type { FinalProductClassStats } from '@/types/classes';
 import {
@@ -33,6 +33,81 @@ function getPrimaryTeacher(cls: AnalyzedClassForQuality['cls']): string {
   return 'Không rõ';
 }
 
+function getTeacherRoleLabel(roleShortName?: string | null, roleName?: string | null): string {
+  const role = (roleShortName || roleName || '').trim();
+  if (!role) return 'Giáo viên';
+  return role.toUpperCase() === 'SUPPLY' ? 'SUPPLY' : role;
+}
+
+type ClassTeacherSlot = NonNullable<AnalyzedClassForQuality['cls']['teachers']>[number];
+
+function getTeacherSlotLabel(teacherSlot: ClassTeacherSlot): string {
+  return teacherSlot.teacher.fullName || teacherSlot.teacher.username || teacherSlot.teacher.email || teacherSlot.teacher.id;
+}
+
+function getClassTeacherOptions(cls: AnalyzedClassForQuality['cls']) {
+  const teachers = new Map<string, { value: string; label: string; searchTerms: string[] }>();
+
+  const addTeacher = (teacherSlot: ClassTeacherSlot) => {
+    const id = teacherSlot.teacher.id;
+    if (!id || teachers.has(id)) return;
+
+    teachers.set(id, {
+      value: id,
+      label: getTeacherSlotLabel(teacherSlot),
+      searchTerms: [
+        teacherSlot.teacher.fullName,
+        teacherSlot.teacher.username,
+        teacherSlot.teacher.email,
+        teacherSlot.teacher.code,
+      ].filter(Boolean) as string[],
+    });
+  };
+
+  cls.teachers?.filter(teacherSlot => teacherSlot.isActive).forEach(addTeacher);
+  cls.slots?.forEach(slot => {
+    slot.teachers?.filter(teacherSlot => teacherSlot.isActive).forEach(addTeacher);
+  });
+
+  return Array.from(teachers.values());
+}
+
+function getClassTeacherRoles(cls: AnalyzedClassForQuality['cls'], teacherIds?: string[]): string[] {
+  const roles = new Map<string, string>();
+  const teacherIdSet = teacherIds && teacherIds.length > 0 ? new Set(teacherIds) : null;
+
+  const addRole = (roleShortName?: string | null, roleName?: string | null) => {
+    const label = getTeacherRoleLabel(roleShortName, roleName);
+    roles.set(label.toUpperCase(), label);
+  };
+
+  const addTeacherRoles = (teachers: NonNullable<AnalyzedClassForQuality['cls']['teachers']>) => {
+    teachers
+      .filter(teacherSlot => teacherSlot.isActive)
+      .filter(teacherSlot => !teacherIdSet || teacherIdSet.has(teacherSlot.teacher.id))
+      .forEach(teacherSlot => addRole(teacherSlot.role?.shortName, teacherSlot.role?.name));
+  };
+
+  cls.slots?.forEach(slot => {
+    const slotTeachers = (slot.teachers || []).filter(teacherSlot => teacherSlot.isActive);
+    const classTeachers = (cls.teachers || []).filter(teacherSlot => teacherSlot.isActive);
+    const teachers = slotTeachers.length > 0 ? slotTeachers : classTeachers;
+    addTeacherRoles(teachers);
+  });
+
+  if (!cls.slots?.length) {
+    addTeacherRoles(cls.teachers || []);
+  }
+
+  return Array.from(roles.values());
+}
+
+function classHasTeachers(cls: AnalyzedClassForQuality['cls'], teacherIds: string[]): boolean {
+  if (teacherIds.length === 0) return true;
+  const teacherIdSet = new Set(teacherIds);
+  return getClassTeacherOptions(cls).some(teacher => teacherIdSet.has(teacher.value));
+}
+
 function getActiveStudentCount(cls: AnalyzedClassForQuality['cls']): number {
   return (cls.students || []).filter(student => student.activeInClass).length;
 }
@@ -51,6 +126,7 @@ interface Props {
   finalProductStatsByClassId?: Map<string, FinalProductClassStats>;
   finalProductStatsLoading?: boolean;
   classStatusOptions?: { value: string; label: string }[];
+  selectedTeacherId?: string;
 }
 
 type IssueTone = 'success' | 'warning' | 'error' | 'info' | 'default';
@@ -135,6 +211,7 @@ export function ClassQualityUnifiedTable({
   finalProductStatsByClassId,
   finalProductStatsLoading = false,
   classStatusOptions = [],
+  selectedTeacherId,
 }: Props) {
   const [sortKey, setSortKey] = useState<SortKey>('commentIssues');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
@@ -147,7 +224,20 @@ export function ClassQualityUnifiedTable({
   const [selectedCentres, setSelectedCentres] = useState<string[]>([]);
   const [selectedCourses, setSelectedCourses] = useState<string[]>([]);
   const [selectedTeachers, setSelectedTeachers] = useState<string[]>([]);
+  const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
+
+  useEffect(() => {
+    setSelectedRoles([]);
+  }, [selectedTeacherId, selectedTeachers]);
+
+  const roleTeacherIds = useMemo(() => (
+    selectedTeachers.length > 0
+      ? selectedTeachers
+      : selectedTeacherId
+        ? [selectedTeacherId]
+        : undefined
+  ), [selectedTeachers, selectedTeacherId]);
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -158,27 +248,29 @@ export function ClassQualityUnifiedTable({
   const filterOptions = useMemo(() => {
     const centres = new Set<string>();
     const courses = new Set<string>();
-    const teachers = new Set<string>();
+    const teachers = new Map<string, { value: string; label: string; searchTerms: string[] }>();
+    const roles = new Map<string, string>();
     const statuses = new Set<string>();
 
     classes.forEach(a => {
       if (a.cls.centre?.shortName) centres.add(a.cls.centre.shortName);
       if (a.courseLineName) courses.add(a.courseLineName);
-      const teacher = getPrimaryTeacher(a.cls);
-      if (teacher && teacher !== 'Không rõ') teachers.add(teacher);
+      getClassTeacherOptions(a.cls).forEach(teacher => teachers.set(teacher.value, teacher));
+      getClassTeacherRoles(a.cls, roleTeacherIds).forEach(role => roles.set(role.toUpperCase(), role));
       if (a.cls.status) statuses.add(a.cls.status);
     });
 
     return {
       centres: Array.from(centres).sort().map(c => ({ value: c, label: c })),
       courses: Array.from(courses).sort().map(c => ({ value: c, label: c })),
-      teachers: Array.from(teachers).sort().map(t => ({ value: t, label: t })),
+      teachers: Array.from(teachers.values()).sort((a, b) => a.label.localeCompare(b.label)),
+      roles: Array.from(roles.values()).sort().map(role => ({ value: role, label: role })),
       statuses: classStatusOptions.length > 0 ? classStatusOptions : Array.from(statuses).sort().map(status => {
         const match = classes.find(a => a.cls.status === status);
         return { value: status, label: match ? getClassStatusLabel(match) : status };
       }),
     };
-  }, [classes, classStatusOptions]);
+  }, [classes, classStatusOptions, roleTeacherIds]);
 
   const baseList = useMemo(() => {
     let list = classes;
@@ -194,7 +286,10 @@ export function ClassQualityUnifiedTable({
       list = list.filter(a => a.courseLineName && selectedCourseCategories.includes(a.courseLineName));
     }
     if (selectedTeachers.length > 0) {
-      list = list.filter(a => selectedTeachers.includes(getPrimaryTeacher(a.cls)));
+      list = list.filter(a => classHasTeachers(a.cls, selectedTeachers));
+    }
+    if (selectedRoles.length > 0) {
+      list = list.filter(a => getClassTeacherRoles(a.cls, roleTeacherIds).some(role => selectedRoles.includes(role)));
     }
     if (selectedStatuses.length > 0) {
       list = list.filter(a => a.cls.status && selectedStatuses.includes(a.cls.status));
@@ -206,7 +301,7 @@ export function ClassQualityUnifiedTable({
       list = list.filter(a => a.cls.name.toLowerCase().includes(q) || a.cls.centre?.shortName?.toLowerCase().includes(q));
     }
     return list;
-  }, [classes, search, selectedCentres, selectedCourses, selectedCourseCategories, selectedTeachers, selectedStatuses]);
+  }, [classes, search, selectedCentres, selectedCourses, selectedCourseCategories, selectedTeachers, selectedRoles, selectedStatuses, selectedTeacherId]);
 
   const issueCounts = useMemo(() => {
     let attendanceAlerts = 0;
@@ -413,6 +508,14 @@ export function ClassQualityUnifiedTable({
               />
               <MultiSelect
                 menuPosition="fixed"
+                options={filterOptions.roles}
+                selected={selectedRoles}
+                onChange={setSelectedRoles}
+                placeholder={selectedRoles.length > 0 ? `Vai trò (${selectedRoles.length})` : 'Tất cả vai trò'}
+                maxDisplay={1}
+              />
+              <MultiSelect
+                menuPosition="fixed"
                 options={filterOptions.statuses}
                 selected={selectedStatuses}
                 onChange={setSelectedStatuses}
@@ -422,7 +525,7 @@ export function ClassQualityUnifiedTable({
               <span className={styles.metricText}>{filtered.length}/{classes.length} {CLASS_QUALITY_LABELS.VISIBLE_CLASS_COUNT_SUFFIX}</span>
             </div>
           }
-          hasFilter={!!quickFilter || finalProductFilters.length > 0 || commentDetailFilters.length > 0 || latestSessionCommentDetailFilters.length > 0 || selectedCentres.length > 0 || selectedCourses.length > 0 || selectedTeachers.length > 0 || selectedStatuses.length > 0 || !!search.trim()}
+          hasFilter={!!quickFilter || finalProductFilters.length > 0 || commentDetailFilters.length > 0 || latestSessionCommentDetailFilters.length > 0 || selectedCentres.length > 0 || selectedCourses.length > 0 || selectedTeachers.length > 0 || selectedRoles.length > 0 || selectedStatuses.length > 0 || !!search.trim()}
           onClearFilter={() => {
             setQuickFilter(null);
             setFinalProductFilters([]);
@@ -431,6 +534,7 @@ export function ClassQualityUnifiedTable({
             setSelectedCentres([]);
             setSelectedCourses([]);
             setSelectedTeachers([]);
+            setSelectedRoles([]);
             setSelectedStatuses([]);
             onSearchChange('');
           }}

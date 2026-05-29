@@ -774,12 +774,14 @@ function ScheduleFilterSummary({
   selectedCentres,
   selectedCourseLines,
   selectedTeachers,
+  selectedRoles,
   classCodeSearch,
 }: {
   filteredSlotCount: number;
   selectedCentres: string[];
   selectedCourseLines: string[];
   selectedTeachers: string[];
+  selectedRoles: string[];
   classCodeSearch: string;
 }) {
   const chips = [
@@ -787,6 +789,7 @@ function ScheduleFilterSummary({
     selectedCentres.length > 0 ? `${selectedCentres.length} cơ sở` : '',
     selectedCourseLines.length > 0 ? `${selectedCourseLines.length} khối` : '',
     selectedTeachers.length > 0 ? `${selectedTeachers.length} giáo viên` : '',
+    selectedRoles.length > 0 ? `${selectedRoles.length} vai trò` : '',
   ].filter(Boolean);
 
   if (chips.length === 0) return null;
@@ -1454,6 +1457,12 @@ function getDisplaySessionTeachers(slot: TeacherScheduleSlot) {
     roleName: slot.roleName,
     roleShortName: slot.roleShortName,
   }];
+}
+
+function getSlotTeacherRoles(slot: TeacherScheduleSlot, teacherId?: string) {
+  return getDisplaySessionTeachers(slot)
+    .filter(item => !teacherId || item.teacher.id === teacherId)
+    .map(item => getTeacherRoleLabel(item.roleShortName, item.roleName));
 }
 
 function getSessionTeacherRoleRows(slot: TeacherScheduleSlot) {
@@ -2652,6 +2661,7 @@ export default function TeacherSchedulePage() {
   const [calendarCentreFilter, setCalendarCentreFilter] = useState<string[]>([]);
   const [calendarSelectedTeachers, setCalendarSelectedTeachers] = useState<string[]>([]);
   const [calendarSelectedCourseLines, setCalendarSelectedCourseLines] = useState<string[]>([]);
+  const [calendarSelectedRoles, setCalendarSelectedRoles] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<TeacherScheduleViewMode>('calendar');
   
   // ── Week navigation state ──────────────────────────────────────────────────
@@ -2739,6 +2749,11 @@ export default function TeacherSchedulePage() {
     calendarCentreFilter,
     calendarSelectedTeachers,
     calendarSelectedCourseLines,
+    calendarSelectedRoles,
+    classCodeSearch,
+    dataLimit,
+    selectedToolbarTeacher: null as { id: string; fullName?: string; displayName?: string } | null,
+    toolbarSelectedCentres: selectedCentres,
     selectedTeachers,
     selectedCourseLines,
     scheduleTypeFilter,
@@ -2752,6 +2767,17 @@ export default function TeacherSchedulePage() {
     calendarCentreFilter,
     calendarSelectedTeachers,
     calendarSelectedCourseLines,
+    calendarSelectedRoles,
+    classCodeSearch,
+    dataLimit,
+    selectedToolbarTeacher: toolbarTeacherFilter.selectedTeacherId
+      ? {
+          id: toolbarTeacherFilter.selectedTeacherId,
+          fullName: toolbarTeacherFilter.selectedTeacherName,
+          displayName: toolbarTeacherFilter.selectedTeacherName,
+        }
+      : null,
+    toolbarSelectedCentres: selectedCentres,
     selectedTeachers,
     selectedCourseLines,
     scheduleTypeFilter,
@@ -2835,10 +2861,12 @@ export default function TeacherSchedulePage() {
     setCalendarCentreFilter([]);
     setCalendarSelectedTeachers([]);
     setCalendarSelectedCourseLines([]);
+    setCalendarSelectedRoles([]);
     setCalendarClassCodeSearch('');
     setAppliedCalendarClassCodeSearch('');
     setSearchTerm('');
     setDataLimit('all');
+    toolbarTeacherFilter.onTeacherClear();
     setClassStudentWorks([]);
     setClassStudentWorksLoading(false);
     setStudentWorks([]);
@@ -2853,7 +2881,7 @@ export default function TeacherSchedulePage() {
     setCurrentWeekIndex(0);
     setCollapsedTimeSlots(new Set());
     clearCache(CACHE_KEYS.TEACHER_SCHEDULE).catch(console.error);
-  }, []);
+  }, [toolbarTeacherFilter]);
 
   const teacherProfilesById = useMemo(() => {
     return new Map(teacherProfiles.map(teacher => [teacher.id, teacher]));
@@ -2977,6 +3005,13 @@ export default function TeacherSchedulePage() {
       const centreIds = selectedCentres.length > 0
         ? [...selectedCentres]
         : _centres.map(centre => centre.id);
+      const toolbarSelectedTeacher = toolbarTeacherFilter.selectedTeacherId
+        ? {
+            id: toolbarTeacherFilter.selectedTeacherId,
+            fullName: toolbarTeacherFilter.selectedTeacherName,
+            displayName: toolbarTeacherFilter.selectedTeacherName,
+          }
+        : null;
       setLoadedCentreIds(centreIds);
       setCalendarCentreFilter([]);
 
@@ -3167,11 +3202,16 @@ export default function TeacherSchedulePage() {
           studentCommentAreas: commentAreas,
           dateFrom: start,
           dateTo: end,
-          selectedCentres: centreIds || [],
+          selectedCentres: selectedCentres || [],
+          toolbarSelectedCentres: selectedCentres || [],
+          selectedToolbarTeacher: toolbarSelectedTeacher,
+          classCodeSearch,
+          dataLimit,
           loadedCentreIds: centreIds,
           calendarCentreFilter: [],
           calendarSelectedTeachers,
           calendarSelectedCourseLines,
+          calendarSelectedRoles,
           selectedTeachers,
           selectedCourseLines,
           scheduleTypeFilter,
@@ -3179,6 +3219,12 @@ export default function TeacherSchedulePage() {
           exemptedSessions,
           exemptOneOnOneClasses,
           holidayPeriods,
+          timestamp: Date.now(),
+        });
+        await setCache(CACHE_KEYS.FILTER_STATE, {
+          fromDate: start,
+          toDate: end,
+          selectedCentres: selectedCentres || [],
           timestamp: Date.now(),
         });
         addToast(`Tải thành công ${classes.length} lớp, render ${renderedClassIds.size} lớp (${result.length} giáo viên).`, 'success');
@@ -3194,7 +3240,7 @@ export default function TeacherSchedulePage() {
         setProgress({ loaded: 100, total: 100 });
       }
     }
-  }, [centres, selectedCentres, calendarSelectedTeachers, calendarSelectedCourseLines, selectedTeachers, selectedCourseLines, selectedClassStatuses, classStatusFilterOptions, scheduleTypeFilter, exemptedSessions, exemptOneOnOneClasses, holidayPeriods, addToast, classCodeSearch, dataLimit, fromDate, toDate, toolbarTeacherFilter.selectedTeacherId]);
+  }, [centres, selectedCentres, calendarSelectedTeachers, calendarSelectedCourseLines, calendarSelectedRoles, selectedTeachers, selectedCourseLines, selectedClassStatuses, classStatusFilterOptions, scheduleTypeFilter, exemptedSessions, exemptOneOnOneClasses, holidayPeriods, addToast, classCodeSearch, dataLimit, fromDate, toDate, toolbarTeacherFilter.selectedTeacherId, toolbarTeacherFilter.selectedTeacherName]);
 
   const handleCancelFetch = () => {
     if (abortRef.current) {
@@ -3510,9 +3556,18 @@ export default function TeacherSchedulePage() {
           if (cached.selectedTeachers) setSelectedTeachers(cached.selectedTeachers);
           if (cached.selectedCourseLines) setSelectedCourseLines(cached.selectedCourseLines);
           if (cached.loadedCentreIds) setLoadedCentreIds(cached.loadedCentreIds);
+          if (typeof cached.dateFrom === 'string') setFromDate(cached.dateFrom);
+          if (typeof cached.dateTo === 'string') setToDate(cached.dateTo);
+          if (Array.isArray(cached.toolbarSelectedCentres)) setSelectedCentres(cached.toolbarSelectedCentres);
+          if (typeof cached.classCodeSearch === 'string') setClassCodeSearch(cached.classCodeSearch);
+          if (cached.dataLimit) setDataLimit(cached.dataLimit as DataLimitValue);
+          if (cached.selectedToolbarTeacher?.id) {
+            toolbarTeacherFilter.hydrateSelectedTeacher(cached.selectedToolbarTeacher);
+          }
           if (cached.calendarCentreFilter) setCalendarCentreFilter(cached.calendarCentreFilter);
           if (cached.calendarSelectedTeachers) setCalendarSelectedTeachers(cached.calendarSelectedTeachers);
           if (cached.calendarSelectedCourseLines) setCalendarSelectedCourseLines(cached.calendarSelectedCourseLines);
+          if (cached.calendarSelectedRoles) setCalendarSelectedRoles(cached.calendarSelectedRoles);
           if (cached.scheduleTypeFilter) setScheduleTypeFilter(cached.scheduleTypeFilter);
           if (cached.selectedClassStatuses) setSelectedClassStatuses(cached.selectedClassStatuses as ClassStatusFilter[]);
           if (cached.exemptedSessions) setExemptedSessions(cached.exemptedSessions);
@@ -3558,12 +3613,14 @@ export default function TeacherSchedulePage() {
       schedules,
       rawClasses,
       studentCommentAreas,
+      dateFrom: loadedRange?.from || fromDate,
+      dateTo: loadedRange?.to || toDate,
       loadedCentreIds,
       ...cacheFilterStateRef.current,
       loadedRange,
       timestamp: Date.now(),
     }).catch(console.error);
-  }, [loading, schedules, rawClasses, studentCommentAreas, loadedCentreIds, isHydrated, loadedRange]);
+  }, [loading, schedules, rawClasses, studentCommentAreas, loadedCentreIds, isHydrated, loadedRange, fromDate, toDate]);
 
   // ── Derived Data ────────────────────────────────────────────────────────────
   // No longer need centreOptions - using CentreSelect component
@@ -3586,6 +3643,32 @@ export default function TeacherSchedulePage() {
   const courseLineOptions: SelectOption[] = useMemo(() => {
     return COURSES.map(course => ({ value: course, label: course }));
   }, []);
+
+  const calendarRoleTeacherIds = useMemo(() => (
+    calendarSelectedTeachers.length > 0
+      ? calendarSelectedTeachers
+      : toolbarTeacherFilter.selectedTeacherId
+        ? [toolbarTeacherFilter.selectedTeacherId]
+        : undefined
+  ), [calendarSelectedTeachers, toolbarTeacherFilter.selectedTeacherId]);
+
+  const roleOptions: SelectOption[] = useMemo(() => {
+    const roles = new Map<string, string>();
+
+    schedules.forEach(schedule => {
+      schedule.slots.forEach(slot => {
+        const slotTeacherRoles = calendarRoleTeacherIds && calendarRoleTeacherIds.length > 0
+          ? calendarRoleTeacherIds.flatMap(teacherId => getSlotTeacherRoles(slot, teacherId))
+          : getSlotTeacherRoles(slot);
+
+        slotTeacherRoles.forEach(label => {
+          roles.set(label.toUpperCase(), label);
+        });
+      });
+    });
+
+    return Array.from(roles.values()).sort().map(role => ({ value: role, label: role }));
+  }, [schedules, calendarRoleTeacherIds]);
 
   // Generate teacher options from schedules data
   const teacherOptions: SelectOption[] = useMemo(() => {
@@ -3621,6 +3704,12 @@ export default function TeacherSchedulePage() {
           const category = getCourseLineCategory(slot.courseLine, slot.className);
           if (!deferredCalendarSelectedCourseLines.includes(category)) return false;
         }
+        if (calendarSelectedRoles.length > 0) {
+          const slotRoles = calendarRoleTeacherIds && calendarRoleTeacherIds.length > 0
+            ? calendarRoleTeacherIds.flatMap(teacherId => getSlotTeacherRoles(slot, teacherId))
+            : getSlotTeacherRoles(slot);
+          if (!slotRoles.some(role => calendarSelectedRoles.includes(role))) return false;
+        }
         if (deferredScheduleTypeFilter === 'CLASS' && slot.type !== 'class') return false;
         if (deferredScheduleTypeFilter === 'TRIAL' && slot.type !== 'office-hour') return false;
         if (
@@ -3638,7 +3727,7 @@ export default function TeacherSchedulePage() {
       if (deferredCalendarSelectedTeachers.length > 0 && !deferredCalendarSelectedTeachers.includes(schedule.teacher.id)) return false;
       return true;
     });
-  }, [schedules, deferredCalendarCentreFilter, deferredCalendarSelectedTeachers, deferredCalendarSelectedCourseLines, deferredSelectedClassStatuses, classStatusFilterOptions, deferredScheduleTypeFilter, deferredAppliedCalendarClassCodeSearch]);
+  }, [schedules, deferredCalendarCentreFilter, deferredCalendarSelectedTeachers, deferredCalendarSelectedCourseLines, calendarSelectedRoles, calendarRoleTeacherIds, deferredSelectedClassStatuses, classStatusFilterOptions, deferredScheduleTypeFilter, deferredAppliedCalendarClassCodeSearch]);
 
   // ── Analyzed Classes for Quality Table ───────────────────────────────────────
   const analyzedClasses = useMemo(() => {
@@ -3883,7 +3972,7 @@ export default function TeacherSchedulePage() {
     let minMs = Infinity;
     let maxMs = -Infinity;
 
-    filteredSchedulesForCalendar.forEach(schedule => {
+    schedules.forEach(schedule => {
       schedule.slots.forEach(slot => {
         const startMs = new Date(slot.startTime).getTime();
         if (!Number.isFinite(startMs)) return;
@@ -3898,7 +3987,7 @@ export default function TeacherSchedulePage() {
       from: formatLocalDateKey(new Date(minMs)),
       to: formatLocalDateKey(new Date(maxMs)),
     };
-  }, [filteredSchedulesForCalendar]);
+  }, [schedules]);
   
   const allWeeks = useMemo(() => {
     const explicitRange = loadedRange?.from && loadedRange?.to
@@ -4263,6 +4352,13 @@ export default function TeacherSchedulePage() {
                         searchPlaceholder="Tìm giáo viên..."
                         maxDisplay={1}
                       />
+                      <MultiSelect menuPosition="fixed"
+                        options={roleOptions}
+                        selected={calendarSelectedRoles}
+                        onChange={(ids) => startTransition(() => setCalendarSelectedRoles(ids))}
+                        placeholder={calendarSelectedRoles.length > 0 ? `Vai trò (${calendarSelectedRoles.length})` : 'Tất cả vai trò'}
+                        maxDisplay={1}
+                      />
                     </>
                   }
                   quickFilterSlots={hasPreferences && (
@@ -4276,11 +4372,12 @@ export default function TeacherSchedulePage() {
                       showCourses={true}
                     />
                   )}
-                  hasFilter={calendarCentreFilter.length > 0 || calendarSelectedTeachers.length > 0 || calendarSelectedCourseLines.length > 0 || calendarClassCodeSearch.trim() !== '' || appliedCalendarClassCodeSearch !== ''}
+                  hasFilter={calendarCentreFilter.length > 0 || calendarSelectedTeachers.length > 0 || calendarSelectedCourseLines.length > 0 || calendarSelectedRoles.length > 0 || calendarClassCodeSearch.trim() !== '' || appliedCalendarClassCodeSearch !== ''}
                   onClearFilter={() => startTransition(() => {
                     setCalendarCentreFilter([]);
                     setCalendarSelectedTeachers([]);
                     setCalendarSelectedCourseLines([]);
+                    setCalendarSelectedRoles([]);
                     setCalendarClassCodeSearch('');
                     setAppliedCalendarClassCodeSearch('');
                   })}
@@ -4291,6 +4388,7 @@ export default function TeacherSchedulePage() {
                   selectedCentres={calendarCentreFilter}
                   selectedCourseLines={calendarSelectedCourseLines}
                   selectedTeachers={calendarSelectedTeachers}
+                  selectedRoles={calendarSelectedRoles}
                   classCodeSearch={appliedCalendarClassCodeSearch}
                 />
               </>
@@ -4415,6 +4513,7 @@ export default function TeacherSchedulePage() {
                     search={searchTerm}
                     onSearchChange={setSearchTerm}
                     selectedCourseCategories={selectedCourseLines}
+                    selectedTeacherId={toolbarTeacherFilter.selectedTeacherId}
                     finalProductStatsByClassId={finalProductStatsByClassId}
                     finalProductStatsLoading={classStudentWorksLoading}
                     classStatusOptions={classStatusFilterOptions}
