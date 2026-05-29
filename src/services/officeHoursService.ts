@@ -26,6 +26,7 @@ export interface FetchOfficeHoursParams {
   searchString?: string;
   teacher?: string; // Filter by teacher ID
   id_in?: string[]; // Filter by office hour IDs
+  maxItems?: number;
 }
 
 export interface UpdateOfficeHourParams {
@@ -481,6 +482,7 @@ export interface FetchOfficeHoursParams {
   statusIn?: string[];
   typeIn?: string[];
   searchString?: string;
+  maxItems?: number;
 }
 
 export async function fetchOfficeHours(
@@ -691,11 +693,13 @@ export async function fetchOfficeHours(
   const firstResult = await lmsQuery<GetOfficeHoursResponse>({ query, variables: initialVariables });
   const firstPage = firstResult.data.officeHours;
   
-  allOfficeHours = [...firstPage.data];
   total = firstPage.pagination.total;
+  const targetTotal = params.maxItems ? Math.min(total, params.maxItems) : total;
+  const firstPageData = firstPage.data.slice(0, targetTotal);
+  allOfficeHours = [...firstPageData];
   
   if (onProgress) {
-    onProgress(allOfficeHours.length, total, firstPage.data);
+    onProgress(allOfficeHours.length, targetTotal, firstPageData);
   }
 
   // Edge condition: user specifically requested standard single page return
@@ -704,8 +708,8 @@ export async function fetchOfficeHours(
   }
 
   // Step 2: Fire all remaining pages parallelly
-  if (total > PAGE_SIZE) {
-    const totalPages = Math.ceil(total / PAGE_SIZE);
+  if (targetTotal > PAGE_SIZE) {
+    const totalPages = Math.ceil(targetTotal / PAGE_SIZE);
     const remainingPromises: Array<Promise<GetOfficeHoursResponse>> = [];
     let accumulatedLoaded = allOfficeHours.length;
 
@@ -719,10 +723,11 @@ export async function fetchOfficeHours(
       remainingPromises.push(
         lmsQuery<GetOfficeHoursResponse>({ query, variables: pageVariables })
           .then(res => {
-            const chunkData = res.data.officeHours.data;
+            const remainingSlots = Math.max(targetTotal - accumulatedLoaded, 0);
+            const chunkData = res.data.officeHours.data.slice(0, remainingSlots);
             accumulatedLoaded += chunkData.length;
             if (onProgress) {
-              onProgress(accumulatedLoaded, total, chunkData);
+              onProgress(accumulatedLoaded, targetTotal, chunkData);
             }
             return res;
           })
@@ -734,7 +739,9 @@ export async function fetchOfficeHours(
     
     // Combine final array
     for (const res of responses) {
-      const pageData = res.data.officeHours.data;
+      const remainingSlots = Math.max(targetTotal - allOfficeHours.length, 0);
+      if (remainingSlots <= 0) break;
+      const pageData = res.data.officeHours.data.slice(0, remainingSlots);
       allOfficeHours = [...allOfficeHours, ...pageData];
     }
   }

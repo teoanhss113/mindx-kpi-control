@@ -33,6 +33,7 @@ import { fetchTickets } from '@/services/ticketService';
 import { fetchOfficeHours } from '@/services/officeHoursService';
 import { getTeachers } from '@/services/teacherService';
 import { fetchTeacherSchedules } from '@/services/teacherScheduleService';
+import { useTeacherFilterOptions } from '@/hooks/useTeacherFilterOptions';
 import styles from '../../dashboard.module.css';
 
 export default function DashboardPage() {
@@ -43,6 +44,7 @@ export default function DashboardPage() {
   const [centres, setCentres] = useState<Centre[]>([]);
   const [centresLoading, setCentresLoading] = useState(false);
   const [selectedCentres, setSelectedCentres] = useState<string[]>([]);
+  const teacherFilter = useTeacherFilterOptions();
 
   // Date range
   const defaultRange = DATE_UTILS.defaultMonthRange();
@@ -238,7 +240,7 @@ export default function DashboardPage() {
           dateFromObj,
           dateToObj,
           centreIds,
-          undefined,
+          teacherFilter.selectedTeacherId ? [teacherFilter.selectedTeacherId] : undefined,
           (loaded, total) => {
             schLoaded = loaded;
             schTotal = total || 0;
@@ -249,7 +251,7 @@ export default function DashboardPage() {
 
         // 2. All Classes (KPIs)
         fetchAllClasses(
-          { centres: centreIds, ...rangeParams },
+          { centres: centreIds, ...rangeParams, ...(teacherFilter.selectedTeacherId ? { teacherSlot: [teacherFilter.selectedTeacherId] } : {}) },
           (loaded, total) => {
             clsLoaded = loaded;
             clsTotal = total || 0;
@@ -841,6 +843,13 @@ export default function DashboardPage() {
         selectedCentres={selectedCentres}
         onCentresChange={setSelectedCentres}
         centresLoading={centresLoading}
+        teacherSearchValue={teacherFilter.teacherSearch}
+        onTeacherSearchChange={teacherFilter.onTeacherSearchChange}
+        teacherSearchResults={teacherFilter.teacherSearchResults}
+        onTeacherSelect={teacherFilter.onTeacherSelect}
+        selectedTeacherName={teacherFilter.selectedTeacherName}
+        onTeacherClear={teacherFilter.onTeacherClear}
+        teachersLoading={teacherFilter.teachersLoading}
         dateFrom={fromDate}
         dateTo={toDate}
         onDateFromChange={setFromDate}

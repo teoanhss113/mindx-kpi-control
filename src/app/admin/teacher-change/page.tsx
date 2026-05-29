@@ -36,6 +36,7 @@ import { useQuickFilterChips } from '@/hooks/useUserPreferences';
 import { useCSVExportPreferences } from '@/hooks/useCSVExportPreferences';
 import { CACHE_KEYS, MESSAGES, ENTITIES, FORMAT, CLASS_INACTIVE_STATUSES, KPI_LABELS } from '@/constants';
 import { useSharedDateRange, useSharedCentres } from '@/hooks/useSharedFilterState';
+import { useTeacherFilterOptions } from '@/hooks/useTeacherFilterOptions';
 import { exportToCSV, CSVColumn, CSVFormatters } from '@/lib/csvExport';
 import { ProtectedPage } from '@/components/ProtectedPage';
 import styles from '@/app/dashboard.module.css';
@@ -189,6 +190,7 @@ export default function TeacherChangePage() {
   const [selectedCentres, setSelectedCentres] = useSharedCentres();
   
   const [toolbarSelectedCourses, setToolbarSelectedCourses] = useState<string[]>([]); // NEW: Toolbar-level courses
+  const teacherFilter = useTeacherFilterOptions();
   const [abortController, setAbortController] = useState<AbortController | null>(null);
 
   const [search,              setSearch]              = useState('');
@@ -277,7 +279,7 @@ export default function TeacherChangePage() {
       const haveSlotIn = hasDateRange ? haveSlotInDateStringRangeToUtcRange(dateFrom, dateTo) : undefined;
       const centreIds = selectedCentres.length > 0 ? selectedCentres : centres.map(c => c.id);
       const result = await fetchAllClasses(
-        { ...(haveSlotIn ? { haveSlotIn } : {}), centres: centreIds, ...(classCodeSearch.trim() ? { search: classCodeSearch.trim() } : {}) },
+        { ...(haveSlotIn ? { haveSlotIn } : {}), centres: centreIds, ...(teacherFilter.selectedTeacherId ? { teacherSlot: [teacherFilter.selectedTeacherId] } : {}), ...(classCodeSearch.trim() ? { search: classCodeSearch.trim() } : {}) },
         (loaded, total, chunk) => {
           setProgress({ loaded, total });
           accumulated = [...accumulated, ...chunk];
@@ -611,6 +613,13 @@ export default function TeacherChangePage() {
           hasData={classes.length > 0} onClearCache={handleClearCache}
           onCancel={handleCancelFetch}
           showRegionQuickSelect={true}
+          teacherSearchValue={teacherFilter.teacherSearch}
+          onTeacherSearchChange={teacherFilter.onTeacherSearchChange}
+          teacherSearchResults={teacherFilter.teacherSearchResults}
+          onTeacherSelect={teacherFilter.onTeacherSelect}
+          selectedTeacherName={teacherFilter.selectedTeacherName}
+          onTeacherClear={teacherFilter.onTeacherClear}
+          teachersLoading={teacherFilter.teachersLoading}
           classCodeSearch={classCodeSearch}
           onClassCodeSearchChange={setClassCodeSearch}
           quickFilterSlots={

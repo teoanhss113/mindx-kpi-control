@@ -22,6 +22,7 @@ import type { StudentCheckpointScore, StudentDemoScore } from '@/types/classQual
 import type { Centre } from '@/services/centresService';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ProtectedPage } from '@/components/ProtectedPage';
+import { useTeacherFilterOptions } from '@/hooks/useTeacherFilterOptions';
 import styles from '@/app/dashboard.module.css';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -153,6 +154,7 @@ export default function FinalSessionsAdminPage() {
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState({ loaded: 0, total: 0 });
   const [fetchedOnce, setFetchedOnce] = useState(false);
+  const teacherFilter = useTeacherFilterOptions();
 
   // LMS candidates
   const [candidates, setCandidates] = useState<Candidate[]>([]);
@@ -241,7 +243,7 @@ export default function FinalSessionsAdminPage() {
 
     try {
       await fetchAllClasses(
-        { centres: centreIds, ...rangeParams, ...(classCodeSearch.trim() ? { search: classCodeSearch.trim() } : {}) },
+        { centres: centreIds, ...rangeParams, ...(teacherFilter.selectedTeacherId ? { teacherSlot: [teacherFilter.selectedTeacherId] } : {}), ...(classCodeSearch.trim() ? { search: classCodeSearch.trim() } : {}) },
         (loaded, total, chunk) => {
           setProgress({ loaded, total });
           for (const cls of chunk) {
@@ -488,6 +490,13 @@ export default function FinalSessionsAdminPage() {
         progress={progress}
         hasData={candidates.length > 0}
         showRegionQuickSelect={true}
+        teacherSearchValue={teacherFilter.teacherSearch}
+        onTeacherSearchChange={teacherFilter.onTeacherSearchChange}
+        teacherSearchResults={teacherFilter.teacherSearchResults}
+        onTeacherSelect={teacherFilter.onTeacherSelect}
+        selectedTeacherName={teacherFilter.selectedTeacherName}
+        onTeacherClear={teacherFilter.onTeacherClear}
+        teachersLoading={teacherFilter.teachersLoading}
         classCodeSearch={classCodeSearch}
         onClassCodeSearchChange={setClassCodeSearch}
       />

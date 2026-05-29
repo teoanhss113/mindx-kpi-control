@@ -25,6 +25,7 @@ import {
   ActiveStatusBadge,
   CourseCategoryBadge,
   CentreBadge,
+  type DataLimitValue,
 } from '@/components/ui';
 import { LABELS, MESSAGES, ENTITIES, FORMAT, ANIMATION, CACHE_KEYS } from '@/constants';
 import { getTeachers } from '@/services/teacherService';
@@ -70,6 +71,7 @@ export default function TeachersPage() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
+  const [dataLimit, setDataLimit] = useState<DataLimitValue>('all');
 
   // Table filters (for client-side filtering)
   const [tableSelectedCentres, setTableSelectedCentres] = useState<string[]>([]);
@@ -167,7 +169,10 @@ export default function TeachersPage() {
 
       // Fetch teachers automatically handling pagination and incremental progress natively!
       const result = await getTeachers(
-        baseVariables, 
+        {
+          ...baseVariables,
+          ...(dataLimit !== 'all' ? { maxItems: Number(dataLimit) } : {}),
+        },
         controller.signal, 
         (loaded, total) => setLoadingProgress({ loaded, total })
       );
@@ -213,6 +218,7 @@ export default function TeachersPage() {
     setDateFrom('');
     setDateTo('');
     setSelectedStatuses([]);
+    setDataLimit('all');
     setTableSelectedCentres([]);
     setSelectedCourseLines([]);
     setTableSelectedStatuses([]);
@@ -377,6 +383,8 @@ export default function TeachersPage() {
         hasData={teachers.length > 0}
         onClearCache={handleClearCache}
         showRegionQuickSelect={true}
+        dataLimit={dataLimit}
+        onDataLimitChange={setDataLimit}
         quickFilterSlots={
           <>
             {/* User preference chips */}

@@ -279,27 +279,35 @@ export default function UsersPage() {
       }
 
       if (result.success) {
-        // Save permissions if any regions selected
-        if (formData.selectedRegions.length > 0) {
-          const { saveUserPermissions } = await import('@/lib/admin-actions');
-          const permissionsResult = await saveUserPermissions(
-            token,
-            userId,
-            formData.selectedRegions.map(regionId => ({
-              region_id: regionId,
-              courses: formData.courses,
-              can_view: formData.can_view,
-              can_edit: formData.can_edit,
-              can_manage: formData.can_manage,
-            }))
-          );
-          
-          if (!permissionsResult.success) {
-            removeToast(loadingToastId);
-            addToast('Cảnh báo: Lưu phân quyền thất bại - ' + permissionsResult.error, 'error');
-            setSubmitting(false);
-            return;
-          }
+        const selectedRegionIds = formData.selectedRegions.length > 0
+          ? formData.selectedRegions
+          : regions.map(region => region.id);
+
+        if (selectedRegionIds.length === 0) {
+          removeToast(loadingToastId);
+          addToast('Lỗi: Không tìm thấy khu vực để lưu phân quyền', 'error');
+          setSubmitting(false);
+          return;
+        }
+
+        const { saveUserPermissions } = await import('@/lib/admin-actions');
+        const permissionsResult = await saveUserPermissions(
+          token,
+          userId,
+          selectedRegionIds.map(regionId => ({
+            region_id: regionId,
+            courses: formData.courses,
+            can_view: formData.can_view,
+            can_edit: formData.can_edit,
+            can_manage: formData.can_manage,
+          }))
+        );
+        
+        if (!permissionsResult.success) {
+          removeToast(loadingToastId);
+          addToast('Cảnh báo: Lưu phân quyền thất bại - ' + permissionsResult.error, 'error');
+          setSubmitting(false);
+          return;
         }
         
         removeToast(loadingToastId);

@@ -76,8 +76,10 @@ import {
   RescheduleStatusBadge,
   RESCHEDULE_STATUS_LABELS,
   DateRangeInput,
+  type DataLimitValue,
 } from '@/components/ui';
 import { useQuickFilterChips } from '@/hooks/useUserPreferences';
+import { useTeacherFilterOptions } from '@/hooks/useTeacherFilterOptions';
 import {
   CACHE_KEYS,
   LABELS,
@@ -2660,6 +2662,8 @@ export default function TeacherSchedulePage() {
   const [calendarClassCodeSearch, setCalendarClassCodeSearch] = useState('');
   const [appliedCalendarClassCodeSearch, setAppliedCalendarClassCodeSearch] = useState('');
   const [classCodeSearch, setClassCodeSearch] = useState('');
+  const [dataLimit, setDataLimit] = useState<DataLimitValue>('all');
+  const toolbarTeacherFilter = useTeacherFilterOptions();
   const [scheduleTypeFilter, setScheduleTypeFilter] = useState<ScheduleTypeFilter>('ALL');
   const [selectedClassStatuses, setSelectedClassStatuses] = useState<ClassStatusFilter[]>(DEFAULT_CLASS_STATUS_FILTERS);
   const [classStatusFilterOptions, setClassStatusFilterOptions] = useState<SelectOption[]>(LMS_CLASS_STATUS_OPTIONS);
@@ -2834,6 +2838,7 @@ export default function TeacherSchedulePage() {
     setCalendarClassCodeSearch('');
     setAppliedCalendarClassCodeSearch('');
     setSearchTerm('');
+    setDataLimit('all');
     setClassStudentWorks([]);
     setClassStudentWorksLoading(false);
     setStudentWorks([]);
@@ -3000,6 +3005,7 @@ export default function TeacherSchedulePage() {
               ...(toolbarHaveSlotIn ? { haveSlotIn: { from: toolbarHaveSlotIn.from, to: toolbarHaveSlotIn.to } } : {}),
               ...(classStatuses ? { statusIn: classStatuses } : {}),
               ...(centreIds && centreIds.length > 0 ? { centres: centreIds } : {}),
+              ...(toolbarTeacherFilter.selectedTeacherId ? { teacherSlot: [toolbarTeacherFilter.selectedTeacherId] } : {}),
               ...(classCodeSearch.trim() ? { search: classCodeSearch.trim() } : {}),
             },
             (loaded, total) => {
@@ -3007,7 +3013,9 @@ export default function TeacherSchedulePage() {
               clsTotal = total || 0;
               refreshProgress();
             },
-            signal
+            signal,
+            undefined,
+            dataLimit !== 'all' ? Number(dataLimit) : undefined
           )
         : Promise.resolve([] as Class[]);
 
@@ -3016,6 +3024,8 @@ export default function TeacherSchedulePage() {
             {
               ...(toolbarHaveSlotIn ? { timeFrom: toolbarHaveSlotIn.from, timeTo: toolbarHaveSlotIn.to } : {}),
               ...(centreIds && centreIds.length > 0 ? { centreIn: centreIds } : {}),
+              ...(toolbarTeacherFilter.selectedTeacherId ? { teacher: toolbarTeacherFilter.selectedTeacherId } : {}),
+              ...(dataLimit !== 'all' ? { maxItems: Number(dataLimit) } : {}),
             },
             (loaded, total) => {
               ohLoaded = loaded;
@@ -3048,7 +3058,7 @@ export default function TeacherSchedulePage() {
         weekDateFrom,
         weekDateTo,
         centreIds,
-        undefined,
+        toolbarTeacherFilter.selectedTeacherId ? [toolbarTeacherFilter.selectedTeacherId] : undefined,
         undefined, // CPU computation only, no network required
         signal,
         scopedClasses, // preFetchedClasses
@@ -3184,7 +3194,7 @@ export default function TeacherSchedulePage() {
         setProgress({ loaded: 100, total: 100 });
       }
     }
-  }, [centres, selectedCentres, calendarSelectedTeachers, calendarSelectedCourseLines, selectedTeachers, selectedCourseLines, selectedClassStatuses, classStatusFilterOptions, scheduleTypeFilter, exemptedSessions, exemptOneOnOneClasses, holidayPeriods, addToast, classCodeSearch, fromDate, toDate]);
+  }, [centres, selectedCentres, calendarSelectedTeachers, calendarSelectedCourseLines, selectedTeachers, selectedCourseLines, selectedClassStatuses, classStatusFilterOptions, scheduleTypeFilter, exemptedSessions, exemptOneOnOneClasses, holidayPeriods, addToast, classCodeSearch, dataLimit, fromDate, toDate, toolbarTeacherFilter.selectedTeacherId]);
 
   const handleCancelFetch = () => {
     if (abortRef.current) {
@@ -3868,15 +3878,40 @@ export default function TeacherSchedulePage() {
   }, [rawClasses]);
 
   // ── Calendar View Data ──────────────────────────────────────────────────────
+
+  const loadedSlotDateRange = useMemo(() => {
+    let minMs = Infinity;
+    let maxMs = -Infinity;
+
+    filteredSchedulesForCalendar.forEach(schedule => {
+      schedule.slots.forEach(slot => {
+        const startMs = new Date(slot.startTime).getTime();
+        if (!Number.isFinite(startMs)) return;
+        minMs = Math.min(minMs, startMs);
+        maxMs = Math.max(maxMs, startMs);
+      });
+    });
+
+    if (!Number.isFinite(minMs) || !Number.isFinite(maxMs)) return null;
+
+    return {
+      from: formatLocalDateKey(new Date(minMs)),
+      to: formatLocalDateKey(new Date(maxMs)),
+    };
+  }, [filteredSchedulesForCalendar]);
   
   const allWeeks = useMemo(() => {
-    const rangeFrom = loadedRange?.from || fromDate;
-    const rangeTo = loadedRange?.to || toDate;
-    if (!rangeFrom || !rangeTo) return [];
+    const explicitRange = loadedRange?.from && loadedRange?.to
+      ? loadedRange
+      : fromDate && toDate
+        ? { from: fromDate, to: toDate }
+        : null;
+    const derivedRange = explicitRange || loadedSlotDateRange;
+    if (!derivedRange?.from || !derivedRange?.to) return [getWeekDates(new Date())];
     
     const weeks: Date[][] = [];
-    const start = new Date(rangeFrom);
-    const end = new Date(rangeTo);
+    const start = parseLocalDateInput(derivedRange.from);
+    const end = parseLocalDateInput(derivedRange.to, true);
     const current = new Date(start);
     const day = current.getDay();
     const diff = current.getDate() - day + (day === 0 ? -6 : 1);
@@ -3888,11 +3923,23 @@ export default function TeacherSchedulePage() {
       current.setDate(current.getDate() + 7);
     }
     return weeks;
-  }, [loadedRange, fromDate, toDate]);
+  }, [loadedRange, fromDate, toDate, loadedSlotDateRange]);
   
   useEffect(() => {
-    setCurrentWeekIndex(0);
-  }, [loadedRange]);
+    setCurrentWeekIndex(currentIndex => {
+      if (allWeeks.length === 0) return 0;
+      const today = new Date();
+      const todayIndex = allWeeks.findIndex(week => {
+        const start = new Date(week[0]);
+        const end = new Date(week[6]);
+        start.setHours(0, 0, 0, 0);
+        end.setHours(23, 59, 59, 999);
+        return today >= start && today <= end;
+      });
+      if (todayIndex >= 0) return todayIndex;
+      return Math.min(currentIndex, allWeeks.length - 1);
+    });
+  }, [allWeeks]);
 
   const dynamicTimeSlots = useMemo(() => {
     const timeRangeSet = new Set<string>();
@@ -4106,8 +4153,17 @@ export default function TeacherSchedulePage() {
           hasData={schedules.length > 0 || rawClasses.length > 0}
           onClearCache={handleClearScheduleData}
           showRegionQuickSelect={true}
+          teacherSearchValue={toolbarTeacherFilter.teacherSearch}
+          onTeacherSearchChange={toolbarTeacherFilter.onTeacherSearchChange}
+          teacherSearchResults={toolbarTeacherFilter.teacherSearchResults}
+          onTeacherSelect={toolbarTeacherFilter.onTeacherSelect}
+          selectedTeacherName={toolbarTeacherFilter.selectedTeacherName}
+          onTeacherClear={toolbarTeacherFilter.onTeacherClear}
+          teachersLoading={toolbarTeacherFilter.teachersLoading}
           classCodeSearch={classCodeSearch}
           onClassCodeSearchChange={setClassCodeSearch}
+          dataLimit={dataLimit}
+          onDataLimitChange={setDataLimit}
           quickFilterSlots={
             <div className={styles.toolbarCluster}>
               {hasPreferences && (

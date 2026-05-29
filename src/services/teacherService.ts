@@ -90,22 +90,23 @@ const GET_TEACHERS_QUERY = /* graphql */ `
 `;
 
 export async function getTeachers(
-  variables: Partial<GetTeachersVariables> = {},
+  variables: Partial<GetTeachersVariables> & { maxItems?: number } = {},
   signal?: AbortSignal,
   onProgress?: (loaded: number, total: number, chunk: Teacher[]) => void
 ): Promise<{ data: Teacher[]; total: number }> {
-  const ITEMS_PER_PAGE = variables.itemsPerPage || 100;
+  const { maxItems, ...requestVariables } = variables;
+  const ITEMS_PER_PAGE = requestVariables.itemsPerPage || 100;
   
   const baseVariables: GetTeachersVariables = {
     type: 'OFFSET',
     search: '',
-    pageIndex: variables.pageIndex || 0,
+    pageIndex: requestVariables.pageIndex || 0,
     itemsPerPage: ITEMS_PER_PAGE,
     orderBy: 'createdAt_desc',
     centers: [],
     teacherPointRange: [null, null],
     joinedDate: [null, null],
-    ...variables,
+    ...requestVariables,
   };
 
   // Step 1: Fetch initial page to get count
@@ -116,22 +117,23 @@ export async function getTeachers(
     signal,
   });
 
-  const firstPageData = response.data.teachers.data;
   const total = response.data.teachers.pagination.total;
+  const targetTotal = maxItems ? Math.min(total, maxItems) : total;
+  const firstPageData = response.data.teachers.data.slice(0, targetTotal);
   
-  let allTeachers = [...firstPageData];
+  const allTeachers = [...firstPageData];
   
   // Report initial progress
-  onProgress?.(allTeachers.length, total, firstPageData);
+  onProgress?.(allTeachers.length, targetTotal, firstPageData);
 
   // If caller asked for ONE specific page only, return now.
-  if (variables.pageIndex !== undefined) {
+  if (requestVariables.pageIndex !== undefined) {
     return { data: firstPageData, total };
   }
 
   // Step 2: Parallel fetch remaining pages
-  if (total > ITEMS_PER_PAGE) {
-    const totalPages = Math.ceil(total / ITEMS_PER_PAGE);
+  if (targetTotal > ITEMS_PER_PAGE) {
+    const totalPages = Math.ceil(targetTotal / ITEMS_PER_PAGE);
     const remainingPromises: Array<Promise<GetTeachersResponse>> = [];
     let accumulatedLoaded = allTeachers.length;
 
@@ -144,9 +146,10 @@ export async function getTeachers(
           operationName: 'GetTeachers',
           signal,
         }).then(res => {
-          const chunkData = res.data.teachers.data;
+          const remainingSlots = Math.max(targetTotal - accumulatedLoaded, 0);
+          const chunkData = res.data.teachers.data.slice(0, remainingSlots);
           accumulatedLoaded += chunkData.length;
-          onProgress?.(accumulatedLoaded, total, chunkData);
+          onProgress?.(accumulatedLoaded, targetTotal, chunkData);
           return res;
         })
       );
@@ -157,7 +160,9 @@ export async function getTeachers(
     
     // Combine final set
     for (const res of responses) {
-      allTeachers.push(...res.data.teachers.data);
+      const remainingSlots = Math.max(targetTotal - allTeachers.length, 0);
+      if (remainingSlots <= 0) break;
+      allTeachers.push(...res.data.teachers.data.slice(0, remainingSlots));
     }
   }
 

@@ -565,7 +565,8 @@ export async function fetchAllClasses(
   overrides: Partial<GetClassesVariables> = {},
   onProgress?: (loaded: number, total: number, chunk: Class[]) => void,
   signal?: AbortSignal,
-  queryOverride?: string
+  queryOverride?: string,
+  maxItems?: number
 ): Promise<Class[]> {
   const allClasses: Class[] = [];
   const debugPages: Array<{ pageIndex: number; count: number; total: number; names: string[] }> = [];
@@ -599,23 +600,25 @@ export async function fetchAllClasses(
 
   const firstPage = firstResponse.data.classes;
   total = firstPage.pagination.total;
-  allClasses.push(...firstPage.data);
+  const targetTotal = maxItems ? Math.min(total, maxItems) : total;
+  const firstPageData = firstPage.data.slice(0, targetTotal);
+  allClasses.push(...firstPageData);
   debugPages.push({
     pageIndex: 0,
-    count: firstPage.data.length,
+    count: firstPageData.length,
     total,
-    names: firstPage.data.map(cls => cls.name),
+    names: firstPageData.map(cls => cls.name),
   });
   const effectivePageSize = firstPage.data.length > 0 && firstPage.data.length < ITEMS_PER_PAGE
     ? firstPage.data.length
     : ITEMS_PER_PAGE;
   
   // Report initial progress
-  onProgress?.(allClasses.length, total, firstPage.data);
+  onProgress?.(allClasses.length, targetTotal, firstPageData);
 
   // Step 2: Parallel fetch remaining pages if necessary
-  if (total > allClasses.length && effectivePageSize > 0) {
-    const totalPages = Math.ceil(total / effectivePageSize);
+  if (targetTotal > allClasses.length && effectivePageSize > 0) {
+    const totalPages = Math.ceil(targetTotal / effectivePageSize);
     const remainingPromises: Array<Promise<ClassesResponse>> = [];
     let accumulatedLoaded = allClasses.length;
 
@@ -629,15 +632,17 @@ export async function fetchAllClasses(
           signal,
         }).then(response => {
           // Update live progress AS EACH PROMISE RESOLVES individually!
-          const incomingCount = response.data.classes.data.length;
+          const remainingSlots = Math.max(targetTotal - accumulatedLoaded, 0);
+          const chunkData = response.data.classes.data.slice(0, remainingSlots);
+          const incomingCount = chunkData.length;
           accumulatedLoaded += incomingCount;
           debugPages.push({
             pageIndex: i,
             count: incomingCount,
             total: response.data.classes.pagination.total,
-            names: response.data.classes.data.map(cls => cls.name),
+            names: chunkData.map(cls => cls.name),
           });
-          onProgress?.(accumulatedLoaded, total, response.data.classes.data);
+          onProgress?.(accumulatedLoaded, targetTotal, chunkData);
           return response;
         })
       );
@@ -648,7 +653,9 @@ export async function fetchAllClasses(
     
     // Combine results in memory for return
     for (const res of responses) {
-      allClasses.push(...res.data.classes.data);
+      const remainingSlots = Math.max(targetTotal - allClasses.length, 0);
+      if (remainingSlots <= 0) break;
+      allClasses.push(...res.data.classes.data.slice(0, remainingSlots));
     }
   }
 

@@ -10,6 +10,7 @@ import { dateStringRangeToUtcRange, fetchAllClasses } from '@/services/classesSe
 import { searchTeachers, type Teacher } from '@/services/officeHoursService';
 import { addJudgeTeacherToSession } from '@/services/teacherScheduleService';
 import { getCourseCategory } from '@/lib/courseCategories';
+import { useTeacherFilterOptions } from '@/hooks/useTeacherFilterOptions';
 import { LABELS, MESSAGES } from '@/constants';
 import type { Class, Session } from '@/types/classes';
 import styles from '@/app/dashboard.module.css';
@@ -160,6 +161,7 @@ export default function BatchDetailPage() {
   const [showAddPanel, setShowAddPanel] = useState(false);
   const [centres, setCentres] = useState<CentreOption[]>([]);
   const [lmsSelectedCentres, setLmsSelectedCentres] = useState<string[]>([]);
+  const lmsTeacherFilter = useTeacherFilterOptions();
   const [lmsProgress, setLmsProgress] = useState({ loaded: 0, total: 0 });
   const [lmsLoading, setLmsLoading] = useState(false);
   const [candidates, setCandidates] = useState<LmsCandidate[]>([]);
@@ -280,7 +282,7 @@ export default function BatchDetailPage() {
       const found: LmsCandidate[] = [];
 
       await fetchAllClasses(
-        { centres: centreIds, ...rangeParams },
+        { centres: centreIds, ...rangeParams, ...(lmsTeacherFilter.selectedTeacherId ? { teacherSlot: [lmsTeacherFilter.selectedTeacherId] } : {}) },
         (loaded, total, chunk) => {
           setLmsProgress({ loaded, total });
           for (const cls of chunk) {
@@ -860,6 +862,13 @@ export default function BatchDetailPage() {
           selectedCentres={lmsSelectedCentres}
           onCentresChange={setLmsSelectedCentres}
           centresLoading={false}
+          teacherSearchValue={lmsTeacherFilter.teacherSearch}
+          onTeacherSearchChange={lmsTeacherFilter.onTeacherSearchChange}
+          teacherSearchResults={lmsTeacherFilter.teacherSearchResults}
+          onTeacherSelect={lmsTeacherFilter.onTeacherSelect}
+          selectedTeacherName={lmsTeacherFilter.selectedTeacherName}
+          onTeacherClear={lmsTeacherFilter.onTeacherClear}
+          teachersLoading={lmsTeacherFilter.teachersLoading}
           dateFrom={lmsDateFrom}
           dateTo={lmsDateTo}
           onDateFromChange={setLmsDateFrom}

@@ -7,6 +7,7 @@ import { AnalyzedClassForQuality } from '@/types/classQuality';
 import { analyzeClassQuality, DEFAULT_EXEMPTED_SESSIONS } from '@/lib/classQualityAnalysis';
 import { useToast, Toolbar, EmptyState } from '@/components/ui';
 import { MESSAGES, ENTITIES } from '@/constants';
+import { useTeacherFilterOptions } from '@/hooks/useTeacherFilterOptions';
 import { ClassQualityUnifiedTable } from '@/components/ClassQualityUnifiedTable';
 
 interface Props {
@@ -38,6 +39,7 @@ export function ClassQualityTab({
   const [abortController, setAbortController] = useState<AbortController | null>(null);
   const [search, setSearch] = useState('');
   const [classCodeSearch, setClassCodeSearch] = useState('');
+  const teacherFilter = useTeacherFilterOptions();
 
   const loadData = async () => {
     if ((fromDate && !toDate) || (!fromDate && toDate)) {
@@ -66,7 +68,7 @@ export function ClassQualityTab({
       const centreIds = selectedCentres.length > 0 ? selectedCentres : centres.map(c => c.id);
       
       const result = await fetchAllClasses(
-        { ...(haveSlotIn ? { haveSlotIn } : {}), centres: centreIds, ...(classCodeSearch.trim() ? { search: classCodeSearch.trim() } : {}) },
+        { ...(haveSlotIn ? { haveSlotIn } : {}), centres: centreIds, ...(teacherFilter.selectedTeacherId ? { teacherSlot: [teacherFilter.selectedTeacherId] } : {}), ...(classCodeSearch.trim() ? { search: classCodeSearch.trim() } : {}) },
         (loaded, total, chunk) => {
           setProgress({ loaded, total });
           accumulated = [...accumulated, ...chunk];
@@ -128,6 +130,13 @@ export function ClassQualityTab({
         hasData={classes.length > 0}
         onClearCache={() => setClasses([])}
         showRegionQuickSelect={true}
+        teacherSearchValue={teacherFilter.teacherSearch}
+        onTeacherSearchChange={teacherFilter.onTeacherSearchChange}
+        teacherSearchResults={teacherFilter.teacherSearchResults}
+        onTeacherSelect={teacherFilter.onTeacherSelect}
+        selectedTeacherName={teacherFilter.selectedTeacherName}
+        onTeacherClear={teacherFilter.onTeacherClear}
+        teachersLoading={teacherFilter.teachersLoading}
         classCodeSearch={classCodeSearch}
         onClassCodeSearchChange={setClassCodeSearch}
       />

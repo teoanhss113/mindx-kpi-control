@@ -258,6 +258,7 @@ export interface GetClassesVariables {
   itemsPerPage: number;
   orderBy?: string;
   type?: string;
+  teacherId?: string;
   teacherSlot?: string[];
   passedSessionIndex?: number | null;
   unpassedSessionIndex?: number | null;

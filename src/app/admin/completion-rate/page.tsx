@@ -26,13 +26,14 @@ import {
   KPIThresholdSuggestions,
   CSVExportSettings, FilterChip, SortableColumnWithCopy, type CSVColumnConfig,
   COMPLETION_STATUS_LABELS, CompletionStatusBadge, type CompletionStatusKind,
-  Badge, CourseCategoryBadge, CentreBadge,
+  Badge, CourseCategoryBadge, CentreBadge, type DataLimitValue,
 } from '@/components/ui';
 import { useTableSort } from '@/hooks/useTableSort';
 import { useQuickFilterChips } from '@/hooks/useUserPreferences';
 import { useCSVExportPreferences } from '@/hooks/useCSVExportPreferences';
 import { CACHE_KEYS, LABELS, MESSAGES, ENTITIES, FORMAT, CLASS_INACTIVE_STATUSES, KPI_LABELS } from '@/constants';
 import { useSharedDateRange, useSharedCentres } from '@/hooks/useSharedFilterState';
+import { useTeacherFilterOptions } from '@/hooks/useTeacherFilterOptions';
 import { exportToCSV, CSVColumn, CSVFormatters } from '@/lib/csvExport';
 import { isExemptStudent, DEFAULT_EXEMPTED_REASONS } from '@/lib/kpiCalculations';
 import styles from '../../dashboard.module.css';
@@ -99,6 +100,7 @@ export default function DashboardPage() {
   const [selectedCentres, setSelectedCentres, centresLoaded] = useSharedCentres();
   
   const [toolbarSelectedCourses, setToolbarSelectedCourses] = useState<string[]>([]); // NEW: Toolbar-level courses
+  const teacherFilter = useTeacherFilterOptions();
 
   // Quick filter chips from user preferences
   const { hasPreferences } = useQuickFilterChips();
@@ -110,6 +112,7 @@ export default function DashboardPage() {
   const [rateRange, setRateRange] = useState<[number, number]>([0, 100]);
   const [showDemoOnly, setShowDemoOnly] = useState(false);
   const [classCodeSearch, setClassCodeSearch] = useState('');
+  const [dataLimit, setDataLimit] = useState<DataLimitValue>('all');
   const deferredSearch = useDeferredValue(search);
   const deferredSelectedCourseLines = useDeferredValue(selectedCourseLines);
   const deferredFilterCentres = useDeferredValue(filterCentres);
@@ -216,7 +219,7 @@ export default function DashboardPage() {
         ? dateStringRangeToUtcRange(fromDate, toDate)
         : {};
       const centreIds = selectedCentres.length > 0 ? selectedCentres : centres.map(c => c.id);
-      const result = await fetchAllClasses({ ...rangeParams, centres: centreIds, ...(classCodeSearch.trim() ? { search: classCodeSearch.trim() } : {}) }, (loaded, total, chunk) => {
+      const result = await fetchAllClasses({ ...rangeParams, centres: centreIds, ...(teacherFilter.selectedTeacherId ? { teacherSlot: [teacherFilter.selectedTeacherId] } : {}), ...(classCodeSearch.trim() ? { search: classCodeSearch.trim() } : {}) }, (loaded, total, chunk) => {
         setProgress({ loaded, total });
         curClasses = [...curClasses, ...chunk];
         setClasses([...curClasses]);
@@ -235,7 +238,7 @@ export default function DashboardPage() {
         });
         setExemptedReasons({ ...curReasons });
         setExemptedCourses({ ...curExcluded });
-      }, controller.signal, GET_CLASSES_LIGHT_QUERY);
+      }, controller.signal, GET_CLASSES_LIGHT_QUERY, dataLimit !== 'all' ? Number(dataLimit) : undefined);
       await setCache(CACHE_KEYS.COMPLETION, { classes: result, exemptedReasons: curReasons, exemptedCourses: curExcluded, timestamp: Date.now() });
       removeToast(tid);
       addToast(MESSAGES.LOADING.SUCCESS(result.length, ENTITIES.CLASSES), 'success');
@@ -263,6 +266,7 @@ export default function DashboardPage() {
   const handleClearCache = async () => {
     await clearCache(CACHE_KEYS.COMPLETION);
     setClasses([]); setExemptedReasons({}); setExemptedCourses({});
+    setDataLimit('all');
     addToast(MESSAGES.CACHE.CLEARED, 'success');
   };
 
@@ -556,8 +560,17 @@ export default function DashboardPage() {
             hasData={classes.length > 0} onClearCache={handleClearCache}
             onCancel={handleCancelFetch}
             showRegionQuickSelect={true}
+            teacherSearchValue={teacherFilter.teacherSearch}
+            onTeacherSearchChange={teacherFilter.onTeacherSearchChange}
+            teacherSearchResults={teacherFilter.teacherSearchResults}
+            onTeacherSelect={teacherFilter.onTeacherSelect}
+            selectedTeacherName={teacherFilter.selectedTeacherName}
+            onTeacherClear={teacherFilter.onTeacherClear}
+            teachersLoading={teacherFilter.teachersLoading}
             classCodeSearch={classCodeSearch}
             onClassCodeSearchChange={setClassCodeSearch}
+            dataLimit={dataLimit}
+            onDataLimitChange={setDataLimit}
           quickFilterSlots={
             hasPreferences && (
               <QuickFilterChips

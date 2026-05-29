@@ -42,6 +42,7 @@ import styles from '@/app/dashboard.module.css'
 import { DATE_RANGE_LABELS, LABELS } from '@/constants'
 import { CentreSelect as CentreSelectComponent } from './CentreSelect'
 import { FilterChip } from './FilterChip'
+import { UserSearchInput, type UserSearchResult } from './UserSearchInput'
 
 export { CopyClassCodesButton } from './CopyClassCodesButton'
 export { SortableColumnWithCopy } from './SortableColumnWithCopy'
@@ -442,6 +443,15 @@ export interface SelectOption {
   isRegion?: boolean // Flag to identify region options
   regionCentreIds?: string[] // Centre IDs in this region (for checking if region is fully selected)
 }
+
+export type DataLimitValue = '20' | '50' | '100' | 'all'
+
+const DATA_LIMIT_OPTIONS: readonly { value: DataLimitValue; label: string }[] = [
+  { value: '20', label: '20' },
+  { value: '50', label: '50' },
+  { value: '100', label: '100' },
+  { value: 'all', label: 'Toàn bộ' },
+]
 
 export function MultiSelect({
   options,
@@ -1480,8 +1490,18 @@ export const Toolbar = React.memo(function Toolbar({
   quickFilterSlots,
   filterToIds,
   showRegionQuickSelect = true,
+  teacherSearchValue,
+  onTeacherSearchChange,
+  teacherSearchResults = [],
+  onTeacherSelect,
+  selectedTeacherName,
+  onTeacherClear,
+  teachersLoading = false,
   classCodeSearch,
   onClassCodeSearchChange,
+  dataLimit,
+  onDataLimitChange,
+  dataLimitLabel = 'Số lượng dữ liệu',
 }: {
   centres?: { id: string; shortName: string; name: string }[]
   centreOptions?: SelectOption[]
@@ -1502,8 +1522,18 @@ export const Toolbar = React.memo(function Toolbar({
   quickFilterSlots?: React.ReactNode
   filterToIds?: string[]
   showRegionQuickSelect?: boolean
+  teacherSearchValue?: string
+  onTeacherSearchChange?: (v: string) => void
+  teacherSearchResults?: UserSearchResult[]
+  onTeacherSelect?: (teacher: UserSearchResult) => void
+  selectedTeacherName?: string
+  onTeacherClear?: () => void
+  teachersLoading?: boolean
   classCodeSearch?: string
   onClassCodeSearchChange?: (v: string) => void
+  dataLimit?: DataLimitValue
+  onDataLimitChange?: (v: DataLimitValue) => void
+  dataLimitLabel?: string
 }) {
   return (
     <div className={styles.toolbar}>
@@ -1585,6 +1615,28 @@ export const Toolbar = React.memo(function Toolbar({
 
         <div className={styles.toolbarSeparator} />
 
+        {onTeacherSearchChange && onTeacherSelect && (
+          <>
+            <div className={styles.dateControls}>
+              <span className={styles.dateLabel}>{LABELS.TEACHER}</span>
+              <div style={{ width: 220 }}>
+                <UserSearchInput
+                  value={teacherSearchValue || ''}
+                  onChange={onTeacherSearchChange}
+                  onSelect={onTeacherSelect}
+                  onClear={onTeacherClear}
+                  results={teacherSearchResults}
+                  loading={teachersLoading}
+                  placeholder={LABELS.SEARCH_TEACHER}
+                  selectedUserName={selectedTeacherName}
+                />
+              </div>
+            </div>
+
+            <div className={styles.toolbarSeparator} />
+          </>
+        )}
+
         {/* Date range */}
         <DateRangeInput
           dateFrom={dateFrom}
@@ -1599,6 +1651,19 @@ export const Toolbar = React.memo(function Toolbar({
         {quickFilterSlots && (
           <>
             {quickFilterSlots}
+            <div className={styles.toolbarSeparator} />
+          </>
+        )}
+
+        {dataLimit !== undefined && onDataLimitChange && (
+          <>
+            <CompactSelect<DataLimitValue>
+              label={dataLimitLabel}
+              value={dataLimit}
+              options={DATA_LIMIT_OPTIONS}
+              onChange={onDataLimitChange}
+              menuPosition="fixed"
+            />
             <div className={styles.toolbarSeparator} />
           </>
         )}

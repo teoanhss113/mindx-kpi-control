@@ -16,7 +16,7 @@ import { getCache, setCache, clearCache } from '@/lib/idb';
 import { getOfficeHourCategory } from '@/lib/courseCategories';
 import { sendNotification, NotificationTemplates } from '@/lib/sendNotification';
 import { OfficeHour, OFFICE_HOUR_STATUS, OFFICE_HOUR_TYPE } from '@/types/officeHours';
-import { useToast, ToastContainer, initials, EmptyState, Toolbar, SelectOption, TableGroupHeader, AdminTableSection, Modal, ModalHeader, MultiSelect, TableToolbar, ChartSectionHeader, StandardXAxis, StandardYAxisCategory, StandardYAxisNumber, ChartLegend, ComposedChartConfig, CustomTooltip, UserSearchInput, type UserSearchResult, ModalFooter, CentreSelect, QuickFilterChips, ShiftRequestSuggestions, type ShiftRequest, OfficeHourTypeBadge, getOfficeHourTypeLabel, KPIThresholdSuggestions, KPIStatCard, Icon, ViewModeToggle, DetailGrid, DetailField, DetailText, Badge, CentreBadge, RawStatusBadge, getRawStatusVariant } from '@/components/ui';
+import { useToast, ToastContainer, initials, EmptyState, Toolbar, SelectOption, TableGroupHeader, AdminTableSection, Modal, ModalHeader, MultiSelect, TableToolbar, ChartSectionHeader, StandardXAxis, StandardYAxisCategory, StandardYAxisNumber, ChartLegend, ComposedChartConfig, CustomTooltip, UserSearchInput, type UserSearchResult, ModalFooter, CentreSelect, QuickFilterChips, ShiftRequestSuggestions, type ShiftRequest, OfficeHourTypeBadge, getOfficeHourTypeLabel, KPIThresholdSuggestions, KPIStatCard, Icon, ViewModeToggle, DetailGrid, DetailField, DetailText, Badge, CentreBadge, RawStatusBadge, getRawStatusVariant, type DataLimitValue } from '@/components/ui';
 import { useQuickFilterChips } from '@/hooks/useUserPreferences';
 import { PageLayout } from '@/components/PageLayout';
 import { getNavItemsWithRouter } from '@/lib/navigation';
@@ -24,6 +24,7 @@ import { useAllowedPages } from '@/hooks/useAllowedPages';
 import { useFilterOptions } from '@/hooks/useFilterOptions';
 import { CACHE_KEYS, MESSAGES, ENTITIES, LABELS, CHART_COLORS, KPI_LABELS } from '@/constants';
 import { useSharedDateRange, useSharedCentres } from '@/hooks/useSharedFilterState';
+import { useTeacherFilterOptions } from '@/hooks/useTeacherFilterOptions';
 import { conversionColor, conversionScore, KPI_COLORS, CONVERSION_LEGEND } from '@/lib/kpiScoring';
 import { ProtectedPage } from '@/components/ProtectedPage';
 import styles from '../../dashboard.module.css';
@@ -109,6 +110,8 @@ function OfficeHoursPageInner() {
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState({ loaded: 0, total: 0 });
   const [abortController, setAbortController] = useState<AbortController | null>(null);
+  const [dataLimit, setDataLimit] = useState<DataLimitValue>('all');
+  const toolbarTeacherFilter = useTeacherFilterOptions();
 
   // Shared filter state (synced across pages)
   const [timeFrom, timeTo, setTimeFrom, setTimeTo, datesLoaded] = useSharedDateRange();
@@ -359,6 +362,8 @@ function OfficeHoursPageInner() {
       const result = await fetchOfficeHours(
         {
           centreIn: resolvedCentres.length > 0 ? resolvedCentres : undefined,
+          teacher: toolbarTeacherFilter.selectedTeacherId || undefined,
+          ...(dataLimit !== 'all' ? { maxItems: Number(dataLimit) } : {}),
           ...rangeParams,
         },
         (loaded, total, chunk) => {
@@ -413,6 +418,7 @@ function OfficeHoursPageInner() {
     setSelectedStatuses([]);
     setSelectedTypes([]);
     setSearchQuery('');
+    setDataLimit('all');
     addToast(MESSAGES.CACHE.CLEARED, 'success');
   };
 
@@ -1078,6 +1084,15 @@ function OfficeHoursPageInner() {
           hasData={officeHours.length > 0}
           onClearCache={handleClearCache}
           showRegionQuickSelect={true}
+          teacherSearchValue={toolbarTeacherFilter.teacherSearch}
+          onTeacherSearchChange={toolbarTeacherFilter.onTeacherSearchChange}
+          teacherSearchResults={toolbarTeacherFilter.teacherSearchResults}
+          onTeacherSelect={toolbarTeacherFilter.onTeacherSelect}
+          selectedTeacherName={toolbarTeacherFilter.selectedTeacherName}
+          onTeacherClear={toolbarTeacherFilter.onTeacherClear}
+          teachersLoading={toolbarTeacherFilter.teachersLoading}
+          dataLimit={dataLimit}
+          onDataLimitChange={setDataLimit}
           quickFilterSlots={
             hasPreferences && (
               <QuickFilterChips
