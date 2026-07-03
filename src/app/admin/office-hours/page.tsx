@@ -16,7 +16,7 @@ import { getCache, setCache, clearCache } from '@/lib/idb';
 import { getOfficeHourCategory } from '@/lib/courseCategories';
 import { sendNotification, NotificationTemplates } from '@/lib/sendNotification';
 import { OfficeHour, OFFICE_HOUR_STATUS, OFFICE_HOUR_TYPE } from '@/types/officeHours';
-import { useToast, ToastContainer, initials, EmptyState, Toolbar, SelectOption, TableGroupHeader, AdminTableSection, Modal, ModalHeader, MultiSelect, TableToolbar, ChartSectionHeader, StandardXAxis, StandardYAxisCategory, StandardYAxisNumber, ChartLegend, ComposedChartConfig, CustomTooltip, UserSearchInput, type UserSearchResult, ModalFooter, CentreSelect, QuickFilterChips, ShiftRequestSuggestions, type ShiftRequest, OfficeHourTypeBadge, getOfficeHourTypeLabel, KPIThresholdSuggestions, KPIStatCard, Icon, ViewModeToggle, DetailGrid, DetailField, DetailText, Badge, CentreBadge, RawStatusBadge, getRawStatusVariant, type DataLimitValue } from '@/components/ui';
+import { useToast, ToastContainer, initials, EmptyState, Toolbar, SelectOption, TableGroupHeader, AdminTableSection, Modal, ModalHeader, MultiSelect, TableToolbar, ChartSectionHeader, StandardXAxis, StandardYAxisCategory, StandardYAxisNumber, ChartLegend, ComposedChartConfig, CustomTooltip, UserSearchInput, type UserSearchResult, ModalFooter, CentreSelect, QuickFilterChips, ShiftRequestSuggestions, type ShiftRequest, OfficeHourTypeBadge, getOfficeHourTypeLabel, KPIThresholdSuggestions, KPIStatCard, Icon, ViewModeToggle, DetailGrid, DetailField, DetailText, Badge, CentreBadge, RawStatusBadge, getRawStatusVariant, ExportButton, CSVExportSettings, type CSVColumnConfig, type DataLimitValue } from '@/components/ui';
 import { useQuickFilterChips } from '@/hooks/useUserPreferences';
 import { PageLayout } from '@/components/PageLayout';
 import { getNavItemsWithRouter } from '@/lib/navigation';
@@ -25,7 +25,9 @@ import { useFilterOptions } from '@/hooks/useFilterOptions';
 import { CACHE_KEYS, MESSAGES, ENTITIES, LABELS, CHART_COLORS, KPI_LABELS } from '@/constants';
 import { useSharedDateRange, useSharedCentres } from '@/hooks/useSharedFilterState';
 import { useTeacherFilterOptions } from '@/hooks/useTeacherFilterOptions';
+import { useCSVExportPreferences } from '@/hooks/useCSVExportPreferences';
 import { conversionColor, conversionScore, KPI_COLORS, CONVERSION_LEGEND } from '@/lib/kpiScoring';
+import { exportToCSV, CSVColumn, CSVFormatters } from '@/lib/csvExport';
 import { ProtectedPage } from '@/components/ProtectedPage';
 import styles from '../../dashboard.module.css';
 
@@ -53,6 +55,70 @@ const DEFAULT_EXEMPT_STATUSES = ['ABANDONED', 'DENIED', 'REJECTED'];
 const DEFAULT_EXEMPT_APPOINTMENT_STATUSES = ['CANCELED'];
 const OFFICE_HOUR_LIST_GRID = 'minmax(0, 1.2fr) minmax(0, 0.8fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 0.7fr) minmax(0, 0.6fr) minmax(0, 0.9fr) minmax(0, 0.8fr) minmax(0, 0.9fr) minmax(0, 1fr) minmax(0, 1fr)';
 const TEACHER_OFFICE_HOUR_GRID = 'minmax(0, 1.2fr) minmax(0, 0.8fr) minmax(0, 1fr) minmax(0, 0.7fr) minmax(0, 0.6fr) minmax(0, 0.9fr) minmax(0, 0.8fr) minmax(0, 0.9fr) minmax(0, 1fr) minmax(0, 1fr)';
+
+type OfficeHourAppointment = NonNullable<OfficeHour['appointments']>[number];
+type TeacherOfficeHourSortKey = 'name' | 'sessions' | 'students' | 'confirmed' | 'paid' | 'comments' | 'conversion';
+type OfficeHourExportMode = 'office-hours' | 'appointments' | 'teachers';
+
+interface TeacherOfficeHourExportRow {
+  teacherId: string;
+  teacherName: string;
+  teacherCode: string;
+  teacherEmail: string;
+  sessionCount: number;
+  totalAppointments: number;
+  totalConfirmed: number;
+  totalTrialed: number;
+  totalHasOrder: number;
+  totalPaid: number;
+  totalConverted: number;
+  totalCommented: number;
+  conversionRate: number;
+  paymentRate: number;
+  centres: string;
+  courseCategories: string;
+  types: string;
+  statuses: string;
+  firstSession: string;
+  lastSession: string;
+}
+
+interface OfficeHourAppointmentExportRow {
+  officeHourId: string;
+  appointmentId: string;
+  appointmentTitle: string;
+  candidateName: string;
+  candidateEmail: string;
+  candidatePhone: string;
+  candidateDob: string;
+  appointmentStatus: string;
+  appointmentCourses: string;
+  appointmentNote: string;
+  isTrialed: boolean;
+  hasOrder: boolean;
+  hasPayment: boolean;
+  appointmentCreatedAt?: number;
+  entranceTestSubmitUrl: string;
+  entranceTestFileUrl: string;
+  entranceTestSubmittedAt?: number;
+  entranceTestFilename: string;
+  sessionDate: string;
+  sessionStartTime: string;
+  sessionEndTime: string;
+  sessionType: string;
+  sessionStatus: string;
+  sessionCourses: string;
+  sessionCourseCategory: string;
+  teacherName: string;
+  teacherCode: string;
+  teacherEmail: string;
+  centreName: string;
+  centreCode: string;
+  className: string;
+  teacherNote: string;
+  sessionNote: string;
+  managerNote: string;
+}
 
 function getEvaluationStatusCounts(appointments?: OfficeHour['appointments']) {
   const counts: Record<string, number> = {};
@@ -147,6 +213,20 @@ function OfficeHoursPageInner() {
   const [showActiveTable, setShowActiveTable] = useState(true);
   const [viewMode, setViewMode] = useState<'all' | 'by-teacher'>('all');
   const [selectedTeacherForModal, setSelectedTeacherForModal] = useState<{ teacherId: string; teacherName: string; teacher: any; officeHours: OfficeHour[] } | null>(null);
+  const [exportMode, setExportMode] = useState<OfficeHourExportMode>('office-hours');
+  const [showCSVSettings, setShowCSVSettings] = useState(false);
+  const { columns: officeHourCsvColumns, saveColumns: saveOfficeHourCsvColumns } = useCSVExportPreferences(
+    'office-hours',
+    getDefaultOfficeHourCSVColumns()
+  );
+  const { columns: appointmentCsvColumns, saveColumns: saveAppointmentCsvColumns } = useCSVExportPreferences(
+    'office-hours-appointments',
+    getDefaultAppointmentCSVColumns()
+  );
+  const { columns: teacherCsvColumns, saveColumns: saveTeacherCsvColumns } = useCSVExportPreferences(
+    'office-hours-by-teacher',
+    getDefaultTeacherOfficeHourCSVColumns()
+  );
 
   // Edit state (similar to tickets page)
   const [editDraft, setEditDraft] = useState<{ teacherId: string; teacherNote: string } | null>(null);
@@ -162,7 +242,7 @@ function OfficeHoursPageInner() {
   const [shiftRequests, setShiftRequests] = useState<ShiftRequest[]>([]);
   
   // Sort state for by-teacher view
-  const [teacherSortBy, setTeacherSortBy] = useState<'name' | 'sessions' | 'students' | 'confirmed' | 'paid' | 'comments' | 'conversion'>('sessions');
+  const [teacherSortBy, setTeacherSortBy] = useState<TeacherOfficeHourSortKey>('sessions');
   const [teacherSortOrder, setTeacherSortOrder] = useState<'asc' | 'desc'>('desc');
 
   // Memoize teacher search results to prevent unnecessary re-renders
@@ -1042,6 +1122,92 @@ function OfficeHoursPageInner() {
     [officeHours, selectedOfficeHourId]
   );
 
+  const teacherExportRows = useMemo(
+    () => buildTeacherOfficeHourExportRows(groupedByTeacher, teacherSortBy, teacherSortOrder),
+    [groupedByTeacher, teacherSortBy, teacherSortOrder]
+  );
+
+  const appointmentExportRows = useMemo(
+    () => buildAppointmentExportRows(filteredOfficeHours),
+    [filteredOfficeHours]
+  );
+
+  const exportRowCount = exportMode === 'appointments'
+    ? appointmentExportRows.length
+    : exportMode === 'teachers'
+      ? teacherExportRows.length
+      : filteredOfficeHours.length;
+  const activeCsvColumns = exportMode === 'appointments'
+    ? appointmentCsvColumns
+    : exportMode === 'teachers'
+      ? teacherCsvColumns
+      : officeHourCsvColumns;
+  const activeSaveCsvColumns = exportMode === 'appointments'
+    ? saveAppointmentCsvColumns
+    : exportMode === 'teachers'
+      ? saveTeacherCsvColumns
+      : saveOfficeHourCsvColumns;
+  const csvSettingsTitle = exportMode === 'appointments'
+    ? 'Cài đặt xuất CSV - Lịch hẹn học viên'
+    : exportMode === 'teachers'
+      ? 'Cài đặt xuất CSV - Theo giáo viên'
+      : 'Cài đặt xuất CSV - Ca trải nghiệm';
+
+  const handleExportCSV = useCallback(() => {
+    try {
+      if (exportMode === 'office-hours') {
+        if (filteredOfficeHours.length === 0) {
+          addToast('Không có dữ liệu để xuất', 'info');
+          return;
+        }
+
+        const columns = getOfficeHourCSVColumnsFromConfig(officeHourCsvColumns);
+        if (columns.length === 0) {
+          addToast('Vui lòng chọn ít nhất một cột để xuất', 'info');
+          return;
+        }
+
+        exportToCSV(filteredOfficeHours, columns, 'ca-trai-nghiem');
+        addToast(`Đã xuất ${filteredOfficeHours.length} ca với ${columns.length} cột`, 'success');
+        return;
+      }
+
+      if (exportMode === 'appointments') {
+        if (appointmentExportRows.length === 0) {
+          addToast('Không có lịch hẹn học viên để xuất', 'info');
+          return;
+        }
+
+        const columns = getAppointmentCSVColumnsFromConfig(appointmentCsvColumns);
+        if (columns.length === 0) {
+          addToast('Vui lòng chọn ít nhất một cột để xuất', 'info');
+          return;
+        }
+
+        exportToCSV(appointmentExportRows, columns, 'lich-hen-hoc-vien');
+        addToast(`Đã xuất ${appointmentExportRows.length} lịch hẹn với ${columns.length} cột`, 'success');
+        return;
+      }
+
+      if (teacherExportRows.length === 0) {
+        addToast('Không có dữ liệu để xuất', 'info');
+        return;
+      }
+
+      const columns = getTeacherOfficeHourCSVColumnsFromConfig(teacherCsvColumns);
+      if (columns.length === 0) {
+        addToast('Vui lòng chọn ít nhất một cột để xuất', 'info');
+        return;
+      }
+
+      exportToCSV(teacherExportRows, columns, 'ca-trai-nghiem-theo-giao-vien');
+      addToast(`Đã xuất ${teacherExportRows.length} giáo viên với ${columns.length} cột`, 'success');
+    } catch (error) {
+      console.error('Export error:', error);
+      addToast('Có lỗi xảy ra khi xuất file', 'error');
+    }
+  }, [exportMode, filteredOfficeHours, officeHourCsvColumns, appointmentExportRows, appointmentCsvColumns, teacherExportRows, teacherCsvColumns, addToast]);
+
   // User display
   const _storedSession = session ?? loadSession();
   const _displayName = _storedSession?.displayName?.trim() || '';
@@ -1256,7 +1422,10 @@ function OfficeHoursPageInner() {
                 <>
                   <ViewModeToggle
                     value={viewMode}
-                    onChange={setViewMode}
+                    onChange={(nextMode) => {
+                      setViewMode(nextMode);
+                      setExportMode(nextMode === 'by-teacher' ? 'teachers' : 'office-hours');
+                    }}
                     options={[
                       { value: 'all', label: 'Danh sách', icon: <Icon.Table /> },
                       { value: 'by-teacher', label: 'Theo giáo viên', icon: <Icon.User /> },
@@ -1270,6 +1439,40 @@ function OfficeHoursPageInner() {
                     progress={progress}
                     isExpanded={showActiveTable}
                     onToggle={() => setShowActiveTable(p => !p)}
+                    actionSlot={
+                      officeHours.length > 0 ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                          <select
+                            aria-label="Chọn kiểu xuất CSV"
+                            value={exportMode}
+                            onChange={(event) => setExportMode(event.target.value as OfficeHourExportMode)}
+                            disabled={loading}
+                            style={{
+                              height: 32,
+                              borderRadius: 'var(--radius-comfortable)',
+                              border: '1px solid var(--border-secondary)',
+                              background: 'var(--bg-surface)',
+                              color: 'var(--text-primary)',
+                              fontSize: 12,
+                              fontFamily: 'inherit',
+                              padding: '0 28px 0 10px',
+                              outline: 'none',
+                            }}
+                          >
+                            <option value="office-hours">Theo ca</option>
+                            <option value="appointments">Theo lịch hẹn</option>
+                            <option value="teachers">Theo giáo viên</option>
+                          </select>
+                          <ExportButton
+                            onClick={handleExportCSV}
+                            onSettingsClick={() => setShowCSVSettings(true)}
+                            disabled={loading || exportRowCount === 0}
+                            label="Xuất CSV"
+                            count={exportRowCount}
+                          />
+                        </div>
+                      ) : undefined
+                    }
                     toolbarSlot={
                       officeHours.length > 0 ? (
                           <TableToolbar
@@ -2899,9 +3102,466 @@ function OfficeHoursPageInner() {
             </>
           )}
         </Modal>
+
+        <CSVExportSettings
+          key={exportMode}
+          isOpen={showCSVSettings}
+          onClose={() => setShowCSVSettings(false)}
+          columns={activeCsvColumns}
+          onSave={activeSaveCsvColumns}
+          title={csvSettingsTitle}
+        />
       </PageLayout>
     </>
   );
+}
+
+function formatCSVDateTime(isoString?: string): string {
+  if (!isoString) return '—';
+  const date = new Date(isoString);
+  if (isNaN(date.getTime())) return '—';
+  return new Intl.DateTimeFormat('vi-VN', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date);
+}
+
+function formatCSVDate(isoString?: string): string {
+  if (!isoString) return '—';
+  const date = new Date(isoString);
+  if (isNaN(date.getTime())) return '—';
+  return new Intl.DateTimeFormat('vi-VN', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date);
+}
+
+function formatCSVTime(isoString?: string): string {
+  if (!isoString) return '—';
+  const date = new Date(isoString);
+  if (isNaN(date.getTime())) return '—';
+  return new Intl.DateTimeFormat('vi-VN', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date);
+}
+
+function formatCSVTimestamp(timestamp?: number | string | null): string {
+  if (timestamp === null || timestamp === undefined || timestamp === '') return '—';
+
+  let date: Date;
+  if (typeof timestamp === 'number' || /^\d+$/.test(String(timestamp).trim())) {
+    const numericTimestamp = Number(timestamp);
+    if (!Number.isFinite(numericTimestamp)) return '—';
+    const ms = numericTimestamp < 10000000000 ? numericTimestamp * 1000 : numericTimestamp;
+    date = new Date(ms);
+  } else {
+    date = new Date(timestamp);
+  }
+
+  if (isNaN(date.getTime())) return '—';
+  return new Intl.DateTimeFormat('vi-VN', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date);
+}
+
+function joinUnique(values: Array<string | null | undefined>, fallback = '—'): string {
+  const unique = Array.from(new Set(values.map(value => value?.trim()).filter(Boolean) as string[]));
+  return unique.length > 0 ? unique.join(', ') : fallback;
+}
+
+function isConfirmedAppointment(appointment: OfficeHourAppointment): boolean {
+  return !!appointment.status && !['WAITING', 'PENDING'].includes(appointment.status.toUpperCase());
+}
+
+function getAppointmentMetrics(officeHour: OfficeHour) {
+  const appointments = officeHour.appointments ?? [];
+  const total = appointments.length;
+  const confirmed = appointments.filter(isConfirmedAppointment).length;
+  const trialed = appointments.filter(apt => apt.resultAfterTrial?.isTrialed).length;
+  const hasOrder = appointments.filter(apt => apt.resultAfterTrial?.isHasOrder).length;
+  const paid = appointments.filter(apt => apt.resultAfterTrial?.isHasPayment).length;
+  const converted = appointments.filter(apt =>
+    apt.resultAfterTrial?.isHasOrder || apt.resultAfterTrial?.isHasPayment
+  ).length;
+  const commented = appointments.filter(apt => Boolean(apt.note?.trim())).length;
+
+  return {
+    total,
+    confirmed,
+    trialed,
+    hasOrder,
+    paid,
+    converted,
+    commented,
+    conversionRate: total > 0 ? (converted / total) * 100 : 0,
+    paymentRate: total > 0 ? (paid / total) * 100 : 0,
+  };
+}
+
+function getEvaluationStatusSummaryText(officeHour: OfficeHour): string {
+  return getEvaluationStatusCounts(officeHour.appointments)
+    .map(([status, count]) => `${status}: ${count}`)
+    .join(', ') || '—';
+}
+
+function getDefaultOfficeHourCSVColumns(): CSVColumnConfig[] {
+  return [
+    { id: 'id', label: 'ID ca', enabled: true },
+    { id: 'startDate', label: 'Ngày', enabled: true },
+    { id: 'startTime', label: 'Giờ bắt đầu', enabled: true },
+    { id: 'endTime', label: 'Giờ kết thúc', enabled: true },
+    { id: 'type', label: 'Loại ca', enabled: true },
+    { id: 'courseCategory', label: 'Khối học', enabled: true },
+    { id: 'courses', label: 'Khoá học', enabled: true },
+    { id: 'courseLines', label: 'Course line', enabled: true },
+    { id: 'teacher', label: 'Giáo viên', enabled: true },
+    { id: 'teacherCode', label: 'Mã giáo viên', enabled: true },
+    { id: 'teacherEmail', label: 'Email giáo viên', enabled: true },
+    { id: 'centre', label: 'Cơ sở', enabled: true },
+    { id: 'centreCode', label: 'Mã cơ sở', enabled: true },
+    { id: 'studentCount', label: 'Số học viên khai báo', enabled: true },
+    { id: 'appointments', label: 'Số lịch hẹn', enabled: true },
+    { id: 'confirmed', label: 'Đã xác nhận', enabled: true },
+    { id: 'trialed', label: 'Đã học thử', enabled: true },
+    { id: 'hasOrder', label: 'Có đơn hàng', enabled: true },
+    { id: 'paid', label: 'Đã thanh toán', enabled: true },
+    { id: 'converted', label: 'Đã chuyển đổi', enabled: true },
+    { id: 'conversionRate', label: 'Tỷ lệ chuyển đổi (%)', enabled: true },
+    { id: 'paymentRate', label: 'Tỷ lệ thanh toán (%)', enabled: true },
+    { id: 'commented', label: 'Có nhận xét GV', enabled: true },
+    { id: 'status', label: 'Trạng thái ca', enabled: true },
+    { id: 'evaluationStatuses', label: 'Trạng thái đánh giá', enabled: true },
+    { id: 'teacherNote', label: 'Ghi chú giáo viên', enabled: true },
+    { id: 'note', label: 'Ghi chú vận hành', enabled: true },
+    { id: 'managerNote', label: 'Ghi chú quản lý', enabled: true },
+    { id: 'className', label: 'Lớp học', enabled: true },
+    { id: 'createdBy', label: 'Người tạo', enabled: true },
+    { id: 'createdAt', label: 'Ngày tạo', enabled: true },
+    { id: 'lastModifiedAt', label: 'Ngày cập nhật', enabled: true },
+  ];
+}
+
+function getOfficeHourCSVColumnsFromConfig(config: CSVColumnConfig[]): CSVColumn<OfficeHour>[] {
+  const columnMap: Record<string, CSVColumn<OfficeHour>> = {
+    id: { header: 'ID ca', accessor: 'id' },
+    startDate: { header: 'Ngày', accessor: row => formatCSVDate(row.startTime) },
+    startTime: { header: 'Giờ bắt đầu', accessor: row => formatCSVTime(row.startTime) },
+    endTime: { header: 'Giờ kết thúc', accessor: row => formatCSVTime(row.endTime) },
+    type: { header: 'Loại ca', accessor: row => getOfficeHourTypeLabel(row.type) },
+    courseCategory: { header: 'Khối học', accessor: row => getOfficeHourCategory(row) },
+    courses: { header: 'Khoá học', accessor: row => joinUnique(row.courses?.map(course => course.shortName || course.name) ?? []) },
+    courseLines: { header: 'Course line', accessor: row => joinUnique(row.courseLines?.map(line => line.name) ?? []) },
+    teacher: { header: 'Giáo viên', accessor: row => row.teacher?.fullName || '—' },
+    teacherCode: { header: 'Mã giáo viên', accessor: row => row.teacher?.code || '—' },
+    teacherEmail: { header: 'Email giáo viên', accessor: row => row.teacher?.email || '—' },
+    centre: { header: 'Cơ sở', accessor: row => row.centre?.name || '—' },
+    centreCode: { header: 'Mã cơ sở', accessor: row => row.centre?.shortName || '—' },
+    studentCount: { header: 'Số học viên khai báo', accessor: row => row.studentCount || 0 },
+    appointments: { header: 'Số lịch hẹn', accessor: row => getAppointmentMetrics(row).total },
+    confirmed: { header: 'Đã xác nhận', accessor: row => getAppointmentMetrics(row).confirmed },
+    trialed: { header: 'Đã học thử', accessor: row => getAppointmentMetrics(row).trialed },
+    hasOrder: { header: 'Có đơn hàng', accessor: row => getAppointmentMetrics(row).hasOrder },
+    paid: { header: 'Đã thanh toán', accessor: row => getAppointmentMetrics(row).paid },
+    converted: { header: 'Đã chuyển đổi', accessor: row => getAppointmentMetrics(row).converted },
+    conversionRate: {
+      header: 'Tỷ lệ chuyển đổi (%)',
+      accessor: row => getAppointmentMetrics(row).conversionRate,
+      formatter: CSVFormatters.number(1),
+    },
+    paymentRate: {
+      header: 'Tỷ lệ thanh toán (%)',
+      accessor: row => getAppointmentMetrics(row).paymentRate,
+      formatter: CSVFormatters.number(1),
+    },
+    commented: { header: 'Có nhận xét GV', accessor: row => getAppointmentMetrics(row).commented },
+    status: { header: 'Trạng thái ca', accessor: row => row.status || '—' },
+    evaluationStatuses: { header: 'Trạng thái đánh giá', accessor: row => getEvaluationStatusSummaryText(row) },
+    teacherNote: { header: 'Ghi chú giáo viên', accessor: row => parseTeacherNote(row.custom) || '—' },
+    note: { header: 'Ghi chú vận hành', accessor: row => row.note || '—' },
+    managerNote: { header: 'Ghi chú quản lý', accessor: row => row.managerNote || '—' },
+    className: { header: 'Lớp học', accessor: row => row.class?.name || '—' },
+    createdBy: { header: 'Người tạo', accessor: row => row.createdBy?.username || '—' },
+    createdAt: { header: 'Ngày tạo', accessor: row => formatCSVTimestamp(row.createdAt) },
+    lastModifiedAt: { header: 'Ngày cập nhật', accessor: row => formatCSVTimestamp(row.lastModifiedAt) },
+  };
+
+  return config
+    .filter(col => col.enabled)
+    .map(col => columnMap[col.id])
+    .filter(Boolean);
+}
+
+function formatCandidateDob(dob?: OfficeHourAppointment['candidate']['dob']): string {
+  if (!dob?.year || !dob?.month || !dob?.date) return '—';
+  return `${String(dob.date).padStart(2, '0')}/${String(dob.month).padStart(2, '0')}/${dob.year}`;
+}
+
+function buildAppointmentExportRows(officeHours: OfficeHour[]): OfficeHourAppointmentExportRow[] {
+  return officeHours.flatMap(officeHour => {
+    const sessionCourses = joinUnique(officeHour.courses?.map(course => course.shortName || course.name) ?? []);
+
+    return (officeHour.appointments ?? []).map(appointment => ({
+      officeHourId: officeHour.id,
+      appointmentId: appointment.id,
+      appointmentTitle: appointment.title || '—',
+      candidateName: appointment.candidate?.fullName || '—',
+      candidateEmail: appointment.candidate?.email || '—',
+      candidatePhone: appointment.candidate?.phoneNumber || '—',
+      candidateDob: formatCandidateDob(appointment.candidate?.dob),
+      appointmentStatus: appointment.status || '—',
+      appointmentCourses: joinUnique(appointment.courses?.map(course => course.shortName || course.name) ?? []),
+      appointmentNote: appointment.note || '—',
+      isTrialed: Boolean(appointment.resultAfterTrial?.isTrialed),
+      hasOrder: Boolean(appointment.resultAfterTrial?.isHasOrder),
+      hasPayment: Boolean(appointment.resultAfterTrial?.isHasPayment),
+      appointmentCreatedAt: appointment.createdAt,
+      entranceTestSubmitUrl: appointment.entranceTest?.submitUrl || '—',
+      entranceTestFileUrl: appointment.entranceTest?.testFileUrl || '—',
+      entranceTestSubmittedAt: appointment.entranceTest?.submittedAt,
+      entranceTestFilename: appointment.entranceTest?.originalFilename || '—',
+      sessionDate: formatCSVDate(officeHour.startTime),
+      sessionStartTime: formatCSVTime(officeHour.startTime),
+      sessionEndTime: formatCSVTime(officeHour.endTime),
+      sessionType: getOfficeHourTypeLabel(officeHour.type),
+      sessionStatus: officeHour.status || '—',
+      sessionCourses,
+      sessionCourseCategory: getOfficeHourCategory(officeHour),
+      teacherName: officeHour.teacher?.fullName || '—',
+      teacherCode: officeHour.teacher?.code || '—',
+      teacherEmail: officeHour.teacher?.email || '—',
+      centreName: officeHour.centre?.name || '—',
+      centreCode: officeHour.centre?.shortName || '—',
+      className: officeHour.class?.name || '—',
+      teacherNote: parseTeacherNote(officeHour.custom) || '—',
+      sessionNote: officeHour.note || '—',
+      managerNote: officeHour.managerNote || '—',
+    }));
+  });
+}
+
+function getDefaultAppointmentCSVColumns(): CSVColumnConfig[] {
+  return [
+    { id: 'officeHourId', label: 'ID ca', enabled: true },
+    { id: 'appointmentId', label: 'ID lịch hẹn', enabled: true },
+    { id: 'candidateName', label: 'Học viên', enabled: true },
+    { id: 'candidatePhone', label: 'SĐT học viên', enabled: true },
+    { id: 'candidateEmail', label: 'Email học viên', enabled: true },
+    { id: 'candidateDob', label: 'Ngày sinh', enabled: true },
+    { id: 'appointmentStatus', label: 'Trạng thái lịch hẹn', enabled: true },
+    { id: 'isTrialed', label: 'Đã học thử', enabled: true },
+    { id: 'hasOrder', label: 'Có đơn hàng', enabled: true },
+    { id: 'hasPayment', label: 'Đã thanh toán', enabled: true },
+    { id: 'appointmentNote', label: 'Nhận xét GV', enabled: true },
+    { id: 'appointmentCourses', label: 'Khoá học của lịch hẹn', enabled: true },
+    { id: 'sessionDate', label: 'Ngày ca', enabled: true },
+    { id: 'sessionStartTime', label: 'Giờ bắt đầu ca', enabled: true },
+    { id: 'sessionEndTime', label: 'Giờ kết thúc ca', enabled: true },
+    { id: 'sessionType', label: 'Loại ca', enabled: true },
+    { id: 'sessionStatus', label: 'Trạng thái ca', enabled: true },
+    { id: 'teacherName', label: 'Giáo viên', enabled: true },
+    { id: 'teacherCode', label: 'Mã giáo viên', enabled: true },
+    { id: 'teacherEmail', label: 'Email giáo viên', enabled: true },
+    { id: 'centreName', label: 'Cơ sở', enabled: true },
+    { id: 'centreCode', label: 'Mã cơ sở', enabled: true },
+    { id: 'sessionCourses', label: 'Khoá học của ca', enabled: true },
+    { id: 'sessionCourseCategory', label: 'Khối học', enabled: true },
+    { id: 'className', label: 'Lớp học', enabled: true },
+    { id: 'appointmentTitle', label: 'Tiêu đề lịch hẹn', enabled: false },
+    { id: 'appointmentCreatedAt', label: 'Ngày tạo lịch hẹn', enabled: false },
+    { id: 'entranceTestSubmitUrl', label: 'Link nộp bài đầu vào', enabled: false },
+    { id: 'entranceTestFileUrl', label: 'File bài đầu vào', enabled: false },
+    { id: 'entranceTestSubmittedAt', label: 'Ngày nộp bài đầu vào', enabled: false },
+    { id: 'entranceTestFilename', label: 'Tên file bài đầu vào', enabled: false },
+    { id: 'teacherNote', label: 'Ghi chú giáo viên của ca', enabled: false },
+    { id: 'sessionNote', label: 'Ghi chú vận hành', enabled: false },
+    { id: 'managerNote', label: 'Ghi chú quản lý', enabled: false },
+  ];
+}
+
+function getAppointmentCSVColumnsFromConfig(config: CSVColumnConfig[]): CSVColumn<OfficeHourAppointmentExportRow>[] {
+  const columnMap: Record<string, CSVColumn<OfficeHourAppointmentExportRow>> = {
+    officeHourId: { header: 'ID ca', accessor: 'officeHourId' },
+    appointmentId: { header: 'ID lịch hẹn', accessor: 'appointmentId' },
+    appointmentTitle: { header: 'Tiêu đề lịch hẹn', accessor: 'appointmentTitle' },
+    candidateName: { header: 'Học viên', accessor: 'candidateName' },
+    candidateEmail: { header: 'Email học viên', accessor: 'candidateEmail' },
+    candidatePhone: { header: 'SĐT học viên', accessor: 'candidatePhone' },
+    candidateDob: { header: 'Ngày sinh', accessor: 'candidateDob' },
+    appointmentStatus: { header: 'Trạng thái lịch hẹn', accessor: 'appointmentStatus' },
+    appointmentCourses: { header: 'Khoá học của lịch hẹn', accessor: 'appointmentCourses' },
+    appointmentNote: { header: 'Nhận xét GV', accessor: 'appointmentNote' },
+    isTrialed: { header: 'Đã học thử', accessor: 'isTrialed', formatter: CSVFormatters.boolean() },
+    hasOrder: { header: 'Có đơn hàng', accessor: 'hasOrder', formatter: CSVFormatters.boolean() },
+    hasPayment: { header: 'Đã thanh toán', accessor: 'hasPayment', formatter: CSVFormatters.boolean() },
+    appointmentCreatedAt: { header: 'Ngày tạo lịch hẹn', accessor: row => formatCSVTimestamp(row.appointmentCreatedAt) },
+    entranceTestSubmitUrl: { header: 'Link nộp bài đầu vào', accessor: 'entranceTestSubmitUrl' },
+    entranceTestFileUrl: { header: 'File bài đầu vào', accessor: 'entranceTestFileUrl' },
+    entranceTestSubmittedAt: { header: 'Ngày nộp bài đầu vào', accessor: row => formatCSVTimestamp(row.entranceTestSubmittedAt) },
+    entranceTestFilename: { header: 'Tên file bài đầu vào', accessor: 'entranceTestFilename' },
+    sessionDate: { header: 'Ngày ca', accessor: 'sessionDate' },
+    sessionStartTime: { header: 'Giờ bắt đầu ca', accessor: 'sessionStartTime' },
+    sessionEndTime: { header: 'Giờ kết thúc ca', accessor: 'sessionEndTime' },
+    sessionType: { header: 'Loại ca', accessor: 'sessionType' },
+    sessionStatus: { header: 'Trạng thái ca', accessor: 'sessionStatus' },
+    sessionCourses: { header: 'Khoá học của ca', accessor: 'sessionCourses' },
+    sessionCourseCategory: { header: 'Khối học', accessor: 'sessionCourseCategory' },
+    teacherName: { header: 'Giáo viên', accessor: 'teacherName' },
+    teacherCode: { header: 'Mã giáo viên', accessor: 'teacherCode' },
+    teacherEmail: { header: 'Email giáo viên', accessor: 'teacherEmail' },
+    centreName: { header: 'Cơ sở', accessor: 'centreName' },
+    centreCode: { header: 'Mã cơ sở', accessor: 'centreCode' },
+    className: { header: 'Lớp học', accessor: 'className' },
+    teacherNote: { header: 'Ghi chú giáo viên của ca', accessor: 'teacherNote' },
+    sessionNote: { header: 'Ghi chú vận hành', accessor: 'sessionNote' },
+    managerNote: { header: 'Ghi chú quản lý', accessor: 'managerNote' },
+  };
+
+  return config
+    .filter(col => col.enabled)
+    .map(col => columnMap[col.id])
+    .filter(Boolean);
+}
+
+function getDefaultTeacherOfficeHourCSVColumns(): CSVColumnConfig[] {
+  return [
+    { id: 'teacherName', label: 'Giáo viên', enabled: true },
+    { id: 'teacherCode', label: 'Mã giáo viên', enabled: true },
+    { id: 'teacherEmail', label: 'Email giáo viên', enabled: true },
+    { id: 'sessionCount', label: 'Số ca', enabled: true },
+    { id: 'totalAppointments', label: 'Học viên', enabled: true },
+    { id: 'totalConfirmed', label: 'Đã xác nhận', enabled: true },
+    { id: 'totalTrialed', label: 'Đã học thử', enabled: true },
+    { id: 'totalHasOrder', label: 'Có đơn hàng', enabled: true },
+    { id: 'totalPaid', label: 'Đã thanh toán', enabled: true },
+    { id: 'totalConverted', label: 'Đã chuyển đổi', enabled: true },
+    { id: 'conversionRate', label: 'Tỷ lệ chuyển đổi (%)', enabled: true },
+    { id: 'paymentRate', label: 'Tỷ lệ thanh toán (%)', enabled: true },
+    { id: 'totalCommented', label: 'Có nhận xét GV', enabled: true },
+    { id: 'centres', label: 'Cơ sở', enabled: true },
+    { id: 'courseCategories', label: 'Khối học', enabled: true },
+    { id: 'types', label: 'Loại ca', enabled: true },
+    { id: 'statuses', label: 'Trạng thái ca', enabled: true },
+    { id: 'firstSession', label: 'Ca đầu tiên', enabled: true },
+    { id: 'lastSession', label: 'Ca cuối cùng', enabled: true },
+  ];
+}
+
+function getTeacherOfficeHourCSVColumnsFromConfig(config: CSVColumnConfig[]): CSVColumn<TeacherOfficeHourExportRow>[] {
+  const columnMap: Record<string, CSVColumn<TeacherOfficeHourExportRow>> = {
+    teacherName: { header: 'Giáo viên', accessor: 'teacherName' },
+    teacherCode: { header: 'Mã giáo viên', accessor: 'teacherCode' },
+    teacherEmail: { header: 'Email giáo viên', accessor: 'teacherEmail' },
+    sessionCount: { header: 'Số ca', accessor: 'sessionCount' },
+    totalAppointments: { header: 'Học viên', accessor: 'totalAppointments' },
+    totalConfirmed: { header: 'Đã xác nhận', accessor: 'totalConfirmed' },
+    totalTrialed: { header: 'Đã học thử', accessor: 'totalTrialed' },
+    totalHasOrder: { header: 'Có đơn hàng', accessor: 'totalHasOrder' },
+    totalPaid: { header: 'Đã thanh toán', accessor: 'totalPaid' },
+    totalConverted: { header: 'Đã chuyển đổi', accessor: 'totalConverted' },
+    conversionRate: { header: 'Tỷ lệ chuyển đổi (%)', accessor: 'conversionRate', formatter: CSVFormatters.number(1) },
+    paymentRate: { header: 'Tỷ lệ thanh toán (%)', accessor: 'paymentRate', formatter: CSVFormatters.number(1) },
+    totalCommented: { header: 'Có nhận xét GV', accessor: 'totalCommented' },
+    centres: { header: 'Cơ sở', accessor: 'centres' },
+    courseCategories: { header: 'Khối học', accessor: 'courseCategories' },
+    types: { header: 'Loại ca', accessor: 'types' },
+    statuses: { header: 'Trạng thái ca', accessor: 'statuses' },
+    firstSession: { header: 'Ca đầu tiên', accessor: 'firstSession' },
+    lastSession: { header: 'Ca cuối cùng', accessor: 'lastSession' },
+  };
+
+  return config
+    .filter(col => col.enabled)
+    .map(col => columnMap[col.id])
+    .filter(Boolean);
+}
+
+function buildTeacherOfficeHourExportRows(
+  groupedByTeacher: Record<string, OfficeHour[]>,
+  sortBy: TeacherOfficeHourSortKey,
+  sortOrder: 'asc' | 'desc'
+): TeacherOfficeHourExportRow[] {
+  return Object.entries(groupedByTeacher)
+    .map(([teacherId, teacherOfficeHours]) => {
+      const teacher = teacherOfficeHours[0]?.teacher;
+      const totals = teacherOfficeHours.reduce((acc, officeHour) => {
+        const metrics = getAppointmentMetrics(officeHour);
+        acc.totalAppointments += metrics.total;
+        acc.totalConfirmed += metrics.confirmed;
+        acc.totalTrialed += metrics.trialed;
+        acc.totalHasOrder += metrics.hasOrder;
+        acc.totalPaid += metrics.paid;
+        acc.totalConverted += metrics.converted;
+        acc.totalCommented += metrics.commented;
+        return acc;
+      }, {
+        totalAppointments: 0,
+        totalConfirmed: 0,
+        totalTrialed: 0,
+        totalHasOrder: 0,
+        totalPaid: 0,
+        totalConverted: 0,
+        totalCommented: 0,
+      });
+
+      const sortedSessions = [...teacherOfficeHours].sort(
+        (a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
+      );
+
+      return {
+        teacherId,
+        teacherName: teacher?.fullName || 'Chưa phân công',
+        teacherCode: teacher?.code || '—',
+        teacherEmail: teacher?.email || '—',
+        sessionCount: teacherOfficeHours.length,
+        ...totals,
+        conversionRate: totals.totalAppointments > 0
+          ? (totals.totalConverted / totals.totalAppointments) * 100
+          : 0,
+        paymentRate: totals.totalAppointments > 0
+          ? (totals.totalPaid / totals.totalAppointments) * 100
+          : 0,
+        centres: joinUnique(teacherOfficeHours.map(oh => oh.centre?.shortName || oh.centre?.name)),
+        courseCategories: joinUnique(teacherOfficeHours.map(oh => getOfficeHourCategory(oh))),
+        types: joinUnique(teacherOfficeHours.map(oh => getOfficeHourTypeLabel(oh.type))),
+        statuses: joinUnique(teacherOfficeHours.map(oh => oh.status)),
+        firstSession: formatCSVDateTime(sortedSessions[0]?.startTime),
+        lastSession: formatCSVDateTime(sortedSessions[sortedSessions.length - 1]?.startTime),
+      };
+    })
+    .sort((a, b) => {
+      let comparison = 0;
+
+      if (sortBy === 'name') {
+        comparison = a.teacherName.localeCompare(b.teacherName);
+      } else if (sortBy === 'sessions') {
+        comparison = a.sessionCount - b.sessionCount;
+      } else if (sortBy === 'students') {
+        comparison = a.totalAppointments - b.totalAppointments;
+      } else if (sortBy === 'confirmed') {
+        comparison = a.totalConfirmed - b.totalConfirmed;
+      } else if (sortBy === 'paid') {
+        comparison = a.totalPaid - b.totalPaid;
+      } else if (sortBy === 'comments') {
+        comparison = a.totalCommented - b.totalCommented;
+      } else if (sortBy === 'conversion') {
+        comparison = a.conversionRate - b.conversionRate;
+      }
+
+      return sortOrder === 'asc' ? comparison : -comparison;
+    });
 }
 
 export default function OfficeHoursPage() {
