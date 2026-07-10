@@ -107,10 +107,109 @@ function hasBriefCustomComment(parsedAreas: ReturnType<typeof parseCommentByArea
   });
 }
 
+function isNonTemplateFreeTextCriterion(criterion: { score?: number; text?: string; templateMatch?: TemplateMatch }): boolean {
+  return criterion.score === undefined
+    && criterion.templateMatch !== 'exact'
+    && criterion.templateMatch !== 'modified'
+    && Boolean(criterion.text?.trim());
+}
+
+function hasNonTemplateFreeText(parsedAreas: ReturnType<typeof parseCommentByAreasStructured>): boolean {
+  return parsedAreas.some(area =>
+    Boolean(area.generalText?.trim()) ||
+    area.criteria.some(isNonTemplateFreeTextCriterion)
+  );
+}
+
+function hasBriefNonTemplateFreeText(parsedAreas: ReturnType<typeof parseCommentByAreasStructured>): boolean {
+  return parsedAreas.some(area => {
+    if (isBriefCommentText(area.generalText)) return true;
+
+    return area.criteria.some(criterion =>
+      isNonTemplateFreeTextCriterion(criterion) && isBriefCommentText(criterion.text)
+    );
+  });
+}
+
+function hasCustomContentIssue(
+  status: CommentStatus,
+  parsedAreas: ReturnType<typeof parseCommentByAreasStructured>,
+  text: string
+): boolean {
+  if (status === 'ok' || status === 'template_exact' || status === 'template_modified') return false;
+  if (status === 'empty' || status === 'overdue') return true;
+  if (parsedAreas.length === 0) return Boolean(text.trim());
+  if (status === 'brief') return hasBriefNonTemplateFreeText(parsedAreas);
+  if (status === 'duplicate_self' || status === 'duplicate_other') return hasNonTemplateFreeText(parsedAreas);
+  return false;
+}
+
+interface CommentAnalysisOptions {
+  dateFrom?: string;
+  dateTo?: string;
+}
+
+interface CommentDateRangeBounds {
+  fromMs: number | null;
+  toMs: number | null;
+  active: boolean;
+}
+
+function parseLocalDateBound(value: string | undefined, endOfDay = false): number | null {
+  if (!value) return null;
+  const [year, month, day] = value.split('-').map(Number);
+  const date = year && month && day
+    ? new Date(
+        year,
+        month - 1,
+        day,
+        endOfDay ? 23 : 0,
+        endOfDay ? 59 : 0,
+        endOfDay ? 59 : 0,
+        endOfDay ? 999 : 0,
+      )
+    : new Date(value);
+  const time = date.getTime();
+  return Number.isFinite(time) ? time : null;
+}
+
+function getCommentDateRangeBounds(options?: CommentAnalysisOptions): CommentDateRangeBounds {
+  const fromMs = parseLocalDateBound(options?.dateFrom);
+  const toMs = parseLocalDateBound(options?.dateTo, true);
+  return {
+    fromMs,
+    toMs,
+    active: fromMs !== null || toMs !== null,
+  };
+}
+
+function getSlotTimeMs(slot: Session): number {
+  const raw = slot.startTime || slot.date || slot.endTime;
+  const time = raw ? new Date(raw).getTime() : NaN;
+  return Number.isFinite(time) ? time : NaN;
+}
+
+function getSlotEndTimeMs(slot: Session): number {
+  const raw = slot.endTime || slot.startTime || slot.date;
+  const time = raw ? new Date(raw).getTime() : NaN;
+  return Number.isFinite(time) ? time : NaN;
+}
+
+function isSlotInCommentDateRange(slot: Session, bounds: CommentDateRangeBounds): boolean {
+  if (!bounds.active) return true;
+
+  const slotMs = getSlotTimeMs(slot);
+  if (!Number.isFinite(slotMs)) return false;
+  if (bounds.fromMs !== null && slotMs < bounds.fromMs) return false;
+  if (bounds.toMs !== null && slotMs > bounds.toMs) return false;
+  return true;
+}
+
 export function analyzeComments(
   cls: Class,
   exemptedSessions: number[] = DEFAULT_EXEMPTED_SESSIONS,
-  commentAreas: CommentAreaDef[] = []
+  commentAreas: CommentAreaDef[] = [],
+  options: CommentAnalysisOptions = {}
 ): ClassCommentAnalysis {
   let emptyCount = 0;
   let briefCount = 0;
@@ -126,14 +225,17 @@ export function analyzeComments(
     .filter(s => s.date)
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
-  const passedSlots = slots.filter(s => new Date(s.date).getTime() < Date.now()).length;
+  const dateRangeBounds = getCommentDateRangeBounds(options);
+  const rangeSlots = slots.filter(slot => isSlotInCommentDateRange(slot, dateRangeBounds));
+  const passedSlots = rangeSlots.filter(s => getSlotEndTimeMs(s) < Date.now()).length;
+  const commentHistoryByStudent = new Map<string, StudentCommentStatus['comments']>();
 
   const studentMap = new Map<string, StudentCommentStatus>();
   (cls.students ?? []).forEach(s => {
     // Skip students who are no longer active in class
     if (!s.activeInClass) return;
     
-    studentMap.set(s.student.id, {
+    const status: StudentCommentStatus = {
       studentId: s.student.id,
       studentName: s.student.fullName || s.student.customer.fullName,
       totalCommentsExpected: 0,
@@ -143,12 +245,15 @@ export function analyzeComments(
       overdueCount: 0,
       okCount: 0,
       comments: []
-    });
+    };
+    studentMap.set(s.student.id, status);
+    commentHistoryByStudent.set(s.student.id, []);
   });
 
   for (let sessionIndex = 0; sessionIndex < slots.length; sessionIndex++) {
     const slot = slots[sessionIndex];
-    const slotDate = new Date(slot.endTime || slot.date);
+    const includeInRange = isSlotInCommentDateRange(slot, dateRangeBounds);
+    const slotDate = new Date(slot.endTime || slot.startTime || slot.date);
     const isPast = slotDate.getTime() < Date.now();
     const sessionNumber = sessionIndex + 1;
     const checkpointSessions = getCheckpointSessionsForClass(cls);
@@ -179,6 +284,7 @@ export function analyzeComments(
     (slot.studentAttendance ?? []).forEach(sa => {
        const st = studentMap.get(sa.student.id);
        if (!st) return;
+       const commentHistory = commentHistoryByStudent.get(sa.student.id) || [];
 
        const studentStatus = sa.status?.toUpperCase() || '';
        const isAbsent = ['ABSENT', 'ABSENT_UNEXCUSED', 'ABSENT_WITH_NOTICE'].includes(studentStatus);
@@ -189,8 +295,6 @@ export function analyzeComments(
        if (isAbsent && !isCommentRequiredForAbsent) {
          return;
        }
-
-       if (isPast) st.totalCommentsExpected++;
 
        const rawComment = getStudentAttendanceCommentContent(sa);
        const text = rawComment;
@@ -215,7 +319,7 @@ export function analyzeComments(
          status = 'brief';
        } else {
          const duplicatesOtherStudent = (slotCommentFreq.get(text) || 0) > 1;
-         const duplicateThisStudentComment = [...st.comments].reverse().find(c => c.text === text);
+         const duplicateThisStudentComment = [...commentHistory].reverse().find(c => c.text === text);
 
          if (templateMatch === 'exact') {
            status = 'template_exact';
@@ -240,13 +344,7 @@ export function analyzeComments(
             }
        }
 
-       if (status === 'empty') { st.emptyCount++; emptyCount++; }
-       else if (status === 'brief') { st.briefCount++; briefCount++; }
-       else if (status === 'duplicate_self' || status === 'duplicate_other' || status === 'template_exact' || status === 'template_modified') { st.duplicateCount++; duplicateCount++; }
-       else if (status === 'overdue') { st.overdueCount++; overdueCount++; }
-       else if (status === 'ok' && isPast) { st.okCount++; okCount++; }
-
-       st.comments.push({
+       const commentRecord = {
          date: slot.date,
          sessionIndex,
          teacherName,
@@ -261,15 +359,30 @@ export function analyzeComments(
          commentDeadlineHours,
          isCheckpointSession: isCheckpoint,
          isFinalSession,
+         hasCustomContentIssue: hasCustomContentIssue(status, parsedAreas, text),
          parsedAreas,
-       });
+       };
+
+       commentHistory.push(commentRecord);
+       commentHistoryByStudent.set(sa.student.id, commentHistory);
+
+       if (!includeInRange) return;
+
+       if (isPast) st.totalCommentsExpected++;
+       if (status === 'empty') { st.emptyCount++; emptyCount++; }
+       else if (status === 'brief') { st.briefCount++; briefCount++; }
+       else if (status === 'duplicate_self' || status === 'duplicate_other' || status === 'template_exact' || status === 'template_modified') { st.duplicateCount++; duplicateCount++; }
+       else if (status === 'overdue') { st.overdueCount++; overdueCount++; }
+       else if (status === 'ok' && isPast) { st.okCount++; okCount++; }
+
+       st.comments.push(commentRecord);
     });
   }
 
   return {
     classId: cls.id,
     passedSlots,
-    totalSlots: slots.length,
+    totalSlots: rangeSlots.length,
     emptyCount,
     briefCount,
     duplicateCount,
@@ -1196,7 +1309,8 @@ function analyzeDemo(cls: Class, lookup: CommentAreaLookup, sessionIndex: number
 export function analyzeClassQuality(
   cls: Class,
   exemptedSessions?: number[],
-  commentAreas: CommentAreaDef[] = []
+  commentAreas: CommentAreaDef[] = [],
+  options: { commentDateRange?: CommentAnalysisOptions } = {}
 ): AnalyzedClassForQuality {
   const preferredSessions = getPreferredCheckpointSessions(cls);
   const scoreCommentAreaLookup = buildCommentAreaLookup(cls.courseProcess, commentAreas);
@@ -1229,7 +1343,7 @@ export function analyzeClassQuality(
   return {
     cls,
     courseLineName: getCourseCategory(cls),
-    commentAnalysis: analyzeComments(cls, exemptedSessions, commentAreas),
+    commentAnalysis: analyzeComments(cls, exemptedSessions, commentAreas, options.commentDateRange),
     attendanceAnalysis: analyzeAttendance(cls),
     reschedulingAnalysis: analyzeSessionRescheduling(cls),
     cp1Analysis,

@@ -29,6 +29,7 @@ export interface StudentCommentStatus {
     commentDeadlineHours?: number;
     isCheckpointSession?: boolean;
     isFinalSession?: boolean;
+    hasCustomContentIssue?: boolean;
     parsedAreas?: ParsedArea[];
   }[];
 }

@@ -29,6 +29,7 @@ import type { ParsedArea } from '@/lib/commentContent';
 import { computeTBCK, determineRank } from '@/lib/courseGrading';
 import {
   buildFinalProductClassStats,
+  buildStudentWorksByStudentId,
   getActiveClassStudents,
   getStudentWorkAssetCount,
   getStudentWorkFileName,
@@ -922,6 +923,40 @@ function parseLocalDateInput(value: string, endOfDay = false): Date {
     endOfDay ? 59 : 0,
     endOfDay ? 999 : 0,
   );
+}
+
+function getClassQualitySlotStartMs(slot: Session): number {
+  const raw = slot.startTime || slot.date || slot.endTime;
+  const time = raw ? new Date(raw).getTime() : NaN;
+  return Number.isFinite(time) ? time : NaN;
+}
+
+interface ClassQualityDateRangeBounds {
+  fromMs: number | null;
+  toMs: number | null;
+  active: boolean;
+}
+
+function getClassQualityDateRangeBounds(dateFrom: string, dateTo: string): ClassQualityDateRangeBounds {
+  const fromMs = dateFrom ? parseLocalDateInput(dateFrom).getTime() : null;
+  const toMs = dateTo ? parseLocalDateInput(dateTo, true).getTime() : null;
+  return {
+    fromMs: fromMs !== null && Number.isFinite(fromMs) ? fromMs : null,
+    toMs: toMs !== null && Number.isFinite(toMs) ? toMs : null,
+    active: Boolean(dateFrom || dateTo),
+  };
+}
+
+function classHasSlotInDateRange(cls: Class, bounds: ClassQualityDateRangeBounds): boolean {
+  if (!bounds.active) return true;
+
+  return (cls.slots ?? []).some(slot => {
+    const slotMs = getClassQualitySlotStartMs(slot);
+    if (!Number.isFinite(slotMs)) return false;
+    if (bounds.fromMs !== null && slotMs < bounds.fromMs) return false;
+    if (bounds.toMs !== null && slotMs > bounds.toMs) return false;
+    return true;
+  });
 }
 
 function formatLocalDateKey(date: Date): string {
@@ -2712,6 +2747,8 @@ export default function TeacherSchedulePage() {
   const [commentModalSessionIndex, setCommentModalSessionIndex] = useState<number | null>(null);
   const [exemptedSessions, setExemptedSessions] = useState<number[]>(DEFAULT_EXEMPTED_SESSIONS);
   const [exemptOneOnOneClasses, setExemptOneOnOneClasses] = useState(true);
+  const [classQualityDateFrom, setClassQualityDateFrom] = useState('');
+  const [classQualityDateTo, setClassQualityDateTo] = useState('');
   const [holidayPeriods, setHolidayPeriods] = useState<HolidayPeriod[]>(DEFAULT_HOLIDAY_PERIODS);
   const [showSummarySection, setShowSummarySection] = useState(false);
   const [selectedSummaryCentre, setSelectedSummaryCentre] = useState<string>('all');
@@ -2745,6 +2782,11 @@ export default function TeacherSchedulePage() {
   const deferredSelectedClassStatuses = useDeferredValue(selectedClassStatuses);
   const deferredScheduleTypeFilter = useDeferredValue(scheduleTypeFilter);
   const deferredAppliedCalendarClassCodeSearch = useDeferredValue(appliedCalendarClassCodeSearch);
+  const deferredClassQualityDateFrom = useDeferredValue(classQualityDateFrom);
+  const deferredClassQualityDateTo = useDeferredValue(classQualityDateTo);
+  const isClassQualityDateRangePending =
+    classQualityDateFrom !== deferredClassQualityDateFrom ||
+    classQualityDateTo !== deferredClassQualityDateTo;
   const cacheFilterStateRef = useRef({
     calendarCentreFilter,
     calendarSelectedTeachers,
@@ -2760,6 +2802,8 @@ export default function TeacherSchedulePage() {
     selectedClassStatuses,
     exemptedSessions,
     exemptOneOnOneClasses,
+    classQualityDateFrom,
+    classQualityDateTo,
     holidayPeriods,
   });
 
@@ -2784,6 +2828,8 @@ export default function TeacherSchedulePage() {
     selectedClassStatuses,
     exemptedSessions,
     exemptOneOnOneClasses,
+    classQualityDateFrom,
+    classQualityDateTo,
     holidayPeriods,
   };
 
@@ -3195,6 +3241,8 @@ export default function TeacherSchedulePage() {
         setSchedules(result);
         setRawClasses(classes);
         setStudentCommentAreas(commentAreas);
+        setClassQualityDateFrom(start);
+        setClassQualityDateTo(end);
         await setCache(CACHE_KEYS.TEACHER_SCHEDULE, {
           version: TEACHER_SCHEDULE_CACHE_VERSION,
           schedules: result,
@@ -3218,6 +3266,8 @@ export default function TeacherSchedulePage() {
           selectedClassStatuses,
           exemptedSessions,
           exemptOneOnOneClasses,
+          classQualityDateFrom: start,
+          classQualityDateTo: end,
           holidayPeriods,
           timestamp: Date.now(),
         });
@@ -3430,6 +3480,8 @@ export default function TeacherSchedulePage() {
         selectedClassStatuses,
         exemptedSessions,
         exemptOneOnOneClasses,
+        classQualityDateFrom,
+        classQualityDateTo,
         holidayPeriods,
         timestamp: Date.now(),
       });
@@ -3464,7 +3516,7 @@ export default function TeacherSchedulePage() {
     } finally {
       setReloadingClassId(null);
     }
-  }, [addToast, schedules, rawClasses, studentCommentAreas, fromDate, toDate, selectedCentres, selectedSlot, selectedTeachers, selectedCourseLines, selectedClassStatuses, scheduleTypeFilter, exemptedSessions, exemptOneOnOneClasses, holidayPeriods, enrichAvailableTeachersForRequest, loadCoordinationReferenceData]);
+  }, [addToast, schedules, rawClasses, studentCommentAreas, fromDate, toDate, selectedCentres, selectedSlot, selectedTeachers, selectedCourseLines, selectedClassStatuses, scheduleTypeFilter, exemptedSessions, exemptOneOnOneClasses, classQualityDateFrom, classQualityDateTo, holidayPeriods, enrichAvailableTeachersForRequest, loadCoordinationReferenceData]);
 
   const handleAddSupplyTeacher = useCallback(async (ta: TeacherAvailability) => {
     if (!selectedSlot) return;
@@ -3572,6 +3624,10 @@ export default function TeacherSchedulePage() {
           if (cached.selectedClassStatuses) setSelectedClassStatuses(cached.selectedClassStatuses as ClassStatusFilter[]);
           if (cached.exemptedSessions) setExemptedSessions(cached.exemptedSessions);
           if (cached.exemptOneOnOneClasses !== undefined) setExemptOneOnOneClasses(cached.exemptOneOnOneClasses);
+          if (typeof cached.classQualityDateFrom === 'string') setClassQualityDateFrom(cached.classQualityDateFrom);
+          else if (typeof cached.dateFrom === 'string') setClassQualityDateFrom(cached.dateFrom);
+          if (typeof cached.classQualityDateTo === 'string') setClassQualityDateTo(cached.classQualityDateTo);
+          else if (typeof cached.dateTo === 'string') setClassQualityDateTo(cached.dateTo);
           if (cached.holidayPeriods) setHolidayPeriods(mergeHolidayPeriods(cached.holidayPeriods));
           if (cached.loadedRange) setLoadedRange(cached.loadedRange);
           if (cached.schedules) setSchedules(cached.schedules);
@@ -3737,6 +3793,26 @@ export default function TeacherSchedulePage() {
     ));
   }, [rawClasses, studentCommentAreas, exemptedSessions, exemptOneOnOneClasses, holidayPeriods]);
 
+  const classQualityDateRangeBounds = useMemo(() => (
+    getClassQualityDateRangeBounds(deferredClassQualityDateFrom, deferredClassQualityDateTo)
+  ), [deferredClassQualityDateFrom, deferredClassQualityDateTo]);
+
+  const classQualityTableClasses = useMemo(() => {
+    const classesInRange = rawClasses.filter(cls =>
+      classHasSlotInDateRange(cls, classQualityDateRangeBounds)
+    );
+
+    return classesInRange.map(cls => applyQualityExemptionRules(
+      analyzeClassQuality(cls, exemptedSessions, studentCommentAreas, {
+        commentDateRange: {
+          dateFrom: deferredClassQualityDateFrom,
+          dateTo: deferredClassQualityDateTo,
+        },
+      }),
+      { exemptOneOnOneClasses, holidayPeriods },
+    ));
+  }, [rawClasses, studentCommentAreas, exemptedSessions, exemptOneOnOneClasses, holidayPeriods, deferredClassQualityDateFrom, deferredClassQualityDateTo, classQualityDateRangeBounds]);
+
   useEffect(() => {
     analyzedClassesRef.current = analyzedClasses;
   }, [analyzedClasses]);
@@ -3765,7 +3841,7 @@ export default function TeacherSchedulePage() {
   }, [selectedClassForModal, selectedSlotSessionId, selectedSlotSessionNumber, selectedSlotStartTime]);
 
   useEffect(() => {
-    if (!selectedSlotClassId || !finalProductSession?.id || !showCoordinationPanel) return;
+    if (!selectedSlotClassId || !showCoordinationPanel) return;
 
     const controller = new AbortController();
     const resetLoading = window.setTimeout(() => {
@@ -3774,8 +3850,10 @@ export default function TeacherSchedulePage() {
     }, 0);
 
     fetchStudentWorks({
-      classId: selectedSlotClassId,
-      classSessionId: finalProductSession.id,
+      classConfigs: [{
+        classId: selectedSlotClassId,
+        classSessionId: finalProductSession?.id,
+      }],
     }, controller.signal)
       .then(setStudentWorks)
       .catch(error => {
@@ -3801,10 +3879,15 @@ export default function TeacherSchedulePage() {
     }
 
     const controller = new AbortController();
-    const classIds = rawClasses.map(cls => cls.id).filter(Boolean);
+    const classConfigs = rawClasses
+      .map(cls => ({
+        classId: cls.id,
+        classSessionId: getFinalClassSession(cls)?.id,
+      }))
+      .filter(config => Boolean(config.classId));
     const loadingTimer = window.setTimeout(() => setClassStudentWorksLoading(true), 0);
 
-    fetchStudentWorks({ classIds }, controller.signal)
+    fetchStudentWorks({ classConfigs }, controller.signal)
       .then(setClassStudentWorks)
       .catch(error => {
         if (controller.signal.aborted) return;
@@ -4509,11 +4592,16 @@ export default function TeacherSchedulePage() {
 
                 <div className={styles.dashboardLayout}>
                   <ClassQualityUnifiedTable
-                    classes={analyzedClasses}
+                    classes={classQualityTableClasses}
                     search={searchTerm}
                     onSearchChange={setSearchTerm}
                     selectedCourseCategories={selectedCourseLines}
                     selectedTeacherId={toolbarTeacherFilter.selectedTeacherId}
+                    dateFrom={classQualityDateFrom}
+                    dateTo={classQualityDateTo}
+                    onDateFromChange={setClassQualityDateFrom}
+                    onDateToChange={setClassQualityDateTo}
+                    dateRangePending={isClassQualityDateRangePending}
                     finalProductStatsByClassId={finalProductStatsByClassId}
                     finalProductStatsLoading={classStudentWorksLoading}
                     classStatusOptions={classStatusFilterOptions}
@@ -5229,19 +5317,24 @@ export default function TeacherSchedulePage() {
                   {/* ── Final Products Tab ── */}
                   {qualityTab === 'finalProducts' && (() => {
                     const activeStudents = selectedClassForModal ? getActiveClassStudents(selectedClassForModal) : [];
-                    const worksByStudent = new Map<string, StudentWork>();
-                    studentWorks.forEach(work => {
-                      if (work.studentId) worksByStudent.set(work.studentId, work);
-                    });
+                    const activeStudentIds = new Set(activeStudents.map(student => student.id));
+                    const worksByStudent = buildStudentWorksByStudentId(
+                      studentWorks,
+                      activeStudentIds.size > 0 ? activeStudentIds : undefined
+                    );
+                    const representativeStudentWorks = Array.from(worksByStudent.values());
                     const stats = selectedClassForModal
                       ? buildFinalProductClassStats(selectedClassForModal, studentWorks)
                       : {
-                        submittedCount: studentWorks.length,
+                        classId: selectedSlotClassId || '',
+                        submittedCount: representativeStudentWorks.length,
                         approvedCount: 0,
-                        pendingCount: studentWorks.length,
+                        pendingCount: representativeStudentWorks.length,
                         rejectedCount: 0,
                         missingCount: 0,
-                        totalStudents: studentWorks.length,
+                        totalStudents: representativeStudentWorks.length,
+                        isFinalSessionCompleted: true,
+                        finalSessionDate: finalProductSession?.date || null,
                       };
 
                     return (
@@ -5292,7 +5385,7 @@ export default function TeacherSchedulePage() {
                                 </tr>
                               </thead>
                               <tbody>
-                                {(activeStudents.length > 0 ? activeStudents : studentWorks.map(work => ({
+                                {(activeStudents.length > 0 ? activeStudents : representativeStudentWorks.map(work => ({
                                   id: work.studentId || work.id,
                                   name: work.studentId || 'Không rõ học viên',
                                 }))).map(student => {

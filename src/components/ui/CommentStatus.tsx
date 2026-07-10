@@ -41,6 +41,8 @@ export const COMMENT_STATUS_GROUP_LABELS = {
   emptyOrOverdue: `${COMMENT_STATUS_LABELS.empty} / ${COMMENT_STATUS_LABELS.overdue}`,
 } as const;
 
+export type CommentDetailFilterValue = CommentQualityStatus | 'custom_content_issue';
+
 export const COMMENT_DETAIL_FILTER_OPTIONS = [
   { value: 'overdue', label: COMMENT_STATUS_LABELS.overdue },
   { value: 'duplicate_other', label: COMMENT_STATUS_LABELS.duplicate_other },
@@ -49,7 +51,8 @@ export const COMMENT_DETAIL_FILTER_OPTIONS = [
   { value: 'empty', label: COMMENT_STATUS_LABELS.empty },
   { value: 'duplicate_self', label: COMMENT_STATUS_LABELS.duplicate_self },
   { value: 'template_modified', label: COMMENT_STATUS_LABELS.template_modified },
-] as const satisfies readonly { value: CommentQualityStatus; label: string }[];
+  { value: 'custom_content_issue', label: 'Lỗi nội dung tự viết' },
+] as const satisfies readonly { value: CommentDetailFilterValue; label: string }[];
 
 export function getCommentStatusVariant(status: CommentQualityStatus): 'passed' | 'warning' | 'failed' | 'demo' | 'exempt' {
   if (status === 'ok') return 'passed';

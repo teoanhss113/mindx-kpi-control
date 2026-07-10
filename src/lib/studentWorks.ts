@@ -50,6 +50,56 @@ export function getActiveClassStudents(cls: Class) {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
+const APPROVED_WORK_STATUSES = new Set(['APPROVED', 'ACCEPTED', 'PUBLISHED', 'PUBLIC']);
+const REJECTED_WORK_STATUSES = new Set(['REJECTED', 'DECLINED']);
+const PENDING_WORK_STATUSES = new Set(['SUBMITTED', 'PENDING', 'WAITING_APPROVE', 'WAITING_APPROVAL', 'REVIEWING']);
+
+function getStudentWorkStatusPriority(status?: string | null): number {
+  const normalized = (status || '').toUpperCase();
+  if (APPROVED_WORK_STATUSES.has(normalized)) return 4;
+  if (PENDING_WORK_STATUSES.has(normalized)) return 3;
+  if (REJECTED_WORK_STATUSES.has(normalized)) return 2;
+  if (normalized === 'DRAFT') return 1;
+  return normalized ? 1 : 0;
+}
+
+function getStudentWorkTime(work: StudentWork): number {
+  const raw = work.lastModifiedAt || work.createdAt;
+  const time = raw ? new Date(raw).getTime() : NaN;
+  return Number.isFinite(time) ? time : 0;
+}
+
+function isPreferredStudentWork(candidate: StudentWork, current?: StudentWork): boolean {
+  if (!current) return true;
+
+  const candidatePriority = getStudentWorkStatusPriority(candidate.status);
+  const currentPriority = getStudentWorkStatusPriority(current.status);
+  if (candidatePriority !== currentPriority) return candidatePriority > currentPriority;
+
+  const candidateVersion = candidate.version ?? 0;
+  const currentVersion = current.version ?? 0;
+  if (candidateVersion !== currentVersion) return candidateVersion > currentVersion;
+
+  return getStudentWorkTime(candidate) >= getStudentWorkTime(current);
+}
+
+export function buildStudentWorksByStudentId(works: StudentWork[], activeStudentIds?: Set<string>) {
+  const worksByStudent = new Map<string, StudentWork>();
+
+  works.forEach(work => {
+    const studentId = work.studentId;
+    if (!studentId) return;
+    if (activeStudentIds && activeStudentIds.size > 0 && !activeStudentIds.has(studentId)) return;
+
+    const current = worksByStudent.get(studentId);
+    if (isPreferredStudentWork(work, current)) {
+      worksByStudent.set(studentId, work);
+    }
+  });
+
+  return worksByStudent;
+}
+
 function getFinalSessionCompletion(cls: Class): { isFinalSessionCompleted: boolean; finalSessionDate: string | null } {
   const sessions = [...(cls.slots || [])]
     .filter(slot => slot.date || slot.startTime || slot.endTime)
@@ -59,7 +109,13 @@ function getFinalSessionCompletion(cls: Class): { isFinalSessionCompleted: boole
       return new Date(aTime).getTime() - new Date(bTime).getTime();
     });
   const finalSession = sessions[sessions.length - 1];
-  if (!finalSession) return { isFinalSessionCompleted: false, finalSessionDate: null };
+  if (!finalSession) {
+    const endTime = cls.endDate ? new Date(cls.endDate).getTime() : NaN;
+    return {
+      isFinalSessionCompleted: Number.isFinite(endTime) ? endTime <= Date.now() : false,
+      finalSessionDate: cls.endDate || null,
+    };
+  }
 
   const finalEnd = finalSession.endTime || finalSession.startTime || finalSession.date;
   const finalTime = new Date(finalEnd).getTime();
@@ -75,18 +131,19 @@ export function buildFinalProductClassStats(cls: Class, works: StudentWork[]): F
   const activeStudents = getActiveClassStudents(cls);
   const finalSessionCompletion = getFinalSessionCompletion(cls);
   const activeStudentIds = new Set(activeStudents.map(student => student.id));
-  const relevantWorks = works.filter(work => !work.studentId || activeStudentIds.size === 0 || activeStudentIds.has(work.studentId));
-  const submittedStudentIds = new Set(relevantWorks.map(work => work.studentId).filter(Boolean));
-  const submittedCount = activeStudentIds.size > 0 ? submittedStudentIds.size : relevantWorks.length;
-  const approvedCount = relevantWorks.filter(work => {
+  const worksByStudent = buildStudentWorksByStudentId(works, activeStudentIds);
+  const representativeWorks = Array.from(worksByStudent.values());
+  const submittedCount = representativeWorks.length;
+  const approvedCount = representativeWorks.filter(work => {
     const status = (work.status || '').toUpperCase();
-    return ['APPROVED', 'ACCEPTED', 'PUBLISHED', 'PUBLIC'].includes(status);
+    return APPROVED_WORK_STATUSES.has(status);
   }).length;
-  const rejectedCount = relevantWorks.filter(work => {
+  const rejectedCount = representativeWorks.filter(work => {
     const status = (work.status || '').toUpperCase();
-    return ['REJECTED', 'DECLINED'].includes(status);
+    return REJECTED_WORK_STATUSES.has(status);
   }).length;
   const totalStudents = activeStudents.length;
+  const pendingCount = representativeWorks.length - approvedCount - rejectedCount;
 
   return {
     classId: cls.id,
@@ -96,7 +153,9 @@ export function buildFinalProductClassStats(cls: Class, works: StudentWork[]): F
     submittedCount,
     approvedCount,
     rejectedCount,
-    pendingCount: Math.max(submittedCount - approvedCount - rejectedCount, 0),
-    missingCount: Math.max(totalStudents - submittedCount, 0),
+    pendingCount: Math.max(pendingCount, 0),
+    missingCount: finalSessionCompletion.isFinalSessionCompleted
+      ? Math.max(totalStudents - submittedCount, 0)
+      : 0,
   };
 }

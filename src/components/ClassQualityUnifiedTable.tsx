@@ -16,6 +16,7 @@ import {
   MultiSelect,
   COMMENT_DETAIL_FILTER_OPTIONS,
   CopyClassCodesButton,
+  DateRangeInput,
 } from '@/components/ui';
 import { CLASS_QUALITY_LABELS, LABELS } from '@/constants';
 import styles from '@/app/dashboard.module.css';
@@ -127,6 +128,11 @@ interface Props {
   finalProductStatsLoading?: boolean;
   classStatusOptions?: { value: string; label: string }[];
   selectedTeacherId?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  onDateFromChange?: (value: string) => void;
+  onDateToChange?: (value: string) => void;
+  dateRangePending?: boolean;
 }
 
 type IssueTone = 'success' | 'warning' | 'error' | 'info' | 'default';
@@ -152,6 +158,11 @@ const FINAL_PRODUCT_FILTER_OPTIONS: { value: FinalProductFilter; label: string }
 ];
 
 function getLatestPassedSessionIndex(a: AnalyzedClassForQuality): number | null {
+  const indexes = a.commentAnalysis.students.flatMap(student =>
+    student.comments.map(comment => comment.sessionIndex)
+  );
+  if (indexes.length > 0) return Math.max(...indexes);
+
   const latestIndex = a.commentAnalysis.passedSlots - 1;
   return latestIndex >= 0 ? latestIndex : null;
 }
@@ -159,6 +170,14 @@ function getLatestPassedSessionIndex(a: AnalyzedClassForQuality): number | null 
 function hasLatestSessionCommentStatus(a: AnalyzedClassForQuality, status: CommentDetailFilter): boolean {
   const latestIndex = getLatestPassedSessionIndex(a);
   if (latestIndex === null) return false;
+
+  if (status === 'custom_content_issue') {
+    return a.commentAnalysis.students.some(student =>
+      student.comments.some(comment =>
+        comment.sessionIndex === latestIndex && comment.hasCustomContentIssue
+      )
+    );
+  }
 
   return a.commentAnalysis.students.some(student =>
     student.comments.some(comment =>
@@ -168,6 +187,12 @@ function hasLatestSessionCommentStatus(a: AnalyzedClassForQuality, status: Comme
 }
 
 function hasCommentStatus(a: AnalyzedClassForQuality, status: CommentDetailFilter): boolean {
+  if (status === 'custom_content_issue') {
+    return a.commentAnalysis.students.some(student =>
+      student.comments.some(comment => comment.hasCustomContentIssue)
+    );
+  }
+
   return a.commentAnalysis.students.some(student =>
     student.comments.some(comment => comment.status === status)
   );
@@ -212,6 +237,11 @@ export function ClassQualityUnifiedTable({
   finalProductStatsLoading = false,
   classStatusOptions = [],
   selectedTeacherId,
+  dateFrom = '',
+  dateTo = '',
+  onDateFromChange,
+  onDateToChange,
+  dateRangePending = false,
 }: Props) {
   const [sortKey, setSortKey] = useState<SortKey>('commentIssues');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
@@ -318,6 +348,7 @@ export function ClassQualityUnifiedTable({
       empty: 0,
       duplicate_self: 0,
       template_modified: 0,
+      custom_content_issue: 0,
     };
     const latestSessionCommentDetails: Record<CommentDetailFilter, number> = {
       overdue: 0,
@@ -327,17 +358,19 @@ export function ClassQualityUnifiedTable({
       empty: 0,
       duplicate_self: 0,
       template_modified: 0,
+      custom_content_issue: 0,
     };
 
     baseList.forEach(a => {
       if (a.attendanceAnalysis.totalAlerts > 0) attendanceAlerts += 1;
       if (a.reschedulingAnalysis.rescheduledSessions > 0) rescheduled += 1;
       const finalStats = finalProductStatsByClassId?.get(a.cls.id) || getEmptyFinalProductStats(a.cls.id, getActiveStudentCount(a.cls));
-      if (!finalStats.isFinalSessionCompleted) return;
-      if (finalStats.missingCount === 0 && finalStats.pendingCount === 0 && finalStats.rejectedCount === 0) finalProductSubmitted += 1;
-      if (finalStats.missingCount > 0) finalProductMissing += 1;
-      if (finalStats.pendingCount > 0) finalProductPending += 1;
-      if (finalStats.rejectedCount > 0) finalProductRejected += 1;
+      if (finalStats.isFinalSessionCompleted) {
+        if (finalStats.missingCount === 0 && finalStats.pendingCount === 0 && finalStats.rejectedCount === 0) finalProductSubmitted += 1;
+        if (finalStats.missingCount > 0) finalProductMissing += 1;
+        if (finalStats.pendingCount > 0) finalProductPending += 1;
+        if (finalStats.rejectedCount > 0) finalProductRejected += 1;
+      }
       
       COMMENT_DETAIL_FILTER_OPTIONS.forEach(option => {
         if (hasCommentStatus(a, option.value)) commentDetails[option.value] += 1;
@@ -522,10 +555,23 @@ export function ClassQualityUnifiedTable({
                 placeholder={selectedStatuses.length > 0 ? `${LABELS.STATUS} (${selectedStatuses.length})` : LABELS.ALL_STATUSES}
                 maxDisplay={1}
               />
-              <span className={styles.metricText}>{filtered.length}/{classes.length} {CLASS_QUALITY_LABELS.VISIBLE_CLASS_COUNT_SUFFIX}</span>
+              {onDateFromChange && onDateToChange && (
+                <DateRangeInput
+                  dateFrom={dateFrom}
+                  dateTo={dateTo}
+                  onDateFromChange={onDateFromChange}
+                  onDateToChange={onDateToChange}
+                  label="Thời gian"
+                  menuPosition="fixed"
+                />
+              )}
+              <span className={styles.metricText}>
+                {dateRangePending ? 'Đang cập nhật... ' : ''}
+                {filtered.length}/{classes.length} {CLASS_QUALITY_LABELS.VISIBLE_CLASS_COUNT_SUFFIX}
+              </span>
             </div>
           }
-          hasFilter={!!quickFilter || finalProductFilters.length > 0 || commentDetailFilters.length > 0 || latestSessionCommentDetailFilters.length > 0 || selectedCentres.length > 0 || selectedCourses.length > 0 || selectedTeachers.length > 0 || selectedRoles.length > 0 || selectedStatuses.length > 0 || !!search.trim()}
+          hasFilter={!!quickFilter || finalProductFilters.length > 0 || commentDetailFilters.length > 0 || latestSessionCommentDetailFilters.length > 0 || selectedCentres.length > 0 || selectedCourses.length > 0 || selectedTeachers.length > 0 || selectedRoles.length > 0 || selectedStatuses.length > 0 || !!dateFrom || !!dateTo || !!search.trim()}
           onClearFilter={() => {
             setQuickFilter(null);
             setFinalProductFilters([]);
@@ -536,6 +582,8 @@ export function ClassQualityUnifiedTable({
             setSelectedTeachers([]);
             setSelectedRoles([]);
             setSelectedStatuses([]);
+            onDateFromChange?.('');
+            onDateToChange?.('');
             onSearchChange('');
           }}
         />

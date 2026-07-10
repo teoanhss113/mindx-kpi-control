@@ -964,6 +964,7 @@ export function DateRangeInput({
   const [hoverDate, setHoverDate] = useState<string | null>(null)
   const [coords, setCoords] = useState({ top: 0, left: 0, width: 0 })
   const ref = useRef<HTMLDivElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => { setMounted(true) }, [])
@@ -1087,7 +1088,10 @@ export function DateRangeInput({
   useEffect(() => {
     if (!open) return
     const handleClickOutside = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
+      const target = e.target as Node
+      const clickedTrigger = ref.current?.contains(target)
+      const clickedMenu = menuRef.current?.contains(target)
+      if (!clickedTrigger && !clickedMenu) {
         setOpen(false)
         setTempStart(null)
         setHoverDate(null)
@@ -1140,6 +1144,7 @@ export function DateRangeInput({
     <AnimatePresence>
       {open && (
         <motion.div
+          ref={menuRef}
           className={styles.dateRangePickerDropdown}
           style={
             menuPosition === 'fixed'

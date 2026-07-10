@@ -312,7 +312,24 @@ interface StudentWorksResponse {
   };
 }
 
-export async function fetchStudentWorks(
+export interface StudentWorkClassConfig {
+  classId: string;
+  classSessionId?: string;
+}
+
+function ensureStudentWorkClassFields(
+  works: StudentWork[],
+  fallback: { classId?: string; classSessionId?: string }
+): StudentWork[] {
+  if (!fallback.classId && !fallback.classSessionId) return works;
+  return works.map(work => ({
+    ...work,
+    classId: work.classId || fallback.classId || null,
+    classSessionId: work.classSessionId || fallback.classSessionId || null,
+  }));
+}
+
+async function fetchStudentWorksOnce(
   variables: {
     studentId?: string;
     classSessionId?: string;
@@ -321,6 +338,58 @@ export async function fetchStudentWorks(
   },
   signal?: AbortSignal
 ): Promise<StudentWork[]> {
+  const response = await lmsQuery<StudentWorksResponse>({
+    query: FIND_ALL_STUDENT_WORKS_QUERY,
+    operationName: 'findAllStudentWorks',
+    variables,
+    signal,
+  });
+
+  return response.data.findAllStudentWorks.data || [];
+}
+
+export async function fetchStudentWorks(
+  variables: {
+    studentId?: string;
+    classSessionId?: string;
+    classId?: string;
+    classIds?: string[];
+    classConfigs?: StudentWorkClassConfig[];
+  },
+  signal?: AbortSignal
+): Promise<StudentWork[]> {
+  if (variables.classConfigs && variables.classConfigs.length > 0) {
+    const concurrency = 10;
+    const results: StudentWork[] = [];
+
+    for (let index = 0; index < variables.classConfigs.length; index += concurrency) {
+      const chunk = variables.classConfigs.slice(index, index + concurrency);
+      const chunkResults = await Promise.all(chunk.map(async config => {
+        try {
+          if (config.classSessionId) {
+            const sessionWorks = await fetchStudentWorksOnce({
+              classId: config.classId,
+              classSessionId: config.classSessionId,
+            }, signal);
+            if (sessionWorks.length > 0) {
+              return ensureStudentWorkClassFields(sessionWorks, config);
+            }
+          }
+
+          const classWorks = await fetchStudentWorksOnce({ classId: config.classId }, signal);
+          return ensureStudentWorkClassFields(classWorks, { classId: config.classId });
+        } catch (error) {
+          if (signal?.aborted) return [];
+          console.warn(`Unable to fetch student works for class ${config.classId}:`, error);
+          return [];
+        }
+      }));
+      results.push(...chunkResults.flat());
+    }
+
+    return results;
+  }
+
   if (variables.classIds && variables.classIds.length > 50) {
     const chunks: string[][] = [];
     for (let index = 0; index < variables.classIds.length; index += 50) {
@@ -330,14 +399,11 @@ export async function fetchStudentWorks(
     return results.flat();
   }
 
-  const response = await lmsQuery<StudentWorksResponse>({
-    query: FIND_ALL_STUDENT_WORKS_QUERY,
-    operationName: 'findAllStudentWorks',
-    variables,
-    signal,
+  const works = await fetchStudentWorksOnce(variables, signal);
+  return ensureStudentWorkClassFields(works, {
+    classId: variables.classId,
+    classSessionId: variables.classSessionId,
   });
-
-  return response.data.findAllStudentWorks.data || [];
 }
 
 interface StudentCommentAreasResponse {
