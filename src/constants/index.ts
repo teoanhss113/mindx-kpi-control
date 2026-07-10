@@ -438,7 +438,16 @@ export const CLASS_QUALITY_LABELS = {
   COMMENT_DETAIL_FILTER: 'Lọc lỗi nhận xét',
   ALL_COMMENT_DETAILS: 'Tất cả lỗi nhận xét',
   VISIBLE_CLASS_COUNT_SUFFIX: 'lớp',
+  FOLLOW_UP_MANAGEMENT: 'Quản lý xử lý',
+  FOLLOW_UP_STATUS: 'Trạng thái xử lý',
+  FOLLOW_UP_NOTE: 'Ghi chú',
 } as const;
+
+export const CLASS_QUALITY_FOLLOW_UP_STATUS_OPTIONS = [
+  { value: 'unprocessed', label: 'Chưa xử lý' },
+  { value: 'in_progress', label: 'Đang xử lý' },
+  { value: 'resolved', label: 'Đã xử lý' },
+] as const;
 
 export const COMMENT_SLA_HOURS = {
   REGULAR: 48,

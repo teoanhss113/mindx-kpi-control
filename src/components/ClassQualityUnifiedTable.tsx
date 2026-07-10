@@ -3,6 +3,11 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { AnalyzedClassForQuality } from '@/types/classQuality';
 import type { FinalProductClassStats } from '@/types/classes';
+import type {
+  ClassQualityFollowUp,
+  ClassQualityFollowUpInput,
+  ClassQualityFollowUpStatus,
+} from '@/types/classQualityFollowUp';
 import {
   Badge,
   RescheduleStatusBadge,
@@ -18,7 +23,16 @@ import {
   CopyClassCodesButton,
   DateRangeInput,
 } from '@/components/ui';
-import { CLASS_QUALITY_LABELS, LABELS } from '@/constants';
+import {
+  CLASS_QUALITY_FOLLOW_UP_STATUS_OPTIONS,
+  CLASS_QUALITY_LABELS,
+  LABELS,
+} from '@/constants';
+import {
+  fetchClassQualityFollowUps,
+  saveClassQualityFollowUp,
+} from '@/services/classQualityFollowUpService';
+import { usePermissionsContext } from '@/lib/PermissionsContext';
 import styles from '@/app/dashboard.module.css';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
@@ -226,6 +240,163 @@ function getClassStatusLabel(a: AnalyzedClassForQuality) {
   return config?.description || a.cls.status;
 }
 
+const DEFAULT_FOLLOW_UP_STATUS: ClassQualityFollowUpStatus = 'unprocessed';
+
+const FOLLOW_UP_BADGE_VARIANTS: Record<
+  ClassQualityFollowUpStatus,
+  React.ComponentProps<typeof Badge>['variant']
+> = {
+  unprocessed: 'default',
+  in_progress: 'warning',
+  resolved: 'passed',
+};
+
+function getFollowUpStatusLabel(status: ClassQualityFollowUpStatus) {
+  return CLASS_QUALITY_FOLLOW_UP_STATUS_OPTIONS.find(option => option.value === status)?.label
+    || CLASS_QUALITY_FOLLOW_UP_STATUS_OPTIONS[0].label;
+}
+
+function formatFollowUpUpdatedAt(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleString('vi-VN', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function ClassQualityFollowUpCell({
+  classId,
+  className,
+  followUp,
+  loading,
+  canEdit,
+  onSave,
+}: {
+  classId: string;
+  className: string;
+  followUp?: ClassQualityFollowUp;
+  loading: boolean;
+  canEdit: boolean;
+  onSave: (input: ClassQualityFollowUpInput) => Promise<ClassQualityFollowUp>;
+}) {
+  const [status, setStatus] = useState<ClassQualityFollowUpStatus>(
+    followUp?.status || DEFAULT_FOLLOW_UP_STATUS,
+  );
+  const [note, setNote] = useState(followUp?.note || '');
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
+
+  const currentStatus = followUp?.status || DEFAULT_FOLLOW_UP_STATUS;
+  const currentNote = followUp?.note || '';
+
+  const persistChanges = async (
+    nextStatus: ClassQualityFollowUpStatus,
+    nextNote: string,
+    previousStatus = currentStatus,
+  ) => {
+    if (saving) return;
+    setSaving(true);
+    setSaveError('');
+    try {
+      await onSave({
+        classId,
+        className,
+        status: nextStatus,
+        note: nextNote.trim(),
+      });
+    } catch (error) {
+      setStatus(previousStatus);
+      setSaveError(error instanceof Error ? error.message : 'Không lưu được cập nhật');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleStatusChange = (nextStatus: ClassQualityFollowUpStatus) => {
+    const previousStatus = status;
+    setStatus(nextStatus);
+    void persistChanges(nextStatus, note, previousStatus);
+  };
+
+  const handleEditorBlur = (event: React.FocusEvent<HTMLDivElement>) => {
+    const nextFocusedElement = event.relatedTarget as Node | null;
+    if (nextFocusedElement && event.currentTarget.contains(nextFocusedElement)) return;
+    if (note.trim() === currentNote || saving) return;
+    void persistChanges(status, note);
+  };
+
+  if (canEdit) {
+    return (
+      <div
+        className={styles.qualityFollowUpEditor}
+        onClick={event => event.stopPropagation()}
+        onBlur={handleEditorBlur}
+      >
+        <select
+          aria-label={CLASS_QUALITY_LABELS.FOLLOW_UP_STATUS}
+          data-status={status}
+          className={`${styles.compactSelect} ${styles.qualityFollowUpSelect}`}
+          value={status}
+          onChange={event => handleStatusChange(event.target.value as ClassQualityFollowUpStatus)}
+          disabled={loading || saving}
+        >
+          {CLASS_QUALITY_FOLLOW_UP_STATUS_OPTIONS.map(option => (
+            <option key={option.value} value={option.value}>{option.label}</option>
+          ))}
+        </select>
+        <input
+          aria-label={CLASS_QUALITY_LABELS.FOLLOW_UP_NOTE}
+          className={`${styles.dateInput} ${styles.qualityFollowUpInput}`}
+          value={note}
+          onChange={event => setNote(event.target.value)}
+          onKeyDown={event => {
+            if (event.key === 'Enter') event.currentTarget.blur();
+          }}
+          placeholder="Ghi chú xử lý..."
+          maxLength={2000}
+          disabled={loading || saving}
+        />
+        <div
+          className={saveError ? styles.qualityFollowUpError : styles.qualityFollowUpSaveState}
+          title={followUp ? `Cập nhật bởi ${followUp.updatedByEmail}` : undefined}
+        >
+          {loading
+            ? 'Đang tải...'
+            : saving
+              ? 'Đang lưu...'
+              : saveError
+                || (followUp
+                  ? `Đã lưu · ${formatFollowUpUpdatedAt(followUp.updatedAt)}`
+                  : 'Tự động lưu khi thay đổi')}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={styles.qualityFollowUpSummary} onClick={event => event.stopPropagation()}>
+      <Badge variant={FOLLOW_UP_BADGE_VARIANTS[currentStatus]} size="sm">
+        {getFollowUpStatusLabel(currentStatus)}
+      </Badge>
+      <div
+        className={currentNote ? styles.qualityFollowUpNote : styles.qualityFollowUpEmptyNote}
+        title={currentNote || undefined}
+      >
+        {loading && !followUp ? 'Đang tải...' : currentNote || 'Chưa có ghi chú'}
+      </div>
+      {followUp && (
+        <div className={styles.qualityFollowUpMeta}>
+          {formatFollowUpUpdatedAt(followUp.updatedAt)} · {followUp.updatedByEmail}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 export function ClassQualityUnifiedTable({
   classes,
@@ -243,6 +414,7 @@ export function ClassQualityUnifiedTable({
   onDateToChange,
   dateRangePending = false,
 }: Props) {
+  const { canEdit } = usePermissionsContext();
   const [sortKey, setSortKey] = useState<SortKey>('commentIssues');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [quickFilter, setQuickFilter] = useState<QuickFilterKey | null>(null);
@@ -254,12 +426,54 @@ export function ClassQualityUnifiedTable({
   const [selectedCentres, setSelectedCentres] = useState<string[]>([]);
   const [selectedCourses, setSelectedCourses] = useState<string[]>([]);
   const [selectedTeachers, setSelectedTeachers] = useState<string[]>([]);
-  const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
+  const roleFilterScope = JSON.stringify([selectedTeacherId || '', ...selectedTeachers]);
+  const [roleFilterState, setRoleFilterState] = useState<{ scope: string; values: string[] }>({
+    scope: '',
+    values: [],
+  });
+  const selectedRoles = useMemo(
+    () => roleFilterState.scope === roleFilterScope ? roleFilterState.values : [],
+    [roleFilterScope, roleFilterState.scope, roleFilterState.values],
+  );
+  const setSelectedRoles = (values: string[]) => {
+    setRoleFilterState({ scope: roleFilterScope, values });
+  };
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
+  const [followUpsByClassId, setFollowUpsByClassId] = useState<Map<string, ClassQualityFollowUp>>(new Map());
+  const [followUpsLoading, setFollowUpsLoading] = useState(true);
+  const [followUpsError, setFollowUpsError] = useState('');
 
   useEffect(() => {
-    setSelectedRoles([]);
-  }, [selectedTeacherId, selectedTeachers]);
+    let cancelled = false;
+
+    fetchClassQualityFollowUps()
+      .then(followUps => {
+        if (cancelled) return;
+        setFollowUpsByClassId(new Map(followUps.map(item => [item.classId, item])));
+      })
+      .catch(error => {
+        if (cancelled) return;
+        setFollowUpsError(error instanceof Error ? error.message : 'Không tải được trạng thái xử lý');
+      })
+      .finally(() => {
+        if (!cancelled) setFollowUpsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleSaveFollowUp = async (input: ClassQualityFollowUpInput) => {
+    const saved = await saveClassQualityFollowUp(input);
+    setFollowUpsByClassId(current => {
+      const next = new Map(current);
+      next.set(saved.classId, saved);
+      return next;
+    });
+    setFollowUpsError('');
+    return saved;
+  };
 
   const roleTeacherIds = useMemo(() => (
     selectedTeachers.length > 0
@@ -331,7 +545,7 @@ export function ClassQualityUnifiedTable({
       list = list.filter(a => a.cls.name.toLowerCase().includes(q) || a.cls.centre?.shortName?.toLowerCase().includes(q));
     }
     return list;
-  }, [classes, search, selectedCentres, selectedCourses, selectedCourseCategories, selectedTeachers, selectedRoles, selectedStatuses, selectedTeacherId]);
+  }, [classes, search, selectedCentres, selectedCourses, selectedCourseCategories, selectedTeachers, selectedRoles, selectedStatuses, roleTeacherIds]);
 
   const issueCounts = useMemo(() => {
     let attendanceAlerts = 0;
@@ -590,6 +804,9 @@ export function ClassQualityUnifiedTable({
         }
       >
 
+        {followUpsError && (
+          <div className={styles.qualityFollowUpLoadError}>{followUpsError}</div>
+        )}
         <div className={styles.tableScrollWrapper}>
           <table className={`${styles.studentTable} ${styles.tableSm}`}>
           <thead>
@@ -640,12 +857,13 @@ export function ClassQualityUnifiedTable({
               <SortableHeader label={CLASS_QUALITY_LABELS.SCHEDULE_CHANGES} sortKey="rescheduled" currentSortKey={sortKey} sortOrder={sortDir} onSort={(key) => handleSort(key as SortKey)} />
               <SortableHeader label={CLASS_QUALITY_LABELS.FINAL_PRODUCTS} sortKey="finalProducts" currentSortKey={sortKey} sortOrder={sortDir} onSort={(key) => handleSort(key as SortKey)} />
               <SortableHeader label={CLASS_QUALITY_LABELS.CHECKPOINT_DEMO_SCORES} sortKey="cp" currentSortKey={sortKey} sortOrder={sortDir} onSort={(key) => handleSort(key as SortKey)} />
+              <th className={styles.qualityFollowUpHeader}>{CLASS_QUALITY_LABELS.FOLLOW_UP_MANAGEMENT}</th>
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={9}>
+                <td colSpan={10}>
                   <EmptyState title={LABELS.NO_DATA} subtitle={LABELS.NO_RESULTS} />
                 </td>
               </tr>
@@ -851,6 +1069,22 @@ export function ClassQualityUnifiedTable({
                         )}
                       </div>
                     </div>
+                  </td>
+
+                  {/* Quản lý xử lý */}
+                  <td
+                    className={styles.qualityFollowUpCell}
+                    onClick={event => event.stopPropagation()}
+                  >
+                    <ClassQualityFollowUpCell
+                      key={`${a.cls.id}:${followUpsLoading ? 'loading' : followUpsByClassId.get(a.cls.id)?.updatedAt || 'empty'}`}
+                      classId={a.cls.id}
+                      className={a.cls.name}
+                      followUp={followUpsByClassId.get(a.cls.id)}
+                      loading={followUpsLoading}
+                      canEdit={canEdit('teacher-schedule')}
+                      onSave={handleSaveFollowUp}
+                    />
                   </td>
                 </tr>
               );
