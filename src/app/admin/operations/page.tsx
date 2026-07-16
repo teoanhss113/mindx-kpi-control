@@ -69,6 +69,9 @@ import {
   QuickFilterChips,
   FilterChip,
   Badge,
+  ExportButton,
+  CSVExportSettings,
+  type CSVColumnConfig,
   CommentStatusBadge,
   COMMENT_STATUS_GROUP_LABELS,
   COMMENT_STATUS_COUNT_LABELS,
@@ -101,7 +104,9 @@ import {
   DEFAULT_CLASS_STATUS_FILTER_VALUES,
 } from '@/constants';
 import { useSharedDateRange, useSharedCentres } from '@/hooks/useSharedFilterState';
+import { useCSVExportPreferences } from '@/hooks/useCSVExportPreferences';
 import { supabase } from '@/lib/supabase/client';
+import { exportToCSV, type CSVColumn } from '@/lib/csvExport';
 import styles from '@/app/dashboard.module.css';
 
 // ─── Custom Hook: useMediaQuery ───────────────────────────────────────────────
@@ -137,6 +142,76 @@ const DAYS_OF_WEEK = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
 type HolidayPeriod = { name: string; from: string; to: string };
 type CentreRegionInfo = { id: string; name: string };
 type CentreRegionMap = Record<string, CentreRegionInfo[]>;
+
+interface OperationsScheduleExportRow {
+  sortKey: string;
+  date: string;
+  dayLabel: string;
+  startTime: string;
+  endTime: string;
+  type: string;
+  centre: string;
+  centreCode: string;
+  name: string;
+  classId: string;
+  sessionNumber: string | number;
+  courseLine: string;
+  status: string;
+  studentCount: string | number;
+  primaryTeacher: string;
+  teachers: string;
+  roles: string;
+  officeHourType: string;
+}
+
+function getDefaultOperationsScheduleCSVColumns(): CSVColumnConfig[] {
+  return [
+    { id: 'date', label: 'Ngày', enabled: true },
+    { id: 'dayLabel', label: 'Thứ', enabled: true },
+    { id: 'startTime', label: 'Giờ bắt đầu', enabled: true },
+    { id: 'endTime', label: 'Giờ kết thúc', enabled: true },
+    { id: 'type', label: 'Loại lịch', enabled: true },
+    { id: 'centre', label: 'Cơ sở', enabled: true },
+    { id: 'centreCode', label: 'Mã cơ sở', enabled: true },
+    { id: 'name', label: 'Lớp/Ca', enabled: true },
+    { id: 'classId', label: 'Class ID', enabled: false },
+    { id: 'sessionNumber', label: 'Buổi', enabled: true },
+    { id: 'courseLine', label: 'Khối học', enabled: true },
+    { id: 'status', label: 'Trạng thái', enabled: true },
+    { id: 'studentCount', label: 'Số học viên', enabled: true },
+    { id: 'primaryTeacher', label: 'Giáo viên chính', enabled: true },
+    { id: 'teachers', label: 'Giáo viên trong buổi', enabled: true },
+    { id: 'roles', label: 'Vai trò', enabled: true },
+    { id: 'officeHourType', label: 'Loại ca trực', enabled: false },
+  ];
+}
+
+function getOperationsScheduleCSVColumnsFromConfig(config: CSVColumnConfig[]): CSVColumn<OperationsScheduleExportRow>[] {
+  const columnMap: Record<string, CSVColumn<OperationsScheduleExportRow>> = {
+    date: { header: 'Ngày', accessor: 'date' },
+    dayLabel: { header: 'Thứ', accessor: 'dayLabel' },
+    startTime: { header: 'Giờ bắt đầu', accessor: 'startTime' },
+    endTime: { header: 'Giờ kết thúc', accessor: 'endTime' },
+    type: { header: 'Loại lịch', accessor: 'type' },
+    centre: { header: 'Cơ sở', accessor: 'centre' },
+    centreCode: { header: 'Mã cơ sở', accessor: 'centreCode' },
+    name: { header: 'Lớp/Ca', accessor: 'name' },
+    classId: { header: 'Class ID', accessor: 'classId' },
+    sessionNumber: { header: 'Buổi', accessor: 'sessionNumber' },
+    courseLine: { header: 'Khối học', accessor: 'courseLine' },
+    status: { header: 'Trạng thái', accessor: 'status' },
+    studentCount: { header: 'Số học viên', accessor: 'studentCount' },
+    primaryTeacher: { header: 'Giáo viên chính', accessor: 'primaryTeacher' },
+    teachers: { header: 'Giáo viên trong buổi', accessor: 'teachers' },
+    roles: { header: 'Vai trò', accessor: 'roles' },
+    officeHourType: { header: 'Loại ca trực', accessor: 'officeHourType' },
+  };
+
+  return config
+    .filter(column => column.enabled)
+    .map(column => columnMap[column.id])
+    .filter(Boolean);
+}
 
 const DEFAULT_HOLIDAY_PERIODS: HolidayPeriod[] = [
   { name: 'Tết Dương lịch', from: '2026-01-01', to: '2026-01-01' },
@@ -2753,6 +2828,11 @@ export default function TeacherSchedulePage() {
   const [showSummarySection, setShowSummarySection] = useState(false);
   const [selectedSummaryCentre, setSelectedSummaryCentre] = useState<string>('all');
   const [summaryStatusFilter, setSummaryStatusFilter] = useState<string[]>([]);
+  const [showScheduleCSVSettings, setShowScheduleCSVSettings] = useState(false);
+  const { columns: scheduleCsvColumns, saveColumns: saveScheduleCsvColumns } = useCSVExportPreferences(
+    'operations-schedule',
+    getDefaultOperationsScheduleCSVColumns()
+  );
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -4291,6 +4371,69 @@ export default function TeacherSchedulePage() {
     return count;
   }, [calendarSlotMap]);
 
+  const scheduleExportRows = useMemo<OperationsScheduleExportRow[]>(() => {
+    const dayLabelByDate = new Map(calendarData.map(day => [day.date, day.dayLabel]));
+    const rows: OperationsScheduleExportRow[] = [];
+
+    calendarSlotMap.forEach(centreMap => {
+      centreMap.forEach(slots => {
+        slots.forEach((slot: TeacherScheduleSlot) => {
+          const start = new Date(slot.startTime);
+          const end = new Date(slot.endTime);
+          const dateKey = Number.isNaN(start.getTime()) ? '' : formatLocalDateKey(start);
+          const sessionTeachers = getDisplaySessionTeachers(slot);
+          const teacherRows = sessionTeachers.map(item => ({
+            name: item.teacher.fullName || item.teacher.username || item.teacher.email || item.teacher.id,
+            role: getTeacherRoleLabel(item.roleShortName, item.roleName),
+          }));
+          const primaryTeacher = slot.teacher?.fullName || slot.teacher?.username || teacherRows[0]?.name || '—';
+
+          rows.push({
+            sortKey: `${dateKey} ${Number.isNaN(start.getTime()) ? '' : FORMAT.time(start)} ${slot.centreShortName || ''} ${slot.className || ''}`,
+            date: Number.isNaN(start.getTime()) ? '—' : start.toLocaleDateString('vi-VN'),
+            dayLabel: dayLabelByDate.get(dateKey) || '—',
+            startTime: Number.isNaN(start.getTime()) ? '—' : FORMAT.time(start),
+            endTime: Number.isNaN(end.getTime()) ? '—' : FORMAT.time(end),
+            type: slot.type === 'class' ? 'Lớp học' : 'Ca trực',
+            centre: slot.centreName || slot.centreShortName || '—',
+            centreCode: slot.centreShortName || '—',
+            name: slot.className || slot.officeHourType || '—',
+            classId: slot.classId || '',
+            sessionNumber: slot.sessionNumber || '',
+            courseLine: slot.courseLine || '',
+            status: slot.status || '',
+            studentCount: slot.studentCount ?? '',
+            primaryTeacher,
+            teachers: teacherRows.map(item => item.name).join('; '),
+            roles: teacherRows.map(item => `${item.role}: ${item.name}`).join('; '),
+            officeHourType: slot.officeHourType || '',
+          });
+        });
+      });
+    });
+
+    return rows.sort((a, b) => a.sortKey.localeCompare(b.sortKey));
+  }, [calendarData, calendarSlotMap]);
+
+  const handleExportScheduleCSV = useCallback(() => {
+    if (scheduleExportRows.length === 0) {
+      addToast('Không có lịch để xuất', 'info');
+      return;
+    }
+
+    const columns = getOperationsScheduleCSVColumnsFromConfig(scheduleCsvColumns);
+    if (columns.length === 0) {
+      addToast('Vui lòng chọn ít nhất một cột để xuất', 'info');
+      return;
+    }
+
+    const currentWeek = allWeeks[currentWeekIndex] || [];
+    const weekStart = currentWeek[0] ? formatLocalDateKey(currentWeek[0]) : fromDate;
+    const weekEnd = currentWeek[6] ? formatLocalDateKey(currentWeek[6]) : toDate;
+    exportToCSV(scheduleExportRows, columns, `lich-van-hanh-${weekStart}-${weekEnd}`);
+    addToast(`Đã xuất ${scheduleExportRows.length} lịch vận hành với ${columns.length} cột`, 'success');
+  }, [addToast, allWeeks, currentWeekIndex, fromDate, scheduleCsvColumns, scheduleExportRows, toDate]);
+
   const { allowedPages } = useAllowedPages();
   const navItems = getNavItemsWithRouter('teacher-schedule', router, allowedPages);
 
@@ -4382,25 +4525,34 @@ export default function TeacherSchedulePage() {
             progress={progress}
             isExpanded={true}
             actionSlot={
-              <button
-                type="button"
-                className={styles.primaryBtn}
-                onClick={() => {
-                  setSelectedSlot(null);
-                  setCoordinationRequest({
-                    date: '',
-                    startTime: '08:00',
-                    endTime: '10:00',
-                    centreId: '',
-                  });
-                  setAvailableTeachers([]);
-                  setUnavailableTeachers([]);
-                  setShowCoordinationPanel(true);
-                }}
-              >
-                <Icon.Search />
-                {TEACHER_SCHEDULE_LABELS.AVAILABLE_TEACHER_SHORT}
-              </button>
+              <div className={styles.inlineCluster}>
+                <ExportButton
+                  onClick={handleExportScheduleCSV}
+                  onSettingsClick={() => setShowScheduleCSVSettings(true)}
+                  disabled={scheduleExportRows.length === 0}
+                  count={scheduleExportRows.length}
+                  label="Xuất lịch"
+                />
+                <button
+                  type="button"
+                  className={styles.primaryBtn}
+                  onClick={() => {
+                    setSelectedSlot(null);
+                    setCoordinationRequest({
+                      date: '',
+                      startTime: '08:00',
+                      endTime: '10:00',
+                      centreId: '',
+                    });
+                    setAvailableTeachers([]);
+                    setUnavailableTeachers([]);
+                    setShowCoordinationPanel(true);
+                  }}
+                >
+                  <Icon.Search />
+                  {TEACHER_SCHEDULE_LABELS.AVAILABLE_TEACHER_SHORT}
+                </button>
+              </div>
             }
             toolbarSlot={
               <>
@@ -6192,6 +6344,13 @@ export default function TeacherSchedulePage() {
             </div> {/* Close inner wrapper */}
           </div>
         </Modal>
+        <CSVExportSettings
+          isOpen={showScheduleCSVSettings}
+          onClose={() => setShowScheduleCSVSettings(false)}
+          columns={scheduleCsvColumns}
+          onSave={saveScheduleCsvColumns}
+          title="Cài đặt xuất CSV - Lịch vận hành"
+        />
       </PageLayout>
     </>
     </ProtectedPage>

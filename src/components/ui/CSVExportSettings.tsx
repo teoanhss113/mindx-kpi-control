@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { Modal, ModalHeader, Icon } from './index';
 import styles from './CSVExportSettings.module.css';
 
@@ -28,15 +28,22 @@ export function CSVExportSettings({
   const [localColumns, setLocalColumns] = useState<CSVColumnConfig[]>(columns);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
 
+  useEffect(() => {
+    if (isOpen) setLocalColumns(columns);
+  }, [columns, isOpen]);
+
   const handleToggle = useCallback((id: string) => {
     setLocalColumns(prev =>
       prev.map(col => (col.id === id ? { ...col, enabled: !col.enabled } : col))
     );
   }, []);
 
-  const handleDragStart = useCallback((index: number) => {
+  const handleDragStart = useCallback((event: React.DragEvent, index: number) => {
+    event.stopPropagation();
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', localColumns[index]?.id || '');
     setDraggedIndex(index);
-  }, []);
+  }, [localColumns]);
 
   const handleDragOver = useCallback((e: React.DragEvent, index: number) => {
     e.preventDefault();
@@ -103,19 +110,25 @@ export function CSVExportSettings({
           {localColumns.map((col, index) => (
             <div
               key={col.id}
-              draggable
-              onDragStart={() => handleDragStart(index)}
               onDragOver={(e) => handleDragOver(e, index)}
-              onDragEnd={handleDragEnd}
               className={`${styles.columnItem} ${draggedIndex === index ? styles.dragging : ''} ${!col.enabled ? styles.disabled : ''}`}
             >
               {/* Drag handle */}
-              <div className={styles.dragHandle}>
+              <div
+                className={styles.dragHandle}
+                draggable
+                onDragStart={(event) => handleDragStart(event, index)}
+                onDragEnd={handleDragEnd}
+                title="Kéo để đổi thứ tự"
+              >
                 <Icon.GripVertical size={16} />
               </div>
 
               {/* Checkbox */}
-              <label className={styles.checkboxLabel}>
+              <label
+                className={styles.checkboxLabel}
+                onClick={event => event.stopPropagation()}
+              >
                 <input
                   type="checkbox"
                   checked={col.enabled}

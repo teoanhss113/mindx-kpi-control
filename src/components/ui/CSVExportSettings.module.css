@@ -4,6 +4,8 @@
   padding: var(--space-5);
   max-height: 60vh;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .quickActions {
@@ -65,7 +67,7 @@
   background: var(--bg-surface);
   border: 1px solid var(--border-primary);
   border-radius: var(--radius-comfortable);
-  cursor: move;
+  cursor: default;
   transition: all 0.15s ease;
   user-select: none;
 }
@@ -98,10 +100,12 @@
 }
 
 .checkboxLabel {
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--space-2);
   flex: 1;
+  min-width: 0;
   cursor: pointer;
   font-size: 13px;
   color: var(--text-primary);
@@ -109,6 +113,12 @@
 
 .checkbox {
   position: absolute;
+  left: 0;
+  top: 50%;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  transform: translateY(-50%);
   opacity: 0;
   pointer-events: none;
 }
@@ -135,9 +145,16 @@
   color: white;
 }
 
+.checkbox:focus-visible + .checkboxCustom {
+  outline: 2px solid var(--brand-indigo);
+  outline-offset: 2px;
+}
+
 .columnLabel {
   font-weight: 510;
   letter-spacing: -0.01em;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .orderIndicator {

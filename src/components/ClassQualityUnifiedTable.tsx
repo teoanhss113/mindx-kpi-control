@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState, useMemo, useEffect } from 'react';
-import { AnalyzedClassForQuality } from '@/types/classQuality';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import type { AnalyzedClassForQuality, AttendanceAlert } from '@/types/classQuality';
 import type { FinalProductClassStats } from '@/types/classes';
 import type {
   ClassQualityFollowUp,
@@ -22,7 +22,12 @@ import {
   COMMENT_DETAIL_FILTER_OPTIONS,
   CopyClassCodesButton,
   DateRangeInput,
+  ExportButton,
+  CSVExportSettings,
+  type CSVColumnConfig,
 } from '@/components/ui';
+import { exportToCSV, type CSVColumn } from '@/lib/csvExport';
+import { useCSVExportPreferences } from '@/hooks/useCSVExportPreferences';
 import {
   CLASS_QUALITY_FOLLOW_UP_STATUS_OPTIONS,
   CLASS_QUALITY_LABELS,
@@ -171,6 +176,53 @@ const FINAL_PRODUCT_FILTER_OPTIONS: { value: FinalProductFilter; label: string }
   { value: 'rejected', label: CLASS_QUALITY_LABELS.FINAL_PRODUCT_REJECTED },
 ];
 
+function getDefaultClassQualityCSVColumns(): CSVColumnConfig[] {
+  return [
+    { id: 'className', label: 'Mã lớp', enabled: true },
+    { id: 'centre', label: 'Cơ sở', enabled: true },
+    { id: 'centreCode', label: 'Mã cơ sở', enabled: true },
+    { id: 'courseLine', label: 'Khối học', enabled: true },
+    { id: 'course', label: 'Khoá học', enabled: true },
+    { id: 'teacher', label: 'Giáo viên chính', enabled: true },
+    { id: 'classStatus', label: 'Trạng thái lớp', enabled: true },
+    { id: 'studentCount', label: 'Số học viên', enabled: true },
+    { id: 'passedSlots', label: 'Buổi đã học trong phạm vi', enabled: true },
+    { id: 'totalSlots', label: 'Tổng buổi trong phạm vi', enabled: true },
+    { id: 'commentIssues', label: 'Lỗi nhận xét', enabled: true },
+    { id: 'emptyComments', label: COMMENT_STATUS_COUNT_LABELS.empty, enabled: true },
+    { id: 'briefComments', label: COMMENT_STATUS_COUNT_LABELS.brief, enabled: true },
+    { id: 'overdueComments', label: COMMENT_STATUS_COUNT_LABELS.overdue, enabled: true },
+    { id: 'duplicateComments', label: COMMENT_STATUS_COUNT_LABELS.duplicate, enabled: true },
+    { id: 'okComments', label: 'Nhận xét đạt', enabled: true },
+    { id: 'attendanceAlerts', label: 'Lỗi chuyên cần', enabled: true },
+    { id: 'frequentAbsent', label: ATTENDANCE_ALERT_LABELS.frequent_absent, enabled: true },
+    { id: 'consecutiveAbsent', label: ATTENDANCE_ALERT_LABELS.consecutive_absent, enabled: true },
+    { id: 'lateStageAbsent', label: ATTENDANCE_ALERT_LABELS.late_stage_absent, enabled: true },
+    { id: 'rescheduledSessions', label: 'Buổi đổi lịch', enabled: true },
+    { id: 'totalScheduleSessions', label: 'Tổng buổi lịch', enabled: false },
+    { id: 'rescheduledRate', label: 'Tỷ lệ đổi lịch (%)', enabled: true },
+    { id: 'finalProductStatus', label: CLASS_QUALITY_LABELS.FINAL_PRODUCTS, enabled: true },
+    { id: 'finalProductSubmitted', label: 'Sản phẩm đã đăng', enabled: true },
+    { id: 'finalProductMissing', label: 'Sản phẩm thiếu', enabled: true },
+    { id: 'finalProductPending', label: 'Sản phẩm chờ xử lý', enabled: true },
+    { id: 'finalProductRejected', label: 'Sản phẩm bị từ chối', enabled: true },
+    { id: 'finalSessionDate', label: 'Ngày buổi cuối', enabled: true },
+    { id: 'cp1Average', label: 'Điểm TB CP1', enabled: true },
+    { id: 'cp1Passed', label: 'CP1 đạt', enabled: true },
+    { id: 'cp1Missing', label: 'CP1 thiếu điểm', enabled: true },
+    { id: 'cp2Average', label: 'Điểm TB CP2', enabled: true },
+    { id: 'cp2Passed', label: 'CP2 đạt', enabled: true },
+    { id: 'cp2Missing', label: 'CP2 thiếu điểm', enabled: true },
+    { id: 'demoAverage', label: 'Điểm TB Demo', enabled: true },
+    { id: 'demoPassed', label: 'Demo đạt', enabled: true },
+    { id: 'demoMissing', label: 'Demo thiếu điểm', enabled: true },
+    { id: 'followUpStatus', label: CLASS_QUALITY_LABELS.FOLLOW_UP_STATUS, enabled: true },
+    { id: 'followUpNote', label: CLASS_QUALITY_LABELS.FOLLOW_UP_NOTE, enabled: true },
+    { id: 'followUpUpdatedAt', label: 'Cập nhật xử lý lúc', enabled: false },
+    { id: 'followUpUpdatedBy', label: 'Người cập nhật xử lý', enabled: false },
+  ];
+}
+
 function getLatestPassedSessionIndex(a: AnalyzedClassForQuality): number | null {
   const indexes = a.commentAnalysis.students.flatMap(student =>
     student.comments.map(comment => comment.sessionIndex)
@@ -238,6 +290,42 @@ function getEmptyFinalProductStats(classId: string, totalStudents: number): Fina
 function getClassStatusLabel(a: AnalyzedClassForQuality) {
   const config = (a.cls.classStatusConfig?.statusConfigs || []).find(item => item.status === a.cls.status);
   return config?.description || a.cls.status;
+}
+
+function formatExportDate(value?: string | null) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString('vi-VN');
+}
+
+function formatExportNumber(value: number | null | undefined, digits = 1) {
+  return typeof value === 'number' && Number.isFinite(value) ? value.toFixed(digits) : '';
+}
+
+function getAttendanceAlertStudentCount(a: AnalyzedClassForQuality, alert: AttendanceAlert) {
+  return a.attendanceAnalysis.studentsWithAlerts.filter(student =>
+    student.alerts.includes(alert)
+  ).length;
+}
+
+function getMissingScoreCount(a: AnalyzedClassForQuality, key: 'cp1Analysis' | 'cp2Analysis' | 'demoAnalysis') {
+  const studentCount = getActiveStudentCount(a.cls);
+  const analysis = a[key];
+  return Math.max(analysis.missingScoreCount, studentCount - analysis.studentsWithScores);
+}
+
+function getFinalProductExportStatus(stats: FinalProductClassStats) {
+  if (!stats.isFinalSessionCompleted) return CLASS_QUALITY_LABELS.FINAL_PRODUCT_NOT_DUE;
+  if (stats.missingCount === 0 && stats.pendingCount === 0 && stats.rejectedCount === 0) {
+    return CLASS_QUALITY_LABELS.FINAL_PRODUCT_SUBMITTED;
+  }
+
+  const issues: string[] = [];
+  if (stats.missingCount > 0) issues.push(`${CLASS_QUALITY_LABELS.FINAL_PRODUCT_MISSING}: ${stats.missingCount}`);
+  if (stats.pendingCount > 0) issues.push(`${CLASS_QUALITY_LABELS.FINAL_PRODUCT_PENDING}: ${stats.pendingCount}`);
+  if (stats.rejectedCount > 0) issues.push(`${CLASS_QUALITY_LABELS.FINAL_PRODUCT_REJECTED}: ${stats.rejectedCount}`);
+  return issues.join('; ');
 }
 
 const DEFAULT_FOLLOW_UP_STATUS: ClassQualityFollowUpStatus = 'unprocessed';
@@ -421,6 +509,11 @@ export function ClassQualityUnifiedTable({
   const [commentDetailFilters, setCommentDetailFilters] = useState<CommentDetailFilter[]>([]);
   const [latestSessionCommentDetailFilters, setLatestSessionCommentDetailFilters] = useState<CommentDetailFilter[]>([]);
   const [finalProductFilters, setFinalProductFilters] = useState<FinalProductFilter[]>([]);
+  const [showCSVSettings, setShowCSVSettings] = useState(false);
+  const { columns: csvColumns, saveColumns: saveCsvColumns } = useCSVExportPreferences(
+    'operations-class-quality',
+    getDefaultClassQualityCSVColumns()
+  );
   
   // Basic table filters
   const [selectedCentres, setSelectedCentres] = useState<string[]>([]);
@@ -439,6 +532,7 @@ export function ClassQualityUnifiedTable({
     setRoleFilterState({ scope: roleFilterScope, values });
   };
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
+  const [selectedFollowUpStatuses, setSelectedFollowUpStatuses] = useState<ClassQualityFollowUpStatus[]>([]);
   const [followUpsByClassId, setFollowUpsByClassId] = useState<Map<string, ClassQualityFollowUp>>(new Map());
   const [followUpsLoading, setFollowUpsLoading] = useState(true);
   const [followUpsError, setFollowUpsError] = useState('');
@@ -615,6 +709,24 @@ export function ClassQualityUnifiedTable({
     })`,
   })), [issueCounts.finalProductSubmitted, issueCounts.finalProductMissing, issueCounts.finalProductPending, issueCounts.finalProductRejected]);
 
+  const followUpFilterOptions = useMemo(() => {
+    const counts: Record<ClassQualityFollowUpStatus, number> = {
+      unprocessed: 0,
+      in_progress: 0,
+      resolved: 0,
+    };
+
+    baseList.forEach(item => {
+      const status = followUpsByClassId.get(item.cls.id)?.status || DEFAULT_FOLLOW_UP_STATUS;
+      counts[status] += 1;
+    });
+
+    return CLASS_QUALITY_FOLLOW_UP_STATUS_OPTIONS.map(option => ({
+      ...option,
+      label: `${option.label} (${counts[option.value]})`,
+    }));
+  }, [baseList, followUpsByClassId]);
+
   const visibleClasses = useMemo(() => {
     let list = baseList;
     if (quickFilter === 'attendanceAlerts') {
@@ -641,9 +753,25 @@ export function ClassQualityUnifiedTable({
     if (latestSessionCommentDetailFilters.length > 0) {
       list = list.filter(a => latestSessionCommentDetailFilters.some(status => hasLatestSessionCommentStatus(a, status)));
     }
+    if (!followUpsLoading && selectedFollowUpStatuses.length > 0) {
+      list = list.filter(a => {
+        const status = followUpsByClassId.get(a.cls.id)?.status || DEFAULT_FOLLOW_UP_STATUS;
+        return selectedFollowUpStatuses.includes(status);
+      });
+    }
 
     return list;
-  }, [baseList, quickFilter, finalProductFilters, commentDetailFilters, latestSessionCommentDetailFilters, finalProductStatsByClassId]);
+  }, [
+    baseList,
+    quickFilter,
+    finalProductFilters,
+    commentDetailFilters,
+    latestSessionCommentDetailFilters,
+    finalProductStatsByClassId,
+    followUpsLoading,
+    followUpsByClassId,
+    selectedFollowUpStatuses,
+  ]);
 
   const filtered = useMemo(() => {
     return [...visibleClasses].sort((a, b) => {
@@ -675,11 +803,132 @@ export function ClassQualityUnifiedTable({
 
   const visibleClassCodes = useMemo(() => visibleClasses.map(a => a.cls.name), [visibleClasses]);
 
+  const classQualityColumnMap = useMemo<Record<string, CSVColumn<AnalyzedClassForQuality>>>(() => ({
+    className: { header: 'Mã lớp', accessor: row => row.cls.name },
+    centre: { header: 'Cơ sở', accessor: row => row.cls.centre?.name || '' },
+    centreCode: { header: 'Mã cơ sở', accessor: row => row.cls.centre?.shortName || '' },
+    courseLine: { header: 'Khối học', accessor: row => row.courseLineName || row.cls.course?.courseLine?.name || '' },
+    course: { header: 'Khoá học', accessor: row => row.cls.course?.name || '' },
+    teacher: { header: 'Giáo viên chính', accessor: row => getPrimaryTeacher(row.cls) },
+    classStatus: { header: 'Trạng thái lớp', accessor: row => getClassStatusLabel(row) || '' },
+    studentCount: { header: 'Số học viên', accessor: row => getActiveStudentCount(row.cls) },
+    passedSlots: { header: 'Buổi đã học trong phạm vi', accessor: row => row.commentAnalysis.passedSlots },
+    totalSlots: { header: 'Tổng buổi trong phạm vi', accessor: row => row.commentAnalysis.totalSlots },
+    commentIssues: { header: 'Lỗi nhận xét', accessor: row => row.commentAnalysis.emptyCount + row.commentAnalysis.briefCount + row.commentAnalysis.duplicateCount + row.commentAnalysis.overdueCount },
+    emptyComments: { header: COMMENT_STATUS_COUNT_LABELS.empty, accessor: row => row.commentAnalysis.emptyCount },
+    briefComments: { header: COMMENT_STATUS_COUNT_LABELS.brief, accessor: row => row.commentAnalysis.briefCount },
+    overdueComments: { header: COMMENT_STATUS_COUNT_LABELS.overdue, accessor: row => row.commentAnalysis.overdueCount },
+    duplicateComments: { header: COMMENT_STATUS_COUNT_LABELS.duplicate, accessor: row => row.commentAnalysis.duplicateCount },
+    okComments: { header: 'Nhận xét đạt', accessor: row => row.commentAnalysis.okCount },
+    attendanceAlerts: { header: 'Lỗi chuyên cần', accessor: row => row.attendanceAnalysis.totalAlerts },
+    frequentAbsent: { header: ATTENDANCE_ALERT_LABELS.frequent_absent, accessor: row => getAttendanceAlertStudentCount(row, 'frequent_absent') },
+    consecutiveAbsent: { header: ATTENDANCE_ALERT_LABELS.consecutive_absent, accessor: row => getAttendanceAlertStudentCount(row, 'consecutive_absent') },
+    lateStageAbsent: { header: ATTENDANCE_ALERT_LABELS.late_stage_absent, accessor: row => getAttendanceAlertStudentCount(row, 'late_stage_absent') },
+    rescheduledSessions: { header: 'Buổi đổi lịch', accessor: row => row.reschedulingAnalysis.rescheduledSessions },
+    totalScheduleSessions: { header: 'Tổng buổi lịch', accessor: row => row.reschedulingAnalysis.totalSessions },
+    rescheduledRate: {
+      header: 'Tỷ lệ đổi lịch (%)',
+      accessor: row => row.reschedulingAnalysis.totalSessions > 0
+        ? Math.round((row.reschedulingAnalysis.rescheduledSessions / row.reschedulingAnalysis.totalSessions) * 100)
+        : 0,
+    },
+    finalProductStatus: {
+      header: CLASS_QUALITY_LABELS.FINAL_PRODUCTS,
+      accessor: row => {
+        const stats = finalProductStatsByClassId?.get(row.cls.id) || getEmptyFinalProductStats(row.cls.id, getActiveStudentCount(row.cls));
+        return getFinalProductExportStatus(stats);
+      },
+    },
+    finalProductSubmitted: {
+      header: 'Sản phẩm đã đăng',
+      accessor: row => {
+        const stats = finalProductStatsByClassId?.get(row.cls.id) || getEmptyFinalProductStats(row.cls.id, getActiveStudentCount(row.cls));
+        return stats.submittedCount;
+      },
+    },
+    finalProductMissing: {
+      header: 'Sản phẩm thiếu',
+      accessor: row => {
+        const stats = finalProductStatsByClassId?.get(row.cls.id) || getEmptyFinalProductStats(row.cls.id, getActiveStudentCount(row.cls));
+        return stats.missingCount;
+      },
+    },
+    finalProductPending: {
+      header: 'Sản phẩm chờ xử lý',
+      accessor: row => {
+        const stats = finalProductStatsByClassId?.get(row.cls.id) || getEmptyFinalProductStats(row.cls.id, getActiveStudentCount(row.cls));
+        return stats.pendingCount;
+      },
+    },
+    finalProductRejected: {
+      header: 'Sản phẩm bị từ chối',
+      accessor: row => {
+        const stats = finalProductStatsByClassId?.get(row.cls.id) || getEmptyFinalProductStats(row.cls.id, getActiveStudentCount(row.cls));
+        return stats.rejectedCount;
+      },
+    },
+    finalSessionDate: {
+      header: 'Ngày buổi cuối',
+      accessor: row => {
+        const stats = finalProductStatsByClassId?.get(row.cls.id) || getEmptyFinalProductStats(row.cls.id, getActiveStudentCount(row.cls));
+        return formatExportDate(stats.finalSessionDate);
+      },
+    },
+    cp1Average: { header: 'Điểm TB CP1', accessor: row => formatExportNumber(row.cp1Analysis.averageScore) },
+    cp1Passed: { header: 'CP1 đạt', accessor: row => row.cp1Analysis.passCount },
+    cp1Missing: { header: 'CP1 thiếu điểm', accessor: row => getMissingScoreCount(row, 'cp1Analysis') },
+    cp2Average: { header: 'Điểm TB CP2', accessor: row => formatExportNumber(row.cp2Analysis.averageScore) },
+    cp2Passed: { header: 'CP2 đạt', accessor: row => row.cp2Analysis.passCount },
+    cp2Missing: { header: 'CP2 thiếu điểm', accessor: row => getMissingScoreCount(row, 'cp2Analysis') },
+    demoAverage: { header: 'Điểm TB Demo', accessor: row => formatExportNumber(row.demoAnalysis.averageScore) },
+    demoPassed: { header: 'Demo đạt', accessor: row => row.demoAnalysis.passCount },
+    demoMissing: { header: 'Demo thiếu điểm', accessor: row => getMissingScoreCount(row, 'demoAnalysis') },
+    followUpStatus: {
+      header: CLASS_QUALITY_LABELS.FOLLOW_UP_STATUS,
+      accessor: row => getFollowUpStatusLabel(followUpsByClassId.get(row.cls.id)?.status || DEFAULT_FOLLOW_UP_STATUS),
+    },
+    followUpNote: {
+      header: CLASS_QUALITY_LABELS.FOLLOW_UP_NOTE,
+      accessor: row => followUpsByClassId.get(row.cls.id)?.note || '',
+    },
+    followUpUpdatedAt: {
+      header: 'Cập nhật xử lý lúc',
+      accessor: row => formatFollowUpUpdatedAt(followUpsByClassId.get(row.cls.id)?.updatedAt || ''),
+    },
+    followUpUpdatedBy: {
+      header: 'Người cập nhật xử lý',
+      accessor: row => followUpsByClassId.get(row.cls.id)?.updatedByEmail || '',
+    },
+  }), [finalProductStatsByClassId, followUpsByClassId]);
+
+  const classQualityCSVColumns = useMemo(() => (
+    csvColumns
+      .filter(column => column.enabled)
+      .map(column => classQualityColumnMap[column.id])
+      .filter(Boolean)
+  ), [classQualityColumnMap, csvColumns]);
+
+  const handleExportCSV = useCallback(() => {
+    if (filtered.length === 0) return;
+    if (classQualityCSVColumns.length === 0) return;
+    exportToCSV(filtered, classQualityCSVColumns, 'tinh-hinh-lop-hoc');
+  }, [classQualityCSVColumns, filtered]);
+
   return (
+    <>
     <AdminTableSection
         title={CLASS_QUALITY_LABELS.PANEL_TITLE}
         count={filtered.length}
         isExpanded={true}
+        actionSlot={
+          <ExportButton
+            onClick={handleExportCSV}
+            onSettingsClick={() => setShowCSVSettings(true)}
+            disabled={filtered.length === 0}
+            count={filtered.length}
+            label="Xuất CSV"
+          />
+        }
         toolbarSlot={
           <TableToolbar
           search={search}
@@ -769,6 +1018,21 @@ export function ClassQualityUnifiedTable({
                 placeholder={selectedStatuses.length > 0 ? `${LABELS.STATUS} (${selectedStatuses.length})` : LABELS.ALL_STATUSES}
                 maxDisplay={1}
               />
+              <MultiSelect
+                menuPosition="fixed"
+                options={followUpFilterOptions}
+                selected={selectedFollowUpStatuses}
+                onChange={(values) => setSelectedFollowUpStatuses(values as ClassQualityFollowUpStatus[])}
+                placeholder={
+                  followUpsLoading
+                    ? 'Đang tải trạng thái xử lý...'
+                    : selectedFollowUpStatuses.length > 0
+                      ? `Xử lý (${selectedFollowUpStatuses.length})`
+                      : 'Tất cả trạng thái xử lý'
+                }
+                searchable={false}
+                maxDisplay={1}
+              />
               {onDateFromChange && onDateToChange && (
                 <DateRangeInput
                   dateFrom={dateFrom}
@@ -785,7 +1049,7 @@ export function ClassQualityUnifiedTable({
               </span>
             </div>
           }
-          hasFilter={!!quickFilter || finalProductFilters.length > 0 || commentDetailFilters.length > 0 || latestSessionCommentDetailFilters.length > 0 || selectedCentres.length > 0 || selectedCourses.length > 0 || selectedTeachers.length > 0 || selectedRoles.length > 0 || selectedStatuses.length > 0 || !!dateFrom || !!dateTo || !!search.trim()}
+          hasFilter={!!quickFilter || finalProductFilters.length > 0 || commentDetailFilters.length > 0 || latestSessionCommentDetailFilters.length > 0 || selectedCentres.length > 0 || selectedCourses.length > 0 || selectedTeachers.length > 0 || selectedRoles.length > 0 || selectedStatuses.length > 0 || selectedFollowUpStatuses.length > 0 || !!dateFrom || !!dateTo || !!search.trim()}
           onClearFilter={() => {
             setQuickFilter(null);
             setFinalProductFilters([]);
@@ -796,6 +1060,7 @@ export function ClassQualityUnifiedTable({
             setSelectedTeachers([]);
             setSelectedRoles([]);
             setSelectedStatuses([]);
+            setSelectedFollowUpStatuses([]);
             onDateFromChange?.('');
             onDateToChange?.('');
             onSearchChange('');
@@ -1093,5 +1358,13 @@ export function ClassQualityUnifiedTable({
           </table>
         </div>
     </AdminTableSection>
+    <CSVExportSettings
+      isOpen={showCSVSettings}
+      onClose={() => setShowCSVSettings(false)}
+      columns={csvColumns}
+      onSave={saveCsvColumns}
+      title="Cài đặt xuất CSV - Tình hình lớp học"
+    />
+    </>
   );
 }
