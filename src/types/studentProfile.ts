@@ -5,6 +5,8 @@ export interface StudentStudyClass {
   endDate?: string | null;
   status?: string | null;
   numberOfSessions?: number | null;
+  mainTeacherName?: string | null;
+  finalScore?: number | null;
   course?: {
     id: string;
     name: string;

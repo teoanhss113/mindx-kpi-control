@@ -255,6 +255,10 @@ export function StudentHoverCard({
                         {dateRange && <span>{dateRange}</span>}
                         {status && <span className={styles.status}>{status}</span>}
                       </div>
+                      <div className={styles.classDetails}>
+                        <span>GV chính: <strong>{studyClass.mainTeacherName || '—'}</strong></span>
+                        <span>Điểm cuối khoá: <strong>{typeof studyClass.finalScore === 'number' ? studyClass.finalScore.toFixed(2).replace(/\.?0+$/, '') : '—'}</strong></span>
+                      </div>
                     </li>
                   );
                 })}
