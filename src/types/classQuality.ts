@@ -2,6 +2,7 @@ import { Class } from './classes';
 import type { ParsedArea, TemplateMatch } from '@/lib/commentContent';
 
 export type CommentStatus = 'ok' | 'empty' | 'brief' | 'duplicate_self' | 'duplicate_other' | 'template_exact' | 'template_modified' | 'overdue';
+export type CustomCommentStatus = 'ok' | 'empty' | 'brief' | 'duplicate_self' | 'duplicate_other' | 'overdue' | 'not_applicable';
 
 export type AttendanceAlert = 'frequent_absent' | 'consecutive_absent' | 'late_stage_absent';
 
@@ -20,6 +21,7 @@ export interface StudentCommentStatus {
     teacherName: string;
     text: string;
     status: CommentStatus;
+    customStatus: CustomCommentStatus;
     templateMatch?: TemplateMatch;
     duplicateWithSessionIndex?: number;
     duplicateWithDate?: string;
@@ -27,6 +29,7 @@ export interface StudentCommentStatus {
     isOverdue: boolean;
     overdueHours?: number;
     commentDeadlineHours?: number;
+    commentDeadlineAt?: string;
     isCheckpointSession?: boolean;
     isFinalSession?: boolean;
     hasCustomContentIssue?: boolean;
@@ -43,6 +46,13 @@ export interface ClassCommentAnalysis {
   duplicateCount: number;
   overdueCount: number;
   okCount: number;
+  customExpectedCount: number;
+  customPendingCount: number;
+  customBriefCount: number;
+  customDuplicateCount: number;
+  customOverdueCount: number;
+  customOkCount: number;
+  templateBasedCount: number;
   students: StudentCommentStatus[];
 }
 
@@ -54,7 +64,7 @@ export interface StudentAttendanceAnalysis {
   consecutiveAbsentCount: number;
   lateStageAbsentCount: number;
   totalSlots: number;
-  sessions: { date: string; status: string; isLateStage: boolean }[];
+  sessions: { date: string; status: string; isFinalSession: boolean }[];
 }
 
 export interface ClassAttendanceAnalysis {

@@ -139,6 +139,7 @@ type FinalProductFilter = 'submitted' | 'missing' | 'pending' | 'rejected';
 
 interface Props {
   classes: AnalyzedClassForQuality[];
+  comparisonClasses?: AnalyzedClassForQuality[];
   search: string;
   onSearchChange: (v: string) => void;
   selectedCourseCategories?: string[];
@@ -188,12 +189,13 @@ function getDefaultClassQualityCSVColumns(): CSVColumnConfig[] {
     { id: 'studentCount', label: 'Số học viên', enabled: true },
     { id: 'passedSlots', label: 'Buổi đã học trong phạm vi', enabled: true },
     { id: 'totalSlots', label: 'Tổng buổi trong phạm vi', enabled: true },
-    { id: 'commentIssues', label: 'Lỗi nhận xét', enabled: true },
+    { id: 'commentIssues', label: 'Lỗi tự viết', enabled: true },
+    { id: 'customPassRate', label: 'Tỷ lệ tự viết đạt (%)', enabled: true },
     { id: 'emptyComments', label: COMMENT_STATUS_COUNT_LABELS.empty, enabled: true },
     { id: 'briefComments', label: COMMENT_STATUS_COUNT_LABELS.brief, enabled: true },
     { id: 'overdueComments', label: COMMENT_STATUS_COUNT_LABELS.overdue, enabled: true },
     { id: 'duplicateComments', label: COMMENT_STATUS_COUNT_LABELS.duplicate, enabled: true },
-    { id: 'okComments', label: 'Nhận xét đạt', enabled: true },
+    { id: 'okComments', label: 'Tự viết đạt', enabled: true },
     { id: 'attendanceAlerts', label: 'Lỗi chuyên cần', enabled: true },
     { id: 'frequentAbsent', label: ATTENDANCE_ALERT_LABELS.frequent_absent, enabled: true },
     { id: 'consecutiveAbsent', label: ATTENDANCE_ALERT_LABELS.consecutive_absent, enabled: true },
@@ -245,9 +247,11 @@ function hasLatestSessionCommentStatus(a: AnalyzedClassForQuality, status: Comme
     );
   }
 
+  const isTemplateStatus = status === 'template_exact' || status === 'template_modified';
   return a.commentAnalysis.students.some(student =>
     student.comments.some(comment =>
-      comment.sessionIndex === latestIndex && comment.status === status
+      comment.sessionIndex === latestIndex
+      && (isTemplateStatus ? comment.status === status : comment.customStatus === status)
     )
   );
 }
@@ -259,8 +263,9 @@ function hasCommentStatus(a: AnalyzedClassForQuality, status: CommentDetailFilte
     );
   }
 
+  const isTemplateStatus = status === 'template_exact' || status === 'template_modified';
   return a.commentAnalysis.students.some(student =>
-    student.comments.some(comment => comment.status === status)
+    student.comments.some(comment => isTemplateStatus ? comment.status === status : comment.customStatus === status)
   );
 }
 
@@ -269,6 +274,105 @@ function IssueChip({ label, count, tone }: { label: string; count: number; tone:
   return (
     <Badge variant={ISSUE_VARIANT[tone]} size="sm" shape="rounded">
       {label}: {count}
+    </Badge>
+  );
+}
+
+interface CustomQualityMetrics {
+  ok: number;
+  brief: number;
+  duplicate: number;
+  overdue: number;
+  pending: number;
+  finalized: number;
+  passRate: number | null;
+}
+
+function getCustomQualityMetrics(
+  items: AnalyzedClassForQuality[],
+  bounds?: { fromMs: number; toMs: number },
+  sessionIndex?: number,
+): CustomQualityMetrics {
+  let ok = 0;
+  let brief = 0;
+  let duplicate = 0;
+  let overdue = 0;
+  let pending = 0;
+
+  items.forEach(item => {
+    item.commentAnalysis.students.forEach(student => {
+      student.comments.forEach(comment => {
+        if (sessionIndex !== undefined && comment.sessionIndex !== sessionIndex) return;
+        if (bounds) {
+          const commentMs = new Date(comment.date).getTime();
+          if (!Number.isFinite(commentMs) || commentMs < bounds.fromMs || commentMs > bounds.toMs) return;
+        }
+
+        if (comment.customStatus === 'ok') ok++;
+        else if (comment.customStatus === 'brief') brief++;
+        else if (comment.customStatus === 'duplicate_self' || comment.customStatus === 'duplicate_other') duplicate++;
+        else if (comment.customStatus === 'overdue') overdue++;
+        else if (comment.customStatus === 'empty') pending++;
+      });
+    });
+  });
+
+  const finalized = ok + brief + duplicate + overdue;
+  return {
+    ok,
+    brief,
+    duplicate,
+    overdue,
+    pending,
+    finalized,
+    passRate: finalized > 0 ? (ok / finalized) * 100 : null,
+  };
+}
+
+function parseDateInput(value: string): Date | null {
+  if (!value) return null;
+  const [year, month, day] = value.split('-').map(Number);
+  if (!year || !month || !day) return null;
+  const date = new Date(year, month - 1, day);
+  return Number.isFinite(date.getTime()) ? date : null;
+}
+
+function getWeekBounds(anchor: Date, offsetWeeks = 0) {
+  const start = new Date(anchor);
+  const weekday = start.getDay();
+  start.setDate(start.getDate() - (weekday === 0 ? 6 : weekday - 1) + offsetWeeks * 7);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(start);
+  end.setDate(end.getDate() + 6);
+  end.setHours(23, 59, 59, 999);
+  return { fromMs: start.getTime(), toMs: end.getTime(), start, end };
+}
+
+function formatDateKey(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function formatPassRate(value: number | null): string {
+  return value === null ? '—' : `${value.toFixed(1)}%`;
+}
+
+function getDateRangeBounds(dateFrom: string, dateTo: string) {
+  const from = parseDateInput(dateFrom) || new Date();
+  const to = parseDateInput(dateTo) || from;
+  from.setHours(0, 0, 0, 0);
+  to.setHours(23, 59, 59, 999);
+  return { fromMs: from.getTime(), toMs: to.getTime(), start: from, end: to };
+}
+
+function TrendBadge({ delta }: { delta: number | null }) {
+  if (delta === null) return <Badge variant="default" size="sm">Chưa đủ dữ liệu so sánh</Badge>;
+  const rounded = Math.abs(delta) < 0.05 ? 0 : delta;
+  return (
+    <Badge variant={rounded > 0 ? 'passed' : rounded < 0 ? 'failed' : 'default'} size="sm">
+      {rounded > 0 ? '↑' : rounded < 0 ? '↓' : '→'} {Math.abs(rounded).toFixed(1)} điểm % so với kỳ đối chiếu
     </Badge>
   );
 }
@@ -488,6 +592,7 @@ function ClassQualityFollowUpCell({
 // ─── Main component ───────────────────────────────────────────────────────────
 export function ClassQualityUnifiedTable({
   classes,
+  comparisonClasses = classes,
   search,
   onSearchChange,
   selectedCourseCategories = [],
@@ -510,6 +615,10 @@ export function ClassQualityUnifiedTable({
   const [latestSessionCommentDetailFilters, setLatestSessionCommentDetailFilters] = useState<CommentDetailFilter[]>([]);
   const [finalProductFilters, setFinalProductFilters] = useState<FinalProductFilter[]>([]);
   const [showCSVSettings, setShowCSVSettings] = useState(false);
+  const [analysisDateFrom, setAnalysisDateFrom] = useState('');
+  const [analysisDateTo, setAnalysisDateTo] = useState('');
+  const [comparisonDateFrom, setComparisonDateFrom] = useState('');
+  const [comparisonDateTo, setComparisonDateTo] = useState('');
   const { columns: csvColumns, saveColumns: saveCsvColumns } = useCSVExportPreferences(
     'operations-class-quality',
     getDefaultClassQualityCSVColumns()
@@ -640,6 +749,81 @@ export function ClassQualityUnifiedTable({
     }
     return list;
   }, [classes, search, selectedCentres, selectedCourses, selectedCourseCategories, selectedTeachers, selectedRoles, selectedStatuses, roleTeacherIds]);
+
+  const comparisonBaseList = useMemo(() => {
+    let list = comparisonClasses;
+    if (selectedCentres.length > 0) {
+      list = list.filter(a => a.cls.centre?.shortName && selectedCentres.includes(a.cls.centre.shortName));
+    }
+    if (selectedCourses.length > 0) {
+      list = list.filter(a => a.courseLineName && selectedCourses.includes(a.courseLineName));
+    }
+    if (selectedCourseCategories.length > 0) {
+      list = list.filter(a => a.courseLineName && selectedCourseCategories.includes(a.courseLineName));
+    }
+    if (selectedTeachers.length > 0) {
+      list = list.filter(a => classHasTeachers(a.cls, selectedTeachers));
+    }
+    if (selectedRoles.length > 0) {
+      list = list.filter(a => getClassTeacherRoles(a.cls, roleTeacherIds).some(role => selectedRoles.includes(role)));
+    }
+    if (selectedStatuses.length > 0) {
+      list = list.filter(a => a.cls.status && selectedStatuses.includes(a.cls.status));
+    }
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      list = list.filter(a => a.cls.name.toLowerCase().includes(q) || a.cls.centre?.shortName?.toLowerCase().includes(q));
+    }
+    return list;
+  }, [comparisonClasses, search, selectedCentres, selectedCourses, selectedCourseCategories, selectedTeachers, selectedRoles, selectedStatuses, roleTeacherIds]);
+
+  const defaultComparisonPeriods = useMemo(() => {
+    const anchor = parseDateInput(dateTo) || new Date();
+    const analysis = getWeekBounds(anchor);
+    const comparison = getWeekBounds(anchor, -1);
+    return {
+      analysisFrom: formatDateKey(analysis.start),
+      analysisTo: formatDateKey(analysis.end),
+      comparisonFrom: formatDateKey(comparison.start),
+      comparisonTo: formatDateKey(comparison.end),
+    };
+  }, [dateTo]);
+
+  const resolvedAnalysisDateFrom = analysisDateFrom || defaultComparisonPeriods.analysisFrom;
+  const resolvedAnalysisDateTo = analysisDateTo || defaultComparisonPeriods.analysisTo;
+  const resolvedComparisonDateFrom = comparisonDateFrom || defaultComparisonPeriods.comparisonFrom;
+  const resolvedComparisonDateTo = comparisonDateTo || defaultComparisonPeriods.comparisonTo;
+
+  const customQualityComparison = useMemo(() => {
+    const analysisPeriod = getDateRangeBounds(resolvedAnalysisDateFrom, resolvedAnalysisDateTo);
+    const comparisonPeriod = getDateRangeBounds(resolvedComparisonDateFrom, resolvedComparisonDateTo);
+    const current = getCustomQualityMetrics(comparisonBaseList, analysisPeriod);
+    const previous = getCustomQualityMetrics(comparisonBaseList, comparisonPeriod);
+    const delta = current.passRate !== null && previous.passRate !== null
+      ? current.passRate - previous.passRate
+      : null;
+
+    return { current, previous, delta };
+  }, [comparisonBaseList, resolvedAnalysisDateFrom, resolvedAnalysisDateTo, resolvedComparisonDateFrom, resolvedComparisonDateTo]);
+
+  const customQualityBySession = useMemo(() => {
+    const indexes = new Set<number>();
+    comparisonBaseList.forEach(item => {
+      item.commentAnalysis.students.forEach(student => {
+        student.comments.forEach(comment => {
+          if (comment.customStatus !== 'not_applicable') indexes.add(comment.sessionIndex);
+        });
+      });
+    });
+
+    return Array.from(indexes)
+      .sort((a, b) => a - b)
+      .map(sessionIndex => ({
+        sessionIndex,
+        metrics: getCustomQualityMetrics(comparisonBaseList, undefined, sessionIndex),
+      }))
+      .filter(item => item.metrics.finalized > 0 || item.metrics.pending > 0);
+  }, [comparisonBaseList]);
 
   const issueCounts = useMemo(() => {
     let attendanceAlerts = 0;
@@ -776,8 +960,8 @@ export function ClassQualityUnifiedTable({
   const filtered = useMemo(() => {
     return [...visibleClasses].sort((a, b) => {
       const d = sortDir === 'asc' ? 1 : -1;
-      const aCI = a.commentAnalysis.emptyCount + a.commentAnalysis.briefCount + a.commentAnalysis.duplicateCount + a.commentAnalysis.overdueCount;
-      const bCI = b.commentAnalysis.emptyCount + b.commentAnalysis.briefCount + b.commentAnalysis.duplicateCount + b.commentAnalysis.overdueCount;
+      const aCI = a.commentAnalysis.customBriefCount + a.commentAnalysis.customDuplicateCount + a.commentAnalysis.customOverdueCount;
+      const bCI = b.commentAnalysis.customBriefCount + b.commentAnalysis.customDuplicateCount + b.commentAnalysis.customOverdueCount;
       if (sortKey === 'name') return d * a.cls.name.localeCompare(b.cls.name);
       if (sortKey === 'teacher') return d * getPrimaryTeacher(a.cls).localeCompare(getPrimaryTeacher(b.cls));
       if (sortKey === 'studentCount') return d * (getActiveStudentCount(a.cls) - getActiveStudentCount(b.cls));
@@ -814,12 +998,22 @@ export function ClassQualityUnifiedTable({
     studentCount: { header: 'Số học viên', accessor: row => getActiveStudentCount(row.cls) },
     passedSlots: { header: 'Buổi đã học trong phạm vi', accessor: row => row.commentAnalysis.passedSlots },
     totalSlots: { header: 'Tổng buổi trong phạm vi', accessor: row => row.commentAnalysis.totalSlots },
-    commentIssues: { header: 'Lỗi nhận xét', accessor: row => row.commentAnalysis.emptyCount + row.commentAnalysis.briefCount + row.commentAnalysis.duplicateCount + row.commentAnalysis.overdueCount },
-    emptyComments: { header: COMMENT_STATUS_COUNT_LABELS.empty, accessor: row => row.commentAnalysis.emptyCount },
-    briefComments: { header: COMMENT_STATUS_COUNT_LABELS.brief, accessor: row => row.commentAnalysis.briefCount },
-    overdueComments: { header: COMMENT_STATUS_COUNT_LABELS.overdue, accessor: row => row.commentAnalysis.overdueCount },
-    duplicateComments: { header: COMMENT_STATUS_COUNT_LABELS.duplicate, accessor: row => row.commentAnalysis.duplicateCount },
-    okComments: { header: 'Nhận xét đạt', accessor: row => row.commentAnalysis.okCount },
+    commentIssues: { header: 'Lỗi tự viết', accessor: row => row.commentAnalysis.customBriefCount + row.commentAnalysis.customDuplicateCount + row.commentAnalysis.customOverdueCount },
+    customPassRate: {
+      header: 'Tỷ lệ tự viết đạt (%)',
+      accessor: row => {
+        const finalized = row.commentAnalysis.customOkCount
+          + row.commentAnalysis.customBriefCount
+          + row.commentAnalysis.customDuplicateCount
+          + row.commentAnalysis.customOverdueCount;
+        return finalized > 0 ? ((row.commentAnalysis.customOkCount / finalized) * 100).toFixed(1) : '';
+      },
+    },
+    emptyComments: { header: COMMENT_STATUS_COUNT_LABELS.empty, accessor: row => row.commentAnalysis.customPendingCount },
+    briefComments: { header: COMMENT_STATUS_COUNT_LABELS.brief, accessor: row => row.commentAnalysis.customBriefCount },
+    overdueComments: { header: COMMENT_STATUS_COUNT_LABELS.overdue, accessor: row => row.commentAnalysis.customOverdueCount },
+    duplicateComments: { header: COMMENT_STATUS_COUNT_LABELS.duplicate, accessor: row => row.commentAnalysis.customDuplicateCount },
+    okComments: { header: 'Tự viết đạt', accessor: row => row.commentAnalysis.customOkCount },
     attendanceAlerts: { header: 'Lỗi chuyên cần', accessor: row => row.attendanceAnalysis.totalAlerts },
     frequentAbsent: { header: ATTENDANCE_ALERT_LABELS.frequent_absent, accessor: row => getAttendanceAlertStudentCount(row, 'frequent_absent') },
     consecutiveAbsent: { header: ATTENDANCE_ALERT_LABELS.consecutive_absent, accessor: row => getAttendanceAlertStudentCount(row, 'consecutive_absent') },
@@ -915,7 +1109,101 @@ export function ClassQualityUnifiedTable({
   }, [classQualityCSVColumns, filtered]);
 
   return (
-    <>
+    <div className={styles.customQualityStack}>
+    <section className={styles.customQualityOverview} aria-label="Xu hướng chất lượng phần tự viết">
+      <div className={styles.customQualityHeader}>
+        <div>
+          <h3 className={styles.customQualityTitle}>Chất lượng phần tự viết</h3>
+          <p className={styles.customQualitySubtitle}>
+            Không tính Trùng mẫu/Dựa mẫu
+          </p>
+        </div>
+        <div className={styles.customQualityWeekControls}>
+          <DateRangeInput
+            dateFrom={resolvedAnalysisDateFrom}
+            dateTo={resolvedAnalysisDateTo}
+            onDateFromChange={setAnalysisDateFrom}
+            onDateToChange={setAnalysisDateTo}
+            label="Kỳ phân tích"
+            menuPosition="fixed"
+          />
+          <DateRangeInput
+            dateFrom={resolvedComparisonDateFrom}
+            dateTo={resolvedComparisonDateTo}
+            onDateFromChange={setComparisonDateFrom}
+            onDateToChange={setComparisonDateTo}
+            label="Kỳ đối chiếu"
+            menuPosition="fixed"
+          />
+          <TrendBadge delta={customQualityComparison.delta} />
+        </div>
+      </div>
+
+      <div className={styles.customQualityMetricGrid}>
+        <div className={styles.customQualityMetricCard}>
+          <span className={styles.customQualityMetricLabel}>Tự viết đạt</span>
+          <strong className={styles.customQualityMetricValue} style={{ color: 'var(--status-success)' }}>
+            {formatPassRate(customQualityComparison.current.passRate)}
+          </strong>
+          <span className={styles.customQualityMetricMeta}>{customQualityComparison.current.ok}/{customQualityComparison.current.finalized} đã chốt</span>
+        </div>
+        <div className={styles.customQualityMetricCard}>
+          <span className={styles.customQualityMetricLabel}>{COMMENT_STATUS_COUNT_LABELS.empty}</span>
+          <strong className={styles.customQualityMetricValue} style={{ color: 'var(--brand-indigo)' }}>{customQualityComparison.current.pending}</strong>
+          <span className={styles.customQualityMetricMeta}>Chưa tính là lỗi</span>
+        </div>
+        <div className={styles.customQualityMetricCard}>
+          <span className={styles.customQualityMetricLabel}>{COMMENT_STATUS_COUNT_LABELS.brief}</span>
+          <strong className={styles.customQualityMetricValue} style={{ color: 'var(--status-warning)' }}>{customQualityComparison.current.brief}</strong>
+          <span className={styles.customQualityMetricMeta}>Phần tự viết</span>
+        </div>
+        <div className={styles.customQualityMetricCard}>
+          <span className={styles.customQualityMetricLabel}>{COMMENT_STATUS_COUNT_LABELS.duplicate}</span>
+          <strong className={styles.customQualityMetricValue} style={{ color: 'var(--status-dark-orange)' }}>{customQualityComparison.current.duplicate}</strong>
+          <span className={styles.customQualityMetricMeta}>Tự lặp / lặp giữa HV</span>
+        </div>
+        <div className={styles.customQualityMetricCard}>
+          <span className={styles.customQualityMetricLabel}>{COMMENT_STATUS_COUNT_LABELS.overdue}</span>
+          <strong className={styles.customQualityMetricValue} style={{ color: 'var(--status-error)' }}>{customQualityComparison.current.overdue}</strong>
+          <span className={styles.customQualityMetricMeta}>Chưa có sau SLA</span>
+        </div>
+      </div>
+
+      <div className={styles.customQualitySessionBlock}>
+        <div className={styles.customQualitySessionHeader}>
+          <span>So sánh theo buổi</span>
+          <span>Tỷ lệ tự viết đạt</span>
+        </div>
+        {customQualityBySession.length > 0 ? (
+          <div className={styles.customQualitySessionList}>
+            {customQualityBySession.map((item, index) => {
+              const previous = customQualityBySession[index - 1]?.metrics.passRate ?? null;
+              const delta = item.metrics.passRate !== null && previous !== null
+                ? item.metrics.passRate - previous
+                : null;
+              return (
+                <div
+                  key={item.sessionIndex}
+                  className={styles.customQualitySessionItem}
+                  title={`Đạt ${item.metrics.ok}/${item.metrics.finalized} · Sơ sài ${item.metrics.brief} · Trùng/lặp ${item.metrics.duplicate} · Quá hạn ${item.metrics.overdue}`}
+                >
+                  <span className={styles.customQualitySessionName}>B{item.sessionIndex + 1}</span>
+                  <strong>{formatPassRate(item.metrics.passRate)}</strong>
+                  <span className={delta === null ? styles.customQualityDeltaNeutral : delta >= 0 ? styles.customQualityDeltaUp : styles.customQualityDeltaDown}>
+                    {delta === null ? '—' : `${delta >= 0 ? '↑' : '↓'} ${Math.abs(delta).toFixed(1)} điểm %`}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className={styles.customQualityEmpty}>Chưa có dữ liệu tự viết để so sánh theo buổi.</div>
+        )}
+      </div>
+      <p className={styles.customQualityFootnote}>
+        Tỷ lệ đạt = Tự viết đạt / (Tự viết đạt + Sơ sài + Trùng/lặp + Quá hạn). Trống trong hạn được theo dõi riêng.
+      </p>
+    </section>
     <AdminTableSection
         title={CLASS_QUALITY_LABELS.PANEL_TITLE}
         count={filtered.length}
@@ -1138,7 +1426,9 @@ export function ClassQualityUnifiedTable({
               const aa = a.attendanceAnalysis;
               const ra = a.reschedulingAnalysis;
               const studentCount = getActiveStudentCount(a.cls);
-              const commentIssues = ca.emptyCount + ca.briefCount + ca.duplicateCount + ca.overdueCount;
+              const commentIssues = ca.customBriefCount + ca.customDuplicateCount + ca.customOverdueCount;
+              const customFinalized = ca.customOkCount + commentIssues;
+              const customPassRate = customFinalized > 0 ? (ca.customOkCount / customFinalized) * 100 : null;
               const rescheduledRate = ra.totalSessions > 0
                 ? Math.round((ra.rescheduledSessions / ra.totalSessions) * 100) : 0;
 
@@ -1193,16 +1483,19 @@ export function ClassQualityUnifiedTable({
 
                   {/* Nhận xét giáo viên */}
                   <td>
-                    {commentIssues === 0 ? (
-                      <Badge variant="passed" size="sm">{LABELS.GOOD}</Badge>
-                    ) : (
-                      <div className={styles.inlineCluster}>
-                        <IssueChip label={COMMENT_STATUS_COUNT_LABELS.brief} count={ca.briefCount} tone="warning" />
-                        <IssueChip label={COMMENT_STATUS_COUNT_LABELS.empty} count={ca.emptyCount} tone="error" />
-                        <IssueChip label={COMMENT_STATUS_COUNT_LABELS.overdue} count={ca.overdueCount} tone="error" />
-                        <IssueChip label={COMMENT_STATUS_COUNT_LABELS.duplicate} count={ca.duplicateCount} tone="warning" />
-                      </div>
-                    )}
+                    <div className={styles.inlineCluster}>
+                      {customPassRate !== null ? (
+                        <Badge variant={commentIssues === 0 ? 'passed' : 'default'} size="sm">
+                          Tự viết đạt: {customPassRate.toFixed(1)}%
+                        </Badge>
+                      ) : ca.customPendingCount === 0 ? (
+                        <Badge variant="exempt" size="sm">Chưa có tự viết</Badge>
+                      ) : null}
+                        <IssueChip label={COMMENT_STATUS_COUNT_LABELS.brief} count={ca.customBriefCount} tone="warning" />
+                        <IssueChip label={COMMENT_STATUS_COUNT_LABELS.empty} count={ca.customPendingCount} tone="info" />
+                        <IssueChip label={COMMENT_STATUS_COUNT_LABELS.overdue} count={ca.customOverdueCount} tone="error" />
+                        <IssueChip label={COMMENT_STATUS_COUNT_LABELS.duplicate} count={ca.customDuplicateCount} tone="warning" />
+                    </div>
                   </td>
 
                   {/* Chuyên cần */}
@@ -1365,6 +1658,6 @@ export function ClassQualityUnifiedTable({
       onSave={saveCsvColumns}
       title="Cài đặt xuất CSV - Tình hình lớp học"
     />
-    </>
+    </div>
   );
 }

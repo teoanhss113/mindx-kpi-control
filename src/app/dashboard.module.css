@@ -1205,6 +1205,10 @@
 }
 
 .sessionIssueDotEmpty {
+  background: var(--brand-indigo);
+}
+
+.sessionIssueDotOverdue {
   background: var(--status-error);
 }
 
@@ -1235,6 +1239,172 @@
   border-color: var(--brand-indigo);
   background: rgba(99, 102, 241, 0.1);
   color: var(--brand-indigo);
+}
+
+.customQualityStack {
+  display: flex;
+  grid-column: 1 / -1;
+  min-width: 0;
+  width: 100%;
+  flex-direction: column;
+}
+
+.customQualityOverview {
+  margin-bottom: var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-comfortable);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-surface);
+}
+
+.customQualityHeader,
+.customQualitySessionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.customQualityWeekControls {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.customQualityTitle {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.customQualitySubtitle,
+.customQualityFootnote {
+  margin: var(--space-1) 0 0;
+  color: var(--text-tertiary);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.customQualityMetricGrid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.customQualityMetricCard {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-3);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-standard);
+  background: var(--bg-elevated);
+}
+
+.customQualityMetricLabel {
+  overflow: hidden;
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-weight: 590;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.customQualityMetricValue {
+  color: var(--text-primary);
+  font-size: 19px;
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+.customQualityMetricMeta {
+  overflow: hidden;
+  color: var(--text-quaternary);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.customQualitySessionBlock {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-primary);
+}
+
+.customQualitySessionHeader {
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-weight: 590;
+}
+
+.customQualitySessionList {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(82px, 1fr));
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.customQualitySessionItem {
+  display: grid;
+  gap: 2px;
+  padding: var(--space-2);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-standard);
+  background: var(--bg-panel);
+  color: var(--text-primary);
+  font-size: 11px;
+}
+
+.customQualitySessionName {
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-weight: 590;
+}
+
+.customQualityDeltaUp,
+.customQualityDeltaDown,
+.customQualityDeltaNeutral {
+  font-size: 9px;
+  font-weight: 590;
+  white-space: nowrap;
+}
+
+.customQualityDeltaUp { color: var(--status-success); }
+.customQualityDeltaDown { color: var(--status-error); }
+.customQualityDeltaNeutral { color: var(--text-quaternary); }
+
+.customQualityEmpty {
+  padding: var(--space-3) 0;
+  color: var(--text-quaternary);
+  font-size: 11px;
+}
+
+@media (max-width: 900px) {
+  .customQualityHeader {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .customQualityWeekControls {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .customQualityMetricGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .customQualitySessionList {
+    grid-template-columns: repeat(8, minmax(96px, 1fr));
+  }
 }
 
 .sessionButtonTitle {

@@ -39,6 +39,7 @@ import { useSharedDateRange, useSharedCentres } from '@/hooks/useSharedFilterSta
 import { ProtectedPage } from '@/components/ProtectedPage';
 import styles from '@/app/dashboard.module.css';
 import GoogleSheetsSection from '@/components/tickets/GoogleSheetsSection';
+import { StudentHoverCard } from '@/components/StudentHoverCard';
 import { normalizeString } from '@/lib/googleSheetsMatching';
 import { buildTeacherPointRowsFromGoogleSheets, calcTeacherPointRate, isTeacherPointExemptStudent as isExemptStudent } from '@/lib/teacherPointKpi';
 
@@ -1701,7 +1702,10 @@ export default function TicketsDashboard() {
                               {/* Info */}
                               <div className={styles.className} style={{ minWidth: 0 }}>
                                 <div style={{ paddingBottom: 4, fontWeight: 590, color: 'var(--text-primary)' }}>
-                                  {t.ticketSource?.studentName || t.ticketSource?.studentId || 'Chưa định danh'}
+                                  <StudentHoverCard
+                                    studentId={t.ticketSource?.studentId}
+                                    studentName={t.ticketSource?.studentName || t.ticketSource?.studentId || 'Chưa định danh'}
+                                  />
                                 </div>
                                 <div className={styles.centreName} style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', whiteSpace: 'nowrap', overflow: 'hidden' }}>
                                   <CourseCategoryBadge category={t.courseCategory} size="sm" style={{ fontSize: 10, padding: '0 var(--space-1)' }} />
@@ -2295,7 +2299,9 @@ export default function TicketsDashboard() {
                       if (tickets.length === 0) {
                         return (
                           <tr key={`empty-${studentId || name}`}>
-                            <td style={{ fontWeight: 510 }}>{name}</td>
+                            <td style={{ fontWeight: 510 }}>
+                              <StudentHoverCard studentId={studentId} studentName={name} />
+                            </td>
                             <td style={{ textAlign: 'center', fontSize: 12, color: 'var(--text-quaternary)' }}>—</td>
                             <td style={{ fontSize: 12, whiteSpace: 'nowrap', color: 'var(--text-quaternary)' }}>—</td>
                             <td><Badge variant="failed" size="sm">Chưa làm</Badge></td>
@@ -2328,7 +2334,9 @@ export default function TicketsDashboard() {
                             style={{ cursor: 'pointer' }}>
                             {idx === 0 && (
                               <td rowSpan={tickets.length} style={{ fontWeight: 510 }}>
-                                <div style={{ marginBottom: 2 }}>{name}</div>
+                                <div style={{ marginBottom: 2 }}>
+                                  <StudentHoverCard studentId={studentId} studentName={name} />
+                                </div>
                                 {(() => {
                                    const sheetNames = Array.from(new Set(
                                       tickets.filter((t: any) => t._isGoogleSheet)
@@ -2629,7 +2637,10 @@ export default function TicketsDashboard() {
                   <div>
                     <div style={{ fontSize: 11, fontWeight: 590, color: 'var(--text-quaternary)', textTransform: 'uppercase', marginBottom: 6 }}>Học viên</div>
                     <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', padding: '7px 0' }}>
-                      {selectedEntry.ticketSource?.studentName || selectedEntry.ticketSource?.studentId || 'Ẩn danh'}
+                      <StudentHoverCard
+                        studentId={selectedEntry.ticketSource?.studentId}
+                        studentName={selectedEntry.ticketSource?.studentName || selectedEntry.ticketSource?.studentId || 'Ẩn danh'}
+                      />
                     </div>
                   </div>
                 </div>

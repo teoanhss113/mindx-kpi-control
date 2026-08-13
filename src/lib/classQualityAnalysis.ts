@@ -16,6 +16,7 @@ import {
   StudentAttendanceAnalysis,
   StudentCommentStatus,
   CommentStatus,
+  CustomCommentStatus,
   AttendanceAlert,
   AnalyzedClassForQuality,
   SessionReschedulingAnalysis,
@@ -107,41 +108,20 @@ function hasBriefCustomComment(parsedAreas: ReturnType<typeof parseCommentByArea
   });
 }
 
-function isNonTemplateFreeTextCriterion(criterion: { score?: number; text?: string; templateMatch?: TemplateMatch }): boolean {
-  return criterion.score === undefined
-    && criterion.templateMatch !== 'exact'
-    && criterion.templateMatch !== 'modified'
-    && Boolean(criterion.text?.trim());
-}
-
-function hasNonTemplateFreeText(parsedAreas: ReturnType<typeof parseCommentByAreasStructured>): boolean {
-  return parsedAreas.some(area =>
-    Boolean(area.generalText?.trim()) ||
-    area.criteria.some(isNonTemplateFreeTextCriterion)
-  );
-}
-
-function hasBriefNonTemplateFreeText(parsedAreas: ReturnType<typeof parseCommentByAreasStructured>): boolean {
-  return parsedAreas.some(area => {
-    if (isBriefCommentText(area.generalText)) return true;
-
-    return area.criteria.some(criterion =>
-      isNonTemplateFreeTextCriterion(criterion) && isBriefCommentText(criterion.text)
-    );
-  });
-}
-
-function hasCustomContentIssue(
-  status: CommentStatus,
+function getCustomCommentText(
   parsedAreas: ReturnType<typeof parseCommentByAreasStructured>,
-  text: string
-): boolean {
-  if (status === 'ok' || status === 'template_exact' || status === 'template_modified') return false;
-  if (status === 'empty' || status === 'overdue') return true;
-  if (parsedAreas.length === 0) return Boolean(text.trim());
-  if (status === 'brief') return hasBriefNonTemplateFreeText(parsedAreas);
-  if (status === 'duplicate_self' || status === 'duplicate_other') return hasNonTemplateFreeText(parsedAreas);
-  return false;
+  fallbackText: string,
+): string {
+  if (parsedAreas.length === 0) return fallbackText.trim();
+
+  return parsedAreas.flatMap(area => [
+    area.generalText?.trim() || '',
+    ...area.criteria.map(criterion => (
+      criterion.templateMatch !== 'exact' && criterion.templateMatch !== 'modified'
+        ? criterion.text?.trim() || ''
+        : ''
+    )),
+  ]).filter(Boolean).join('\n').trim();
 }
 
 interface CommentAnalysisOptions {
@@ -216,6 +196,13 @@ export function analyzeComments(
   let duplicateCount = 0;
   let overdueCount = 0;
   let okCount = 0;
+  let customExpectedCount = 0;
+  let customPendingCount = 0;
+  let customBriefCount = 0;
+  let customDuplicateCount = 0;
+  let customOverdueCount = 0;
+  let customOkCount = 0;
+  let templateBasedCount = 0;
 
   // Build commentAreaId → definition lookup ONCE per class.
   // Used to (a) group criteria by evaluation title and (b) detect template-match.
@@ -309,6 +296,7 @@ export function analyzeComments(
          : parseCommentAreas(sa.commentByAreas || []);
        const templateMatch = summarizeTemplateMatch(parsedAreas);
        const hasBriefCustomText = hasBriefCustomComment(parsedAreas);
+       const customText = getCustomCommentText(parsedAreas, text);
        let duplicateWithSessionIndex: number | undefined;
        let duplicateWithDate: string | undefined;
        let duplicateWithTeacherName: string | undefined;
@@ -344,12 +332,28 @@ export function analyzeComments(
             }
        }
 
+       let customStatus: CustomCommentStatus = 'not_applicable';
+       if (isPast && !text) {
+         customStatus = status === 'overdue' ? 'overdue' : 'empty';
+       } else if (isPast && customText) {
+         if (customText.length < 30 || hasBriefCustomText) {
+           customStatus = 'brief';
+         } else if ((slotCommentFreq.get(text) || 0) > 1) {
+           customStatus = 'duplicate_other';
+         } else if ([...commentHistory].reverse().some(comment => comment.text === text)) {
+           customStatus = 'duplicate_self';
+         } else {
+           customStatus = 'ok';
+         }
+       }
+
        const commentRecord = {
          date: slot.date,
          sessionIndex,
          teacherName,
          text,
          status,
+         customStatus,
          templateMatch,
          duplicateWithSessionIndex,
          duplicateWithDate,
@@ -357,9 +361,13 @@ export function analyzeComments(
          isOverdue,
          overdueHours: isOverdue ? Math.floor(overdueHours) : undefined,
          commentDeadlineHours,
+         commentDeadlineAt: new Date(slotDate.getTime() + commentDeadlineHours * 60 * 60 * 1000).toISOString(),
          isCheckpointSession: isCheckpoint,
          isFinalSession,
-         hasCustomContentIssue: hasCustomContentIssue(status, parsedAreas, text),
+         hasCustomContentIssue: customStatus === 'brief'
+           || customStatus === 'duplicate_self'
+           || customStatus === 'duplicate_other'
+           || customStatus === 'overdue',
          parsedAreas,
        };
 
@@ -375,6 +383,16 @@ export function analyzeComments(
        else if (status === 'overdue') { st.overdueCount++; overdueCount++; }
        else if (status === 'ok' && isPast) { st.okCount++; okCount++; }
 
+       if (isPast && customStatus !== 'not_applicable') {
+         customExpectedCount++;
+         if (customStatus === 'empty') customPendingCount++;
+         else if (customStatus === 'brief') customBriefCount++;
+         else if (customStatus === 'duplicate_self' || customStatus === 'duplicate_other') customDuplicateCount++;
+         else if (customStatus === 'overdue') customOverdueCount++;
+         else if (customStatus === 'ok') customOkCount++;
+       }
+       if (isPast && (status === 'template_exact' || status === 'template_modified')) templateBasedCount++;
+
        st.comments.push(commentRecord);
     });
   }
@@ -388,6 +406,13 @@ export function analyzeComments(
     duplicateCount,
     overdueCount,
     okCount,
+    customExpectedCount,
+    customPendingCount,
+    customBriefCount,
+    customDuplicateCount,
+    customOverdueCount,
+    customOkCount,
+    templateBasedCount,
     students: Array.from(studentMap.values())
   };
 }
@@ -399,6 +424,7 @@ export function analyzeAttendance(cls: Class): ClassAttendanceAnalysis {
   const slots = (cls.slots ?? [])
     .filter(s => s.date)
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  const finalSessionNumber = getFinalSessionNumber(cls, slots);
     
   // Map student id to their attendance
   const studentMap = new Map<string, StudentAttendanceAnalysis>();
@@ -421,7 +447,11 @@ export function analyzeAttendance(cls: Class): ClassAttendanceAnalysis {
 
   for (let i = 0; i < slots.length; i++) {
     const slot = slots[i];
-    const isLateStage = i >= 9; // 10th session or later
+    const sessionNumber = i + 1;
+    const finalSessionEndTime = getSlotEndTimeMs(slot);
+    const isFinalSession = sessionNumber === finalSessionNumber
+      && Number.isFinite(finalSessionEndTime)
+      && finalSessionEndTime <= Date.now();
     
     (slot.studentAttendance ?? []).forEach(sa => {
       const st = studentMap.get(sa.student.id);
@@ -431,7 +461,7 @@ export function analyzeAttendance(cls: Class): ClassAttendanceAnalysis {
       st.sessions.push({
         date: slot.date,
         status: sa.status || 'UNKNOWN',
-        isLateStage
+        isFinalSession
       });
     });
   }
@@ -450,7 +480,7 @@ export function analyzeAttendance(cls: Class): ClassAttendanceAnalysis {
         if (currentConsecutive >= 2) {
           st.consecutiveAbsentCount = Math.max(st.consecutiveAbsentCount, currentConsecutive);
         }
-        if (sess.isLateStage) {
+        if (sess.isFinalSession) {
           st.lateStageAbsentCount++;
         }
       } else if (['PRESENT', 'LATE', 'EXCUSED'].includes(sess.status?.toUpperCase())) {
@@ -749,7 +779,10 @@ function cleanText(value: string): string {
 function parseScoreByLabel(comment: string, label: string): number | null {
   const text = cleanText(comment);
   const escapedLabel = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const match = text.match(new RegExp(`${escapedLabel}\\s*(?::|-)\\s*([0-9]+(?:[.,][0-9]+)?)(?:\\s*/\\s*5)?(?:\\s*điểm)?`, 'i'));
+  const labelPattern = label.toLowerCase() === 'checkpoint score'
+    ? `(?<!total\\s)${escapedLabel}`
+    : escapedLabel;
+  const match = text.match(new RegExp(`${labelPattern}\\s*(?::|-)\\s*([0-9]+(?:[.,][0-9]+)?)(?:\\s*/\\s*5)?(?:\\s*điểm)?`, 'i'));
   if (!match) return null;
 
   const value = Number.parseFloat(match[1].replace(',', '.'));
@@ -791,6 +824,7 @@ const THEORY_SCORE_LABELS = [
   'Điểm lý thuyết',
   'Điểm lí thuyết',
   'Điểm trắc nghiệm',
+  'Checkpoint score',
   'Điểm bài kiểm tra',
   'Điểm kiểm tra',
   'Theory score',
@@ -799,6 +833,14 @@ const THEORY_SCORE_LABELS = [
 const PRACTICE_SCORE_LABELS = [
   'Điểm thực hành',
   'Practice score',
+];
+
+const TOTAL_CHECKPOINT_SCORE_LABELS = [
+  'Total checkpoint score',
+  'Tổng điểm Checkpoint',
+  'Tổng điểm checkpoint',
+  'Điểm tổng Checkpoint',
+  'Điểm tổng checkpoint',
 ];
 
 function getStructuredScoreComponents(
@@ -834,6 +876,10 @@ function getStructuredScoreComponents(
     const typeLabel = normalizeScoreLabel(cba.type);
     const searchable = [areaLabel, groupLabel, typeLabel].filter(Boolean).join(' ');
 
+    if (areaLabel.includes('total checkpoint score') || areaLabel.includes('tong diem checkpoint') || areaLabel.includes('diem tong checkpoint')) {
+      directCheckpoint = cba.grade;
+      return;
+    }
     if (
       areaLabel.includes('ly thuyet')
       || areaLabel.includes('li thuyet')
@@ -841,6 +887,8 @@ function getStructuredScoreComponents(
       || areaLabel.includes('bai kiem tra')
       || areaLabel.includes('diem kiem tra')
       || areaLabel.includes('theory')
+      || areaLabel === 'checkpoint score'
+      || areaLabel === 'diem checkpoint'
     ) {
       theory = cba.grade;
       return;
@@ -856,10 +904,6 @@ function getStructuredScoreComponents(
     if (isProductScoreLabel(areaLabel)) {
       explicitProduct = cba.grade;
       productCandidates.push(cba.grade);
-      return;
-    }
-    if (typeLabel === 'checkpoint' || areaLabel.includes('diem checkpoint') || /\bdiem cp\b/.test(areaLabel)) {
-      directCheckpoint = cba.grade;
       return;
     }
     if (typeLabel === 'demo' || areaLabel.includes('diem demo')) {
@@ -965,14 +1009,7 @@ function getCheckpointScoreCount(slot: Session | undefined, lookup: CommentAreaL
     ) {
       return count;
     }
-    const directCheckpoint = parseScoreByLabels(commentContent, [
-      'Điểm Checkpoint',
-      'Điểm checkpoint',
-      'Điểm CP1',
-      'Điểm CP2',
-      'Điểm CP',
-      'Checkpoint',
-    ]);
+    const directCheckpoint = parseScoreByLabels(commentContent, TOTAL_CHECKPOINT_SCORE_LABELS);
     const theory = parseScoreByLabels(commentContent, THEORY_SCORE_LABELS);
     const practice = parseScoreByLabels(commentContent, PRACTICE_SCORE_LABELS);
     const ability = parseScoreByLabel(commentContent, 'Điểm năng lực');
@@ -1091,14 +1128,7 @@ function analyzeCheckpoint(cls: Class, sessionIndex: number, lookup: CommentArea
   for (const attendance of students) {
     const structured = getStructuredScoreComponents(attendance, lookup);
     const commentContent = getStudentAttendanceCommentContent(attendance);
-    const directCheckpoint = parseScoreByLabels(commentContent, [
-      'Điểm Checkpoint',
-      'Điểm checkpoint',
-      'Điểm CP1',
-      'Điểm CP2',
-      'Điểm CP',
-      'Checkpoint',
-    ]);
+    const directCheckpoint = parseScoreByLabels(commentContent, TOTAL_CHECKPOINT_SCORE_LABELS);
     const theory = structured.theory ?? parseScoreByLabels(commentContent, THEORY_SCORE_LABELS);
     const practice = structured.practice ?? parseScoreByLabels(commentContent, PRACTICE_SCORE_LABELS);
     const ability = structured.ability ?? parseScoreByLabel(commentContent, 'Điểm năng lực');

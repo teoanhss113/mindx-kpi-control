@@ -22,6 +22,7 @@ import type { StudentCheckpointScore, StudentDemoScore } from '@/types/classQual
 import type { Centre } from '@/services/centresService';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ProtectedPage } from '@/components/ProtectedPage';
+import { StudentHoverCard } from '@/components/StudentHoverCard';
 import { useTeacherFilterOptions } from '@/hooks/useTeacherFilterOptions';
 import styles from '@/app/dashboard.module.css';
 
@@ -1233,7 +1234,9 @@ export default function FinalSessionsAdminPage() {
                                     const comment = stripHtml(st.comment || '');
                                     return (
                                       <tr key={`${item.key}-${st.studentId}`}>
-                                        <td style={{ fontWeight: 510 }}>{st.studentName}</td>
+                                        <td style={{ fontWeight: 510 }}>
+                                          <StudentHoverCard studentId={st.studentId} studentName={st.studentName} />
+                                        </td>
                                         <td><AttendanceStatusBadge status={st.attendanceStatus} /></td>
                                         <td style={{ textAlign: 'center', fontWeight: 600, color: score !== null ? (score >= (item.key === 'demo' ? 3 : 3.5) ? 'var(--status-success)' : 'var(--status-error)') : 'var(--text-quaternary)' }}>
                                           {score !== null ? score.toFixed(2) : '—'}

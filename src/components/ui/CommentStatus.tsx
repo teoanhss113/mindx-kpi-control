@@ -15,7 +15,7 @@ export type CommentQualityStatus =
 export const COMMENT_STATUS_LABELS: Record<CommentQualityStatus, string> = {
   ok: 'Đủ',
   brief: 'Sơ sài',
-  empty: 'Thiếu',
+  empty: 'Trống trong hạn',
   overdue: 'Quá hạn',
   duplicate_self: 'Tự lặp',
   duplicate_other: 'Lặp giữa học sinh',
@@ -54,11 +54,12 @@ export const COMMENT_DETAIL_FILTER_OPTIONS = [
   { value: 'custom_content_issue', label: 'Lỗi nội dung tự viết' },
 ] as const satisfies readonly { value: CommentDetailFilterValue; label: string }[];
 
-export function getCommentStatusVariant(status: CommentQualityStatus): 'passed' | 'warning' | 'failed' | 'demo' | 'exempt' {
+export function getCommentStatusVariant(status: CommentQualityStatus): 'passed' | 'warning' | 'failed' | 'demo' | 'exempt' | 'info' {
   if (status === 'ok') return 'passed';
+  if (status === 'empty') return 'info';
   if (status === 'brief') return 'warning';
   if (status === 'duplicate_self' || status === 'duplicate_other' || status === 'template_exact' || status === 'template_modified') return 'demo';
-  if (status === 'empty' || status === 'overdue') return 'failed';
+  if (status === 'overdue') return 'failed';
   return 'exempt';
 }
 

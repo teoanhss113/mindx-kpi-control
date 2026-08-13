@@ -15,6 +15,7 @@ import { useAllowedPages } from '@/hooks/useAllowedPages';
 import { Class, StudentSlot } from '@/types/classes';
 import { PageLayout } from '@/components/PageLayout';
 import { ProtectedPage } from '@/components/ProtectedPage';
+import { StudentHoverCard } from '@/components/StudentHoverCard';
 import {
   Icon, SortIcon, Spinner, useToast, ToastContainer,
   MultiSelect, SelectOption, RangeSlider, Toolbar, KPIStatCard,
@@ -1047,7 +1048,9 @@ export default function DashboardPage() {
                       const statusKind: CompletionStatusKind = st.exempt ? 'exempt' : isPassed ? 'completed' : 'incomplete';
                       return (
                         <tr key={st._id}>
-                          <td style={{ fontWeight: 510 }}>{st.name}</td>
+                          <td style={{ fontWeight: 510 }}>
+                            <StudentHoverCard studentId={st.student.id} studentName={st.name} />
+                          </td>
                           <td><CompletionStatusBadge status={statusKind} /></td>
                           <td>
                             {/* Final status after exemption rules */}

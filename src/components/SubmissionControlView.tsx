@@ -11,7 +11,9 @@ import {
   summarizeSubmissionSessions,
   type SubmissionCellStatus,
 } from '@/lib/submissionControl';
+import { getCourseCategory } from '@/lib/courseCategories';
 import { EmptyState, Icon, Spinner, StatCard } from '@/components/ui';
+import { StudentHoverCard } from '@/components/StudentHoverCard';
 import styles from '@/app/dashboard.module.css';
 
 const statusMeta: Record<SubmissionCellStatus, { label: string; color: string; background: string }> = {
@@ -20,6 +22,21 @@ const statusMeta: Record<SubmissionCellStatus, { label: string; color: string; b
   pending: { label: 'Đã nộp · chờ chấm', color: 'var(--status-warning)', background: 'rgba(245, 158, 11, 0.10)' },
   graded: { label: 'Đã chấm', color: 'var(--status-success)', background: 'rgba(5, 150, 105, 0.09)' },
 };
+
+type SubmissionBreakdownDimension = 'centre' | 'courseLine' | 'centreCourseLine';
+
+interface SubmissionBreakdownRow {
+  key: string;
+  label: string;
+  secondaryLabel?: string;
+  totalClasses: number;
+  loadedClasses: number;
+  expected: number;
+  missing: number;
+  pending: number;
+  graded: number;
+  sessions: ReturnType<typeof summarizeSubmissionSessions>;
+}
 
 function StatusPill({ status, count }: { status: SubmissionCellStatus; count?: number }) {
   const meta = statusMeta[status];
@@ -94,7 +111,9 @@ export function ClassSubmissionDetail({ record, cls, onRetry }: { record?: Class
               {lessons.map((lesson, index) => <th key={lesson.id} title={lesson.name} style={{ padding: 8, minWidth: 120, textAlign: 'left', borderBottom: '1px solid var(--border-primary)' }}>{index + 1}. {lesson.name}</th>)}
             </tr></thead>
             <tbody>{data.students.map(student => <tr key={student.studentUid}>
-              <td style={{ position: 'sticky', left: 0, background: 'var(--bg-surface)', padding: 8, fontWeight: 650, borderBottom: '1px solid var(--border-primary)' }}>{student.displayName}</td>
+              <td style={{ position: 'sticky', left: 0, background: 'var(--bg-surface)', padding: 8, fontWeight: 650, borderBottom: '1px solid var(--border-primary)' }}>
+                <StudentHoverCard studentId={student.id} studentName={student.displayName} />
+              </td>
               {lessons.map(lesson => {
                 const cell = cellsByKey.get(`${student.studentUid}:${lesson.id}`)!;
                 return <td key={lesson.id} style={{ padding: 7, borderBottom: '1px solid var(--border-primary)', verticalAlign: 'top' }}><StatusPill status={cell.status} />{cell.dueAt && <div style={{ marginTop: 4, color: 'var(--text-tertiary)' }}>Hạn: {formatDateTime(cell.dueAt)}</div>}{cell.submission?.score !== null && cell.submission?.score !== undefined && cell.status === 'graded' ? <div style={{ marginTop: 3, color: 'var(--text-tertiary)' }}>Điểm: {cell.submission.score}</div> : null}</td>;
@@ -124,6 +143,7 @@ export function SubmissionControlView({
   const [search, setSearch] = useState('');
   const [studentSearch, setStudentSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | SubmissionCellStatus>('all');
+  const [breakdownDimension, setBreakdownDimension] = useState<SubmissionBreakdownDimension>('centre');
   const visibleClasses = useMemo(() => {
     const normalized = search.trim().toLocaleLowerCase('vi');
     if (!normalized) return classes;
@@ -167,6 +187,56 @@ export function SubmissionControlView({
   const averageGradingRatePerSession = aggregateSessionsWithSubmissions.length > 0
     ? aggregateSessionsWithSubmissions.reduce((sum, session) => sum + session.gradingRate, 0) / aggregateSessionsWithSubmissions.length
     : 0;
+  const distinctCentreCount = useMemo(() => new Set(classes.map(cls => cls.centre?.id || cls.centre?.name || 'unknown')).size, [classes]);
+  const distinctCourseLineCount = useMemo(() => new Set(classes.map(cls => getCourseCategory(cls))).size, [classes]);
+  const showBreakdown = distinctCentreCount > 1 || distinctCourseLineCount > 1;
+  const breakdownRows = useMemo(() => {
+    const groups = new Map<string, SubmissionBreakdownRow>();
+    classes.forEach(cls => {
+      const centreKey = cls.centre?.id || cls.centre?.name || 'unknown-centre';
+      const centreLabel = cls.centre?.shortName || cls.centre?.name || 'Chưa xác định cơ sở';
+      const courseLineLabel = getCourseCategory(cls);
+      const courseLineKey = courseLineLabel;
+      const key = breakdownDimension === 'centre'
+        ? centreKey
+        : breakdownDimension === 'courseLine'
+          ? courseLineKey
+          : `${centreKey}:${courseLineKey}`;
+      const label = breakdownDimension === 'courseLine' ? courseLineLabel : centreLabel;
+      const secondaryLabel = breakdownDimension === 'centreCourseLine' ? courseLineLabel : undefined;
+      const row = groups.get(key) || {
+        key,
+        label,
+        secondaryLabel,
+        totalClasses: 0,
+        loadedClasses: 0,
+        expected: 0,
+        missing: 0,
+        pending: 0,
+        graded: 0,
+        sessions: [],
+      };
+      row.totalClasses += 1;
+      const record = records[cls.id];
+      if (record?.state === 'loaded' && record.data) {
+        const summary = summarizeSubmissionData(record.data, cls);
+        row.loadedClasses += 1;
+        row.expected += summary.totalExpected;
+        row.missing += summary.missing;
+        row.pending += summary.pending;
+        row.graded += summary.graded;
+        row.sessions.push(...summarizeSubmissionSessions(record.data, cls));
+      }
+      groups.set(key, row);
+    });
+    return [...groups.values()].sort((left, right) => {
+      const leftSubmitted = left.pending + left.graded;
+      const rightSubmitted = right.pending + right.graded;
+      const leftRate = left.expected > 0 ? leftSubmitted / left.expected : Number.POSITIVE_INFINITY;
+      const rightRate = right.expected > 0 ? rightSubmitted / right.expected : Number.POSITIVE_INFINITY;
+      return leftRate - rightRate || left.label.localeCompare(right.label, 'vi');
+    });
+  }, [breakdownDimension, classes, records]);
 
   const selectedClass = classes.find(cls => cls.id === selectedClassId);
   const selectedRecord = selectedClassId ? records[selectedClassId] : undefined;
@@ -238,6 +308,53 @@ export function SubmissionControlView({
         </div>
       )}
 
+      {showBreakdown && (
+        <section style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-primary)', borderRadius: 'var(--radius-card)', overflow: 'hidden' }}>
+          <div style={{ padding: 12, borderBottom: '1px solid var(--border-primary)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <div>
+              <strong style={{ fontSize: 13 }}>Phân loại thống kê bài tập</strong>
+              <div style={{ color: 'var(--text-tertiary)', fontSize: 11, marginTop: 3 }}>Chỉ tính bài và buổi đã đến hạn · xếp tỷ lệ nộp thấp trước</div>
+            </div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {([
+                ['centre', 'Theo cơ sở'],
+                ['courseLine', 'Theo khối học'],
+                ['centreCourseLine', 'Cơ sở × khối'],
+              ] as [SubmissionBreakdownDimension, string][]).map(([dimension, label]) => (
+                <button key={dimension} type="button" onClick={() => setBreakdownDimension(dimension)} style={{ padding: '6px 9px', borderRadius: 999, border: breakdownDimension === dimension ? '1px solid var(--brand-indigo)' : '1px solid var(--border-primary)', background: breakdownDimension === dimension ? 'rgba(99,102,241,0.09)' : 'transparent', color: breakdownDimension === dimension ? 'var(--brand-indigo)' : 'var(--text-secondary)', cursor: 'pointer', fontSize: 11, fontWeight: 650 }}>{label}</button>
+              ))}
+            </div>
+          </div>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', minWidth: 900, borderCollapse: 'collapse', fontSize: 12 }}>
+              <thead><tr style={{ background: 'var(--bg-elevated)', textAlign: 'left' }}>
+                {['Nhóm', 'Độ phủ lớp', 'Bài đến hạn', 'Chưa nộp', 'Chờ chấm', 'Tỷ lệ nộp', 'Tỷ lệ chấm', 'TB nộp / buổi', 'TB chấm / buổi'].map(label => <th key={label} style={{ padding: '9px 12px', borderBottom: '1px solid var(--border-primary)', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>{label}</th>)}
+              </tr></thead>
+              <tbody>{breakdownRows.map(row => {
+                const submitted = row.pending + row.graded;
+                const submissionRate = row.expected > 0 ? submitted / row.expected * 100 : null;
+                const gradingRate = submitted > 0 ? row.graded / submitted * 100 : null;
+                const sessionsWithSubmissions = row.sessions.filter(session => session.submitted > 0);
+                const averageSubmission = row.sessions.length > 0 ? row.sessions.reduce((sum, session) => sum + session.submissionRate, 0) / row.sessions.length : null;
+                const averageGrading = sessionsWithSubmissions.length > 0 ? sessionsWithSubmissions.reduce((sum, session) => sum + session.gradingRate, 0) / sessionsWithSubmissions.length : null;
+                const incomplete = row.loadedClasses < row.totalClasses;
+                return <tr key={row.key}>
+                  <td style={{ padding: 12, borderBottom: '1px solid var(--border-primary)', fontWeight: 700 }}>{row.label}{row.secondaryLabel && <div style={{ marginTop: 2, color: 'var(--text-tertiary)', fontSize: 11, fontWeight: 500 }}>{row.secondaryLabel}</div>}</td>
+                  <td style={{ padding: 12, borderBottom: '1px solid var(--border-primary)', color: incomplete ? 'var(--status-warning)' : 'var(--text-secondary)', whiteSpace: 'nowrap' }}>{row.loadedClasses}/{row.totalClasses}{incomplete ? ' · tạm tính' : ''}</td>
+                  <td style={{ padding: 12, borderBottom: '1px solid var(--border-primary)' }}>{row.expected.toLocaleString('vi-VN')}</td>
+                  <td style={{ padding: 12, borderBottom: '1px solid var(--border-primary)', color: row.missing > 0 ? 'var(--status-error)' : undefined, fontWeight: 650 }}>{row.missing.toLocaleString('vi-VN')}</td>
+                  <td style={{ padding: 12, borderBottom: '1px solid var(--border-primary)', color: row.pending > 0 ? 'var(--status-warning)' : undefined, fontWeight: 650 }}>{row.pending.toLocaleString('vi-VN')}</td>
+                  <td style={{ padding: 12, borderBottom: '1px solid var(--border-primary)', fontWeight: 700 }}>{submissionRate === null ? '—' : `${submissionRate.toFixed(1)}%`}</td>
+                  <td style={{ padding: 12, borderBottom: '1px solid var(--border-primary)', fontWeight: 700 }}>{gradingRate === null ? '—' : `${gradingRate.toFixed(1)}%`}</td>
+                  <td style={{ padding: 12, borderBottom: '1px solid var(--border-primary)', fontWeight: 700 }}>{averageSubmission === null ? '—' : `${averageSubmission.toFixed(1)}%`}</td>
+                  <td style={{ padding: 12, borderBottom: '1px solid var(--border-primary)', fontWeight: 700 }}>{averageGrading === null ? '—' : `${averageGrading.toFixed(1)}%`}</td>
+                </tr>;
+              })}</tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
       <section style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-primary)', borderRadius: 'var(--radius-card)', overflow: 'hidden' }}>
         <div style={{ padding: 12, borderBottom: '1px solid var(--border-primary)', display: 'flex', alignItems: 'center', gap: 8 }}>
           <Icon.Search />
@@ -299,7 +416,7 @@ export function SubmissionControlView({
               {selectedLessons.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--text-tertiary)' }}>Lớp chưa có bài học đang hoạt động.</div> : <div style={{ overflowX: 'auto' }}>
                 <table style={{ borderCollapse: 'collapse', fontSize: 11, minWidth: Math.max(700, 240 + selectedLessons.length * 150) }}>
                   <thead><tr style={{ background: 'var(--bg-elevated)' }}><th style={{ position: 'sticky', left: 0, zIndex: 2, background: 'var(--bg-elevated)', padding: 10, minWidth: 220, textAlign: 'left', borderBottom: '1px solid var(--border-primary)' }}>Học viên</th>{selectedLessons.map((lesson, index) => <th key={lesson.id} title={lesson.name} style={{ padding: 10, minWidth: 140, maxWidth: 180, textAlign: 'left', borderBottom: '1px solid var(--border-primary)' }}>{index + 1}. {lesson.name}</th>)}</tr></thead>
-                  <tbody>{selectedStudents.map(student => <tr key={student.studentUid}><td style={{ position: 'sticky', left: 0, background: 'var(--bg-surface)', padding: 10, fontWeight: 650, borderBottom: '1px solid var(--border-primary)' }}>{student.displayName}</td>{selectedLessons.map(lesson => {
+                  <tbody>{selectedStudents.map(student => <tr key={student.studentUid}><td style={{ position: 'sticky', left: 0, background: 'var(--bg-surface)', padding: 10, fontWeight: 650, borderBottom: '1px solid var(--border-primary)' }}><StudentHoverCard studentId={student.id} studentName={student.displayName} /></td>{selectedLessons.map(lesson => {
                     const cell = cellsByStudentLesson.get(`${student.studentUid}:${lesson.id}`)!;
                     return <td key={lesson.id} style={{ padding: 8, borderBottom: '1px solid var(--border-primary)', verticalAlign: 'top' }}><StatusPill status={cell.status} /><div style={{ color: 'var(--text-tertiary)', marginTop: 5, lineHeight: 1.45 }}>{cell.dueAt ? <div>Hạn: {formatDateTime(cell.dueAt)}</div> : null}{cell.submission && cell.status === 'graded' && cell.submission.score !== null && cell.submission.score !== undefined ? <div>Điểm: {cell.submission.score}</div> : null}{cell.submission?.submittedAt ? <div>Nộp: {formatDateTime(cell.submission.submittedAt)}</div> : null}{cell.submission?.markedAt ? <div>Chấm: {formatDateTime(cell.submission.markedAt)}</div> : null}</div></td>;
                   })}</tr>)}</tbody>

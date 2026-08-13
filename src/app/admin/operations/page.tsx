@@ -38,6 +38,7 @@ import {
 import { PageLayout } from '@/components/PageLayout';
 import { ClassQualityUnifiedTable } from '@/components/ClassQualityUnifiedTable';
 import { ProtectedPage } from '@/components/ProtectedPage';
+import { StudentHoverCard } from '@/components/StudentHoverCard';
 import { ClassSubmissionDetail, SubmissionControlView } from '@/components/SubmissionControlView';
 import { useClassSubmissions } from '@/hooks/useClassSubmissions';
 
@@ -582,9 +583,9 @@ function generateOperationsContent(data: any): string {
   lines.push(`- ${data.classesWithRescheduling}/${totalClasses} lớp có buổi bị dời.`);
   lines.push('- *Tính dựa trên khoảng cách giữa các buổi học (chuẩn 7 ngày).*');
   lines.push('');
-  lines.push('**Vi phạm nhận xét giáo viên:**');
-  lines.push(`- ${data.classesWithCommentIssues}/${totalClasses} lớp (${commentRate}%) có nhận xét quá ngắn/chưa có.`);
-  lines.push('- *Vi phạm: Chưa có nhận xét, dưới 20 ký tự, trùng nội dung, hoặc quá hạn trên 48 giờ.*');
+  lines.push('**Chất lượng phần tự viết:**');
+  lines.push(`- ${data.classesWithCommentIssues}/${totalClasses} lớp (${commentRate}%) có phần tự viết sơ sài, trùng/lặp hoặc quá hạn.`);
+  lines.push('- *Nhận xét trống nhưng còn trong thời hạn không tính là vi phạm.*');
   lines.push('');
   lines.push('**Cảnh báo chuyên cần:**');
   lines.push(`- ${data.classesWithAttendanceAlerts}/${totalClasses} lớp (${attendanceRate}%) có học viên vi phạm chuyên cần.`);
@@ -3158,6 +3159,11 @@ export default function TeacherSchedulePage() {
       visibleWeekStart.setHours(0, 0, 0, 0);
       visibleWeekEnd.setHours(23, 59, 59, 999);
       const toolbarHaveSlotIn = hasDateRange ? haveSlotInDateStringRangeToUtcRange(start, end) : undefined;
+      const qualityComparisonStart = hasDateRange ? new Date(weekDateFrom) : null;
+      qualityComparisonStart?.setDate(qualityComparisonStart.getDate() - 7);
+      const classHaveSlotIn = qualityComparisonStart
+        ? haveSlotInDateStringRangeToUtcRange(formatLocalDateKey(qualityComparisonStart), end)
+        : toolbarHaveSlotIn;
 
       let clsLoaded = 0, clsTotal = 0, ohLoaded = 0, ohTotal = 0;
       const refreshProgress = () => {
@@ -3169,7 +3175,7 @@ export default function TeacherSchedulePage() {
       const classesPromise = shouldLoadClasses
         ? fetchAllClasses(
             {
-              ...(toolbarHaveSlotIn ? { haveSlotIn: { from: toolbarHaveSlotIn.from, to: toolbarHaveSlotIn.to } } : {}),
+              ...(classHaveSlotIn ? { haveSlotIn: { from: classHaveSlotIn.from, to: classHaveSlotIn.to } } : {}),
               ...(classStatuses ? { statusIn: classStatuses } : {}),
               ...(centreIds && centreIds.length > 0 ? { centres: centreIds } : {}),
               ...(toolbarTeacherFilter.selectedTeacherId ? { teacherSlot: [toolbarTeacherFilter.selectedTeacherId] } : {}),
@@ -4017,11 +4023,11 @@ export default function TeacherSchedulePage() {
   }, [classStudentWorks, rawClasses]);
 
   const normalQualityClasses = useMemo(() => {
-    return analyzedClasses.filter(a => {
+    return classQualityTableClasses.filter(a => {
       const status = a.cls.status?.toUpperCase() || '';
       return status !== 'ABANDONED' && status !== 'REJECTED';
     });
-  }, [analyzedClasses]);
+  }, [classQualityTableClasses]);
 
   const summaryCentreOptions = useMemo(() => {
     const centresByName = new Set<string>();
@@ -4103,7 +4109,7 @@ export default function TeacherSchedulePage() {
         else if (rank === 'D') rankD++;
       });
 
-      const commentIssues = a.commentAnalysis.emptyCount + a.commentAnalysis.briefCount + a.commentAnalysis.duplicateCount + a.commentAnalysis.overdueCount;
+      const commentIssues = a.commentAnalysis.customBriefCount + a.commentAnalysis.customDuplicateCount + a.commentAnalysis.customOverdueCount;
       if (commentIssues > 0) classesWithCommentIssues++;
       if (a.attendanceAnalysis.totalAlerts > 0) classesWithAttendanceAlerts++;
       if (a.reschedulingAnalysis.rescheduledSessions > 0) classesWithRescheduling++;
@@ -4761,6 +4767,7 @@ export default function TeacherSchedulePage() {
                 <div className={styles.dashboardLayout}>
                   <ClassQualityUnifiedTable
                     classes={classQualityTableClasses}
+                    comparisonClasses={analyzedClasses}
                     search={searchTerm}
                     onSearchChange={setSearchTerm}
                     selectedCourseCategories={selectedCourseLines}
@@ -4994,8 +5001,8 @@ export default function TeacherSchedulePage() {
                     <div className={styles.toolbarCluster} style={{ color: 'var(--text-quaternary)', fontSize: 11, fontWeight: 500, display: 'flex', gap: 12 }}>
                       <span>
                         {CLASS_QUALITY_LABELS.TEACHER_COMMENTS}:{' '}
-                        <span className={classQualityData.commentAnalysis.emptyCount + classQualityData.commentAnalysis.briefCount > 0 ? styles.warningText : styles.successText} style={{ fontWeight: 600 }}>
-                          {classQualityData.commentAnalysis.emptyCount + classQualityData.commentAnalysis.briefCount} lỗi
+                        <span className={classQualityData.commentAnalysis.customBriefCount + classQualityData.commentAnalysis.customDuplicateCount + classQualityData.commentAnalysis.customOverdueCount > 0 ? styles.warningText : styles.successText} style={{ fontWeight: 600 }}>
+                          {classQualityData.commentAnalysis.customBriefCount + classQualityData.commentAnalysis.customDuplicateCount + classQualityData.commentAnalysis.customOverdueCount} lỗi tự viết
                         </span>
                       </span>
                       <span>
@@ -5083,17 +5090,16 @@ export default function TeacherSchedulePage() {
 
                     const sessionStats = slots.map((slot, sessionIndex) => {
                       const comments = ca.students.map(st => st.comments.find(c => c.sessionIndex === sessionIndex)).filter(Boolean);
-                      const ok = comments.filter(c => c?.status === 'ok').length;
-                      const brief = comments.filter(c => c?.status === 'brief').length;
-                      const empty = comments.filter(c => c?.status === 'empty' || c?.status === 'overdue').length;
+                      const ok = comments.filter(c => c?.customStatus === 'ok').length;
+                      const brief = comments.filter(c => c?.customStatus === 'brief').length;
+                      const empty = comments.filter(c => c?.customStatus === 'empty').length;
+                      const overdue = comments.filter(c => c?.customStatus === 'overdue').length;
                       const duplicate = comments.filter(c =>
-                        c?.status === 'duplicate_self'
-                        || c?.status === 'duplicate_other'
-                        || c?.status === 'template_exact'
-                        || c?.status === 'template_modified'
+                        c?.customStatus === 'duplicate_self' || c?.customStatus === 'duplicate_other'
                       ).length;
-                      const hasIssues = brief > 0 || empty > 0 || duplicate > 0;
-                      return { slot, sessionIndex, ok, brief, empty, duplicate, hasIssues };
+                      const hasIssues = brief > 0 || overdue > 0 || duplicate > 0;
+                      const hasAttention = hasIssues || empty > 0;
+                      return { slot, sessionIndex, ok, brief, empty, overdue, duplicate, hasIssues, hasAttention };
                     });
 
                     const issueIndex = sessionStats.findIndex(s => s.hasIssues);
@@ -5142,13 +5148,13 @@ export default function TeacherSchedulePage() {
                       if (!comment) return null;
                       const textLabels = scoreKey === 'demoScore'
                         ? ['Điểm Demo', 'Điểm demo', 'Demo']
-                        : ['Điểm Checkpoint', 'Điểm checkpoint', 'Điểm CP1', 'Điểm CP2', 'Điểm CP', 'Checkpoint'];
+                        : ['Total checkpoint score', 'Tổng điểm Checkpoint', 'Tổng điểm checkpoint', 'Điểm tổng Checkpoint', 'Điểm tổng checkpoint'];
                       const directTextScore = parseScoreByDisplayLabels(comment.text, textLabels);
                       if (directTextScore !== null) return directTextScore;
 
                       const labelMatchers = scoreKey === 'demoScore'
                         ? ['demo', 'san pham', 'sản phẩm', 'cuoi khoa', 'cuối khoá', 'cuối khóa']
-                        : ['checkpoint', 'cp1', 'cp2', 'cp'];
+                        : ['total checkpoint', 'tong diem checkpoint', 'điểm tổng checkpoint'];
                       const parsedAreaScores = (comment.parsedAreas || []).flatMap(area => (
                         area.criteria.map(criterion => {
                           const label = `${area.name || ''} ${area.sectionTitle || ''} ${criterion.name || ''}`;
@@ -5173,10 +5179,11 @@ export default function TeacherSchedulePage() {
                         {/* Summary row */}
                         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 10, padding: '8px 10px', background: 'var(--bg-elevated)', borderRadius: 6 }}>
                           {([
-                            [COMMENT_STATUS_GROUP_LABELS.ok, ca.okCount, 'var(--status-success)'],
-                            [COMMENT_STATUS_GROUP_LABELS.brief, ca.briefCount, 'var(--status-warning)'],
-                            [COMMENT_STATUS_GROUP_LABELS.emptyOrOverdue, ca.emptyCount + ca.overdueCount, 'var(--status-error)'],
-                            [COMMENT_STATUS_GROUP_LABELS.duplicate, ca.duplicateCount, 'var(--status-dark-orange)'],
+                            [COMMENT_STATUS_GROUP_LABELS.ok, ca.customOkCount, 'var(--status-success)'],
+                            [COMMENT_STATUS_GROUP_LABELS.brief, ca.customBriefCount, 'var(--status-warning)'],
+                            [COMMENT_STATUS_GROUP_LABELS.empty, ca.customPendingCount, 'var(--brand-indigo)'],
+                            [COMMENT_STATUS_GROUP_LABELS.overdue, ca.customOverdueCount, 'var(--status-error)'],
+                            [COMMENT_STATUS_GROUP_LABELS.duplicate, ca.customDuplicateCount, 'var(--status-dark-orange)'],
                           ] as [string, number, string][]).map(([label, value, color]) => (
                             <div key={label} style={{ minWidth: 80 }}>
                               <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginBottom: 2 }}>{label}</div>
@@ -5190,10 +5197,11 @@ export default function TeacherSchedulePage() {
                             const sessionDate = new Date(stat.slot.date || stat.slot.startTime);
                             const isUpcoming = sessionDate.getTime() > Date.now();
                             const isActive = stat.sessionIndex === activeIndex;
-                            const totalIssues = stat.empty + stat.duplicate + stat.brief;
-                            const primaryIssueType = stat.empty > 0 ? 'empty' : stat.duplicate > 0 ? 'duplicate' : 'brief';
+                            const totalAttention = stat.empty + stat.overdue + stat.duplicate + stat.brief;
+                            const primaryIssueType = stat.overdue > 0 ? 'overdue' : stat.duplicate > 0 ? 'duplicate' : stat.brief > 0 ? 'brief' : 'empty';
                             const issueTitle = [
-                              stat.empty > 0 ? `${COMMENT_STATUS_GROUP_LABELS.emptyOrOverdue}: ${stat.empty}` : '',
+                              stat.empty > 0 ? `${COMMENT_STATUS_GROUP_LABELS.empty}: ${stat.empty}` : '',
+                              stat.overdue > 0 ? `${COMMENT_STATUS_GROUP_LABELS.overdue}: ${stat.overdue}` : '',
                               stat.duplicate > 0 ? `${COMMENT_STATUS_GROUP_LABELS.duplicate}: ${stat.duplicate}` : '',
                               stat.brief > 0 ? `${COMMENT_STATUS_GROUP_LABELS.brief}: ${stat.brief}` : '',
                             ].filter(Boolean).join(' • ');
@@ -5204,22 +5212,23 @@ export default function TeacherSchedulePage() {
                                 className={[
                                   styles.sessionButton,
                                   isActive ? styles.sessionButtonActive : '',
-                                  stat.hasIssues ? styles.sessionButtonIssue : '',
+                                  stat.hasAttention ? styles.sessionButtonIssue : '',
                                   isUpcoming ? styles.sessionButtonUpcoming : styles.sessionButtonPast,
                                 ].filter(Boolean).join(' ')}
                               >
-                                {stat.hasIssues && (
+                                {stat.hasAttention && (
                                   <span
                                     className={[
                                       styles.sessionIssueDot,
                                       primaryIssueType === 'empty' ? styles.sessionIssueDotEmpty : '',
+                                      primaryIssueType === 'overdue' ? styles.sessionIssueDotOverdue : '',
                                       primaryIssueType === 'duplicate' ? styles.sessionIssueDotDuplicate : '',
                                       primaryIssueType === 'brief' ? styles.sessionIssueDotBrief : '',
                                     ].filter(Boolean).join(' ')}
-                                    aria-label={`Cảnh báo nhận xét: ${issueTitle}`}
+                                    aria-label={`${stat.hasIssues ? 'Cảnh báo' : 'Theo dõi'} nhận xét: ${issueTitle}`}
                                     title={issueTitle}
                                   >
-                                    {totalIssues}
+                                    {totalAttention}
                                   </span>
                                 )}
                                 <span className={styles.sessionButtonTitle}>B{stat.sessionIndex + 1}</span>
@@ -5246,7 +5255,9 @@ export default function TeacherSchedulePage() {
                               <tbody>
                                 {ca.students.map(st => {
                                   const c = st.comments.find(x => x.sessionIndex === activeIndex);
-                                  const status = c?.status ?? 'not_required';
+                                  const status = c?.customStatus && c.customStatus !== 'not_applicable'
+                                    ? c.customStatus
+                                    : c?.status ?? 'not_required';
                                   const scoreStudent = scoreByStudentId.get(st.studentId) as any;
                                   const score = scoreAnalysis
                                     ? scoreAnalysis.scoreKey === 'demoScore'
@@ -5255,10 +5266,12 @@ export default function TeacherSchedulePage() {
                                     : null;
                                   return (
                                     <tr key={st.studentId}>
-                                      <td style={{ fontWeight: 510, fontSize: 12 }}>{st.studentName}</td>
+                                      <td style={{ fontWeight: 510, fontSize: 12 }}>
+                                        <StudentHoverCard studentId={st.studentId} studentName={st.studentName} />
+                                      </td>
                                       <td>
                                         <CommentStatusBadge status={status} />
-                                        {c?.status === 'duplicate_self' && (
+                                        {c?.customStatus === 'duplicate_self' && (
                                           <div
                                             style={{ marginTop: 4, fontSize: 10, color: 'var(--text-tertiary)', lineHeight: 1.35, whiteSpace: 'nowrap' }}
                                           >
@@ -5285,7 +5298,16 @@ export default function TeacherSchedulePage() {
                                         {c?.text ? (
                                           <TeacherCommentCell text={c.text} parsedAreas={c.parsedAreas} />
                                         ) : (
-                                          <em>{c ? 'Không có nội dung' : 'Không yêu cầu'}</em>
+                                          c?.status === 'empty' ? (
+                                            <em style={{ color: 'var(--brand-indigo)' }}>
+                                              Đang chờ nhận xét trong thời hạn
+                                              {c.commentDeadlineAt && Number.isFinite(new Date(c.commentDeadlineAt).getTime())
+                                                ? ` · còn ${Math.max(1, Math.ceil((new Date(c.commentDeadlineAt).getTime() - Date.now()) / (60 * 60 * 1000)))} giờ`
+                                                : ''}
+                                            </em>
+                                          ) : (
+                                            <em>{c ? 'Không có nội dung' : 'Không yêu cầu'}</em>
+                                          )
                                         )}
                                       </td>
                                     </tr>
@@ -5396,7 +5418,7 @@ export default function TeacherSchedulePage() {
                                   return (
                                     <tr key={st.id} style={{ background: hasAlert ? 'rgba(220,38,38,0.02)' : 'transparent' }}>
                                       <td style={{ fontWeight: hasAlert ? 590 : 510, fontSize: 12, color: hasAlert ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
-                                        {st.name}
+                                        <StudentHoverCard studentId={st.id} studentName={st.name} />
                                       </td>
                                       <td>
                                         {alertData ? (
@@ -5604,7 +5626,9 @@ export default function TeacherSchedulePage() {
 
                                   return (
                                     <tr key={student.id} style={{ background: work ? 'transparent' : 'rgba(245,158,11,0.03)' }}>
-                                      <td style={{ fontWeight: 510, fontSize: 12 }}>{student.name}</td>
+                                      <td style={{ fontWeight: 510, fontSize: 12 }}>
+                                        <StudentHoverCard studentId={student.id} studentName={student.name} />
+                                      </td>
                                       <td>
                                         {work ? (
                                           <span style={{ color: 'var(--status-success)', fontWeight: 600 }}>Đã có</span>
