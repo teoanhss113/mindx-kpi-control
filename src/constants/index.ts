@@ -26,7 +26,7 @@ export const CACHE_KEYS = {
   FILTER_STATE: 'mindx_filter_state_v1', // Shared filter state across pages
 } as const;
 
-export const TEACHER_SCHEDULE_CACHE_VERSION = 20;
+export const TEACHER_SCHEDULE_CACHE_VERSION = 22;
 
 /**
  * COLUMN LABELS — Standardized Vietnamese labelsconstant
@@ -331,6 +331,7 @@ export const SYSTEM_ADMIN_LABELS = {
 export const TEACHER_SCHEDULE_VIEW_OPTIONS = [
   { value: 'calendar', label: TEACHER_SCHEDULE_LABELS.CALENDAR_VIEW },
   { value: 'quality-table', label: TEACHER_SCHEDULE_LABELS.QUALITY_VIEW },
+  { value: 'submissions', label: 'Bài tập' },
 ] as const;
 
 export const MANAGER_SCHEDULE_LABELS = {

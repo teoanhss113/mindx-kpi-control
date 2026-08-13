@@ -239,6 +239,7 @@ export interface Session {
   sessionHour: number;
   summary: string;    // HTML string
   homework: string;
+  learningLessonId?: string | null;
   teachers: TeacherSlot[];
   teacherAttendance: TeacherAttendance[];
   studentAttendance: StudentAttendance[];

@@ -38,6 +38,8 @@ import {
 import { PageLayout } from '@/components/PageLayout';
 import { ClassQualityUnifiedTable } from '@/components/ClassQualityUnifiedTable';
 import { ProtectedPage } from '@/components/ProtectedPage';
+import { ClassSubmissionDetail, SubmissionControlView } from '@/components/SubmissionControlView';
+import { useClassSubmissions } from '@/hooks/useClassSubmissions';
 
 import {
   Icon,
@@ -688,6 +690,7 @@ function ScheduleViewToggle({
       options={[
         { value: 'calendar', label: TEACHER_SCHEDULE_LABELS.CALENDAR_VIEW, icon: <Icon.Calendar /> },
         { value: 'quality-table', label: TEACHER_SCHEDULE_LABELS.QUALITY_VIEW, icon: <Icon.Table /> },
+        { value: 'submissions', label: 'Bài tập', icon: <Icon.BookOpen /> },
       ]}
     />
   );
@@ -2789,6 +2792,7 @@ export default function TeacherSchedulePage() {
   const [classStatusFilterOptions, setClassStatusFilterOptions] = useState<SelectOption[]>(LMS_CLASS_STATUS_OPTIONS);
   const [rawClasses, setRawClasses] = useState<Class[]>([]);
   const [studentCommentAreas, setStudentCommentAreas] = useState<CommentAreaDef[]>([]);
+  const classSubmissions = useClassSubmissions(rawClasses);
   
   // ── Calendar collapse states ───────────────────────────────────────────────
   const [collapsedTimeSlots, setCollapsedTimeSlots] = useState<Set<string>>(new Set());
@@ -2813,7 +2817,7 @@ export default function TeacherSchedulePage() {
   // ── Class quality states ────────────────────────────────────────────────────
   const [classQualityData, setClassQualityData] = useState<AnalyzedClassForQuality | null>(null);
   const [classQualityLoading, setClassQualityLoading] = useState(false);
-  const [qualityTab, setQualityTab] = useState<'comments' | 'attendance' | 'rescheduling' | 'finalProducts'>('comments');
+  const [qualityTab, setQualityTab] = useState<'comments' | 'attendance' | 'rescheduling' | 'finalProducts' | 'submissions'>('comments');
   const [studentWorks, setStudentWorks] = useState<StudentWork[]>([]);
   const [studentWorksLoading, setStudentWorksLoading] = useState(false);
   const [studentWorksError, setStudentWorksError] = useState<string | null>(null);
@@ -2921,6 +2925,7 @@ export default function TeacherSchedulePage() {
     const tab = params.get('tab');
     
     if (view === 'quality-table') setViewMode('quality-table');
+    if (view === 'submissions') setViewMode('submissions');
     if (tab === 'violations') setQualityTab('comments');
     if (tab === 'attendance') setQualityTab('attendance');
     if (tab === 'rescheduling') setQualityTab('rescheduling');
@@ -3106,6 +3111,7 @@ export default function TeacherSchedulePage() {
       return;
     }
     if (abortRef.current) abortRef.current.abort();
+    classSubmissions.cancelLoading();
     abortRef.current = new AbortController();
     const signal = abortRef.current.signal;
 
@@ -3180,6 +3186,14 @@ export default function TeacherSchedulePage() {
           )
         : Promise.resolve([] as Class[]);
 
+      // Begin loading submission data as soon as the class IDs are available.
+      // This runs alongside the remaining toolbar requests and is awaited before
+      // publishing the new class dataset, so the submissions view does not need
+      // a second loading phase after the main data load finishes.
+      const submissionPrefetchPromise = shouldLoadClasses
+        ? classesPromise.then(classes => classSubmissions.preloadClassIds(classes.map(cls => cls.id)))
+        : Promise.resolve();
+
       const officeHoursPromise = shouldLoadOfficeHours
         ? fetchOfficeHours(
             {
@@ -3225,6 +3239,7 @@ export default function TeacherSchedulePage() {
         scopedClasses, // preFetchedClasses
         officeHoursResult.data // preFetchedOfficeHours
       );
+      await submissionPrefetchPromise;
 
       console.log(`[TeacherSchedule] Loaded ${scopedClasses.length} scoped classes and ${classes.length} filtered classes for week ${start} to ${end}`);
       if (classes.length > 0) {
@@ -3370,11 +3385,12 @@ export default function TeacherSchedulePage() {
         setProgress({ loaded: 100, total: 100 });
       }
     }
-  }, [centres, selectedCentres, calendarSelectedTeachers, calendarSelectedCourseLines, calendarSelectedRoles, selectedTeachers, selectedCourseLines, selectedClassStatuses, classStatusFilterOptions, scheduleTypeFilter, exemptedSessions, exemptOneOnOneClasses, holidayPeriods, addToast, classCodeSearch, dataLimit, fromDate, toDate, toolbarTeacherFilter.selectedTeacherId, toolbarTeacherFilter.selectedTeacherName]);
+  }, [centres, selectedCentres, calendarSelectedTeachers, calendarSelectedCourseLines, calendarSelectedRoles, selectedTeachers, selectedCourseLines, selectedClassStatuses, classStatusFilterOptions, scheduleTypeFilter, exemptedSessions, exemptOneOnOneClasses, holidayPeriods, addToast, classCodeSearch, dataLimit, fromDate, toDate, toolbarTeacherFilter.selectedTeacherId, toolbarTeacherFilter.selectedTeacherName, classSubmissions.preloadClassIds, classSubmissions.cancelLoading]);
 
   const handleCancelFetch = () => {
     if (abortRef.current) {
       abortRef.current.abort();
+      classSubmissions.cancelLoading();
       abortRef.current = null;
       setLoading(false);
       addToast(MESSAGES.LOADING.STOPPED, 'info');
@@ -4513,7 +4529,7 @@ export default function TeacherSchedulePage() {
           </motion.div>
         )}
 
-        {schedules.length > 0 && (
+        {(schedules.length > 0 || rawClasses.length > 0) && (
           <ScheduleViewToggle value={viewMode} onChange={(v) => startTransition(() => setViewMode(v))} />
         )}
 
@@ -4815,6 +4831,16 @@ export default function TeacherSchedulePage() {
           </div>
         )}
 
+        {viewMode === 'submissions' && (
+          <SubmissionControlView
+            classes={rawClasses}
+            records={classSubmissions.records}
+            loading={classSubmissions.loading}
+            onReloadClass={(classId) => { void classSubmissions.reloadClass(classId); }}
+            onReloadAll={() => { void classSubmissions.reloadAll(); }}
+          />
+        )}
+
         {/* Empty State */}
         {viewMode === 'calendar' && !loading && schedules.length === 0 && (
           <EmptyState
@@ -4990,18 +5016,24 @@ export default function TeacherSchedulePage() {
 
                 {/* Tabs */}
                 <div style={{ display: 'flex', borderBottom: '1px solid var(--border-primary)', background: 'var(--bg-surface)' }}>
-                  {(['comments', 'attendance', 'rescheduling', 'finalProducts'] as const).map(tab => {
+                  {(['comments', 'attendance', 'rescheduling', 'finalProducts', 'submissions'] as const).map(tab => {
                     const labels = {
                       comments: CLASS_QUALITY_LABELS.TEACHER_COMMENTS,
                       attendance: CLASS_QUALITY_LABELS.ATTENDANCE,
                       rescheduling: CLASS_QUALITY_LABELS.SCHEDULE_CHANGES,
                       finalProducts: CLASS_QUALITY_LABELS.FINAL_PRODUCTS,
+                      submissions: 'Bài tập',
                     };
                     const isActive = qualityTab === tab;
                     return (
                       <button
                         key={tab}
-                        onClick={() => setQualityTab(tab)}
+                        onClick={() => {
+                          setQualityTab(tab);
+                          if (tab === 'submissions' && classSubmissions.records[selectedSlot.classId]?.state === 'error') {
+                            void classSubmissions.reloadClass(selectedSlot.classId);
+                          }
+                        }}
                         style={{
                           padding: '8px 12px',
                           fontSize: 12,
@@ -5028,10 +5060,18 @@ export default function TeacherSchedulePage() {
                       <Spinner size={20} />
                     </div>
                   )}
-                  {!classQualityLoading && !classQualityData && (
+                  {!classQualityLoading && !classQualityData && qualityTab !== 'submissions' && (
                     <div style={{ textAlign: 'center', color: 'var(--text-quaternary)', fontSize: 12, padding: 16 }}>
                       Không có dữ liệu chất lượng lớp
                     </div>
+                  )}
+
+                  {!classQualityLoading && qualityTab === 'submissions' && (
+                    <ClassSubmissionDetail
+                      record={classSubmissions.records[selectedSlot.classId]}
+                      cls={classQualityData?.cls || selectedClassForModal || undefined}
+                      onRetry={() => { void classSubmissions.reloadClass(selectedSlot.classId); }}
+                    />
                   )}
 
                   {/* ── Comments Tab ── */}

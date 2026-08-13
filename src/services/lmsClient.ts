@@ -30,14 +30,22 @@ export async function lmsQuery<T>(request: GraphQLRequest & { signal?: AbortSign
     signal,
   });
 
-  if (!res.ok) {
-    throw new Error(`LMS API error: ${res.status} ${res.statusText}`);
+  const responseText = await res.text();
+  let data: { errors?: Array<{ message?: string }>; error?: string; [key: string]: unknown };
+  try {
+    data = responseText ? JSON.parse(responseText) as typeof data : {};
+  } catch {
+    data = {};
   }
 
-  const data = await res.json();
+  if (!res.ok) {
+    const details = data?.errors?.map((error: { message?: string }) => error.message).filter(Boolean).join('; ')
+      || data?.error;
+    throw new Error(`LMS API error: ${res.status} ${res.statusText}${details ? ` — ${details}` : ''}`);
+  }
 
   if (data.errors?.length && !allowPartialErrors) {
-    const messages = data.errors.map((e: { message: string }) => e.message).join('; ');
+    const messages = data.errors.map(error => error.message || 'Lỗi GraphQL không xác định').join('; ');
     throw new Error(`GraphQL error: ${messages}`);
   }
 

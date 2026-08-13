@@ -473,6 +473,7 @@ export async function fetchClassTeacherSchedules(classId: string): Promise<Teach
           sessionHour
           summary
           homework
+          learningLessonId
           teachers {
             _id
             teacher {
@@ -591,6 +592,7 @@ export async function fetchClassByIdFull(classId: string): Promise<Class | null>
           sessionHour
           summary
           homework
+          learningLessonId
           teachers {
             _id
             isActive

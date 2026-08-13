@@ -100,6 +100,7 @@ const GET_CLASSES_QUERY = /* graphql */ `
           sessionHour
           summary
           homework
+          learningLessonId
           teachers {
             _id
             isActive
