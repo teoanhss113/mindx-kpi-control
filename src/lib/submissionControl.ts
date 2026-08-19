@@ -17,6 +17,12 @@ export interface SubmissionCell {
   dueAt?: string | null;
 }
 
+export interface SubmissionSummaryOptions {
+  dateFrom?: string;
+  dateTo?: string;
+  now?: Date;
+}
+
 export interface SubmissionSummary {
   totalExpected: number;
   missing: number;
@@ -40,7 +46,40 @@ const GRADED_STATUS_MARKERS = ['GRADED', 'MARKED', 'COMPLETED', 'APPROVED', 'PAS
 const SUBMITTED_STATUS_MARKERS = ['SUBMITTED', 'TURNED_IN', 'PENDING', 'REVIEW', ...GRADED_STATUS_MARKERS];
 const MISSING_STATUS_MARKERS = ['NOT_SUBMITTED', 'UNSUBMITTED', 'MISSING', 'DRAFT'];
 
-export function getActiveSubmissionLessons(data: ClassSubmissionData, cls?: Class): SubmissionLesson[] {
+function getLessonSessionAt(data: ClassSubmissionData, cls: Class | undefined, lessonId: string): string | null {
+  const authoritativeSlot = (data.lessonSchedule || []).find(slot => slot.lessonId === lessonId);
+  if (authoritativeSlot) return authoritativeSlot.startTime || authoritativeSlot.date || authoritativeSlot.endTime || null;
+  const fallbackSlot = (cls?.slots || []).find(slot => slot.learningLessonId === lessonId);
+  return fallbackSlot?.startTime || fallbackSlot?.date || fallbackSlot?.endTime || null;
+}
+
+function parseDateRangeBound(value: string | undefined, endOfDay = false): number | null {
+  if (!value) return null;
+  const date = new Date(`${value}T${endOfDay ? '23:59:59.999' : '00:00:00.000'}`);
+  const time = date.getTime();
+  return Number.isFinite(time) ? time : null;
+}
+
+function isLessonInDateRange(
+  data: ClassSubmissionData,
+  cls: Class | undefined,
+  lessonId: string,
+  options?: SubmissionSummaryOptions,
+): boolean {
+  const fromTime = parseDateRangeBound(options?.dateFrom);
+  const toTime = parseDateRangeBound(options?.dateTo, true);
+  if (fromTime === null && toTime === null) return true;
+  const sessionAt = getLessonSessionAt(data, cls, lessonId);
+  const sessionTime = sessionAt ? new Date(sessionAt).getTime() : Number.NaN;
+  if (!Number.isFinite(sessionTime)) return false;
+  return (fromTime === null || sessionTime >= fromTime) && (toTime === null || sessionTime <= toTime);
+}
+
+export function getActiveSubmissionLessons(
+  data: ClassSubmissionData,
+  cls?: Class,
+  options?: SubmissionSummaryOptions,
+): SubmissionLesson[] {
   const authoritativeSchedule = [...(data.lessonSchedule || [])]
     .sort((left, right) => (
       (left.slotIndex ?? Number.MAX_SAFE_INTEGER) - (right.slotIndex ?? Number.MAX_SAFE_INTEGER)
@@ -56,7 +95,7 @@ export function getActiveSubmissionLessons(data: ClassSubmissionData, cls?: Clas
   const slotPositionByLessonId = new Map(schedule.map((slot, index) => [slot.lessonId, index]));
 
   return data.lessons
-    .filter(lesson => lesson.isActive !== false)
+    .filter(lesson => lesson.isActive !== false && isLessonInDateRange(data, cls, lesson.id, options))
     .sort((left, right) => {
       const leftSlotPosition = slotPositionByLessonId.get(left.id);
       const rightSlotPosition = slotPositionByLessonId.get(right.id);
@@ -113,8 +152,13 @@ function getLessonDueAt(data: ClassSubmissionData, cls: Class | undefined, lesso
   return nextSlot?.startTime || nextSlot?.date || slot.endTime || slot.startTime || slot.date || null;
 }
 
-export function buildSubmissionCells(data: ClassSubmissionData, cls?: Class, now = new Date()): SubmissionCell[] {
-  const lessons = getActiveSubmissionLessons(data, cls);
+export function buildSubmissionCells(
+  data: ClassSubmissionData,
+  cls?: Class,
+  options: SubmissionSummaryOptions = {},
+): SubmissionCell[] {
+  const lessons = getActiveSubmissionLessons(data, cls, options);
+  const now = options.now ?? new Date();
   const submissionsByStudentLesson = new Map<string, StudentSubmission[]>();
 
   data.submissions.forEach(submission => {
@@ -144,8 +188,13 @@ export function buildSubmissionCells(data: ClassSubmissionData, cls?: Class, now
   }));
 }
 
-export function summarizeSubmissionData(data: ClassSubmissionData, cls?: Class, now = new Date()): SubmissionSummary {
-  const cells = buildSubmissionCells(data, cls, now);
+export function summarizeSubmissionData(
+  data: ClassSubmissionData,
+  cls?: Class,
+  options: SubmissionSummaryOptions = {},
+): SubmissionSummary {
+  const now = options.now ?? new Date();
+  const cells = buildSubmissionCells(data, cls, { ...options, now });
   const dueCells = cells.filter(cell => {
     if (!cell.dueAt) return true;
     const dueTime = new Date(cell.dueAt).getTime();
@@ -172,10 +221,11 @@ export function summarizeSubmissionData(data: ClassSubmissionData, cls?: Class, 
 export function summarizeSubmissionSessions(
   data: ClassSubmissionData,
   cls?: Class,
-  now = new Date(),
+  options: SubmissionSummaryOptions = {},
 ): SubmissionSessionSummary[] {
-  const cells = buildSubmissionCells(data, cls, now);
-  return getActiveSubmissionLessons(data, cls).flatMap(lesson => {
+  const now = options.now ?? new Date();
+  const cells = buildSubmissionCells(data, cls, { ...options, now });
+  return getActiveSubmissionLessons(data, cls, options).flatMap(lesson => {
     const lessonCells = cells.filter(cell => cell.lesson.id === lesson.id);
     const dueAt = lessonCells[0]?.dueAt;
     const dueTime = dueAt ? new Date(dueAt).getTime() : Number.NaN;

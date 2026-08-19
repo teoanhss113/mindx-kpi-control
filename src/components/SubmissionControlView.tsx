@@ -12,7 +12,17 @@ import {
   type SubmissionCellStatus,
 } from '@/lib/submissionControl';
 import { getCourseCategory } from '@/lib/courseCategories';
-import { EmptyState, Icon, Spinner, StatCard } from '@/components/ui';
+import { exportToCSV, type CSVColumn } from '@/lib/csvExport';
+import { useCSVExportPreferences } from '@/hooks/useCSVExportPreferences';
+import {
+  CSVExportSettings,
+  EmptyState,
+  ExportButton,
+  Icon,
+  Spinner,
+  StatCard,
+  type CSVColumnConfig,
+} from '@/components/ui';
 import { StudentHoverCard } from '@/components/StudentHoverCard';
 import styles from '@/app/dashboard.module.css';
 
@@ -38,6 +48,91 @@ interface SubmissionBreakdownRow {
   sessions: ReturnType<typeof summarizeSubmissionSessions>;
 }
 
+interface SubmissionExportRow {
+  centre: string;
+  courseLine: string;
+  className: string;
+  classId: string;
+  courseName: string;
+  teachers: string;
+  studentName: string;
+  studentUid: string;
+  lessonOrder: number;
+  lessonName: string;
+  lessonId: string;
+  sessionAt: string;
+  dueAt: string;
+  status: string;
+  lmsStatus: string;
+  score: number | string;
+  submittedCount: number | string;
+  submittedAt: string;
+  markedAt: string;
+  markedBy: string;
+  submissionType: string;
+  category: string;
+  note: string;
+}
+
+const defaultSubmissionExportColumns: CSVColumnConfig[] = [
+  { id: 'centre', label: 'Cơ sở', enabled: true },
+  { id: 'courseLine', label: 'Khối học', enabled: true },
+  { id: 'className', label: 'Lớp', enabled: true },
+  { id: 'classId', label: 'Class ID', enabled: false },
+  { id: 'courseName', label: 'Khóa học', enabled: true },
+  { id: 'teachers', label: 'Giáo viên', enabled: true },
+  { id: 'studentName', label: 'Học viên', enabled: true },
+  { id: 'studentUid', label: 'Student UID', enabled: false },
+  { id: 'lessonOrder', label: 'Vị trí bài', enabled: true },
+  { id: 'lessonName', label: 'Tên bài', enabled: true },
+  { id: 'lessonId', label: 'Lesson ID', enabled: false },
+  { id: 'sessionAt', label: 'Thời gian buổi học', enabled: true },
+  { id: 'dueAt', label: 'Hạn bài', enabled: true },
+  { id: 'status', label: 'Trạng thái', enabled: true },
+  { id: 'lmsStatus', label: 'Trạng thái LMS', enabled: true },
+  { id: 'score', label: 'Điểm', enabled: true },
+  { id: 'submittedCount', label: 'Số lần nộp', enabled: true },
+  { id: 'submittedAt', label: 'Thời gian nộp', enabled: true },
+  { id: 'markedAt', label: 'Thời gian chấm', enabled: true },
+  { id: 'markedBy', label: 'Người chấm', enabled: true },
+  { id: 'submissionType', label: 'Loại bài', enabled: false },
+  { id: 'category', label: 'Danh mục', enabled: false },
+  { id: 'note', label: 'Ghi chú chấm', enabled: true },
+];
+
+const submissionExportColumnMap: Record<string, CSVColumn<SubmissionExportRow>> = {
+  centre: { header: 'Cơ sở', accessor: 'centre' },
+  courseLine: { header: 'Khối học', accessor: 'courseLine' },
+  className: { header: 'Lớp', accessor: 'className' },
+  classId: { header: 'Class ID', accessor: 'classId' },
+  courseName: { header: 'Khóa học', accessor: 'courseName' },
+  teachers: { header: 'Giáo viên', accessor: 'teachers' },
+  studentName: { header: 'Học viên', accessor: 'studentName' },
+  studentUid: { header: 'Student UID', accessor: 'studentUid' },
+  lessonOrder: { header: 'Vị trí bài', accessor: 'lessonOrder' },
+  lessonName: { header: 'Tên bài', accessor: 'lessonName' },
+  lessonId: { header: 'Lesson ID', accessor: 'lessonId' },
+  sessionAt: { header: 'Thời gian buổi học', accessor: 'sessionAt' },
+  dueAt: { header: 'Hạn bài', accessor: 'dueAt' },
+  status: { header: 'Trạng thái', accessor: 'status' },
+  lmsStatus: { header: 'Trạng thái LMS', accessor: 'lmsStatus' },
+  score: { header: 'Điểm', accessor: 'score' },
+  submittedCount: { header: 'Số lần nộp', accessor: 'submittedCount' },
+  submittedAt: { header: 'Thời gian nộp', accessor: 'submittedAt' },
+  markedAt: { header: 'Thời gian chấm', accessor: 'markedAt' },
+  markedBy: { header: 'Người chấm', accessor: 'markedBy' },
+  submissionType: { header: 'Loại bài', accessor: 'submissionType' },
+  category: { header: 'Danh mục', accessor: 'category' },
+  note: { header: 'Ghi chú chấm', accessor: 'note' },
+};
+
+function getSubmissionExportColumns(config: CSVColumnConfig[]) {
+  return config
+    .filter(column => column.enabled)
+    .map(column => submissionExportColumnMap[column.id])
+    .filter((column): column is CSVColumn<SubmissionExportRow> => Boolean(column));
+}
+
 function StatusPill({ status, count }: { status: SubmissionCellStatus; count?: number }) {
   const meta = statusMeta[status];
   return (
@@ -53,7 +148,26 @@ function formatDateTime(value?: string | null) {
   return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString('vi-VN');
 }
 
-export function ClassSubmissionDetail({ record, cls, onRetry }: { record?: ClassSubmissionRecord; cls?: Class; onRetry?: () => void }) {
+function getLessonSessionAt(data: ClassSubmissionData, cls: Class, lessonId: string) {
+  const authoritativeSlot = data.lessonSchedule?.find(slot => slot.lessonId === lessonId);
+  if (authoritativeSlot) return authoritativeSlot.startTime || authoritativeSlot.date || authoritativeSlot.endTime || '';
+  const classSlot = cls.slots?.find(slot => slot.learningLessonId === lessonId);
+  return classSlot?.startTime || classSlot?.date || classSlot?.endTime || '';
+}
+
+export function ClassSubmissionDetail({
+  record,
+  cls,
+  dateFrom,
+  dateTo,
+  onRetry,
+}: {
+  record?: ClassSubmissionRecord;
+  cls?: Class;
+  dateFrom?: string;
+  dateTo?: string;
+  onRetry?: () => void;
+}) {
   if (!record || record.state === 'idle' || record.state === 'loading') {
     return <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-tertiary)' }}><Spinner size={18} /> Đang đồng bộ tình trạng bài tập...</div>;
   }
@@ -68,10 +182,11 @@ export function ClassSubmissionDetail({ record, cls, onRetry }: { record?: Class
   }
 
   const data = record.data;
+  const summaryOptions = { dateFrom, dateTo };
   const lessons = getActiveSubmissionLessons(data, cls);
   const cells = buildSubmissionCells(data, cls);
-  const summary = summarizeSubmissionData(data, cls);
-  const sessionSummaries = summarizeSubmissionSessions(data, cls);
+  const summary = summarizeSubmissionData(data, cls, summaryOptions);
+  const sessionSummaries = summarizeSubmissionSessions(data, cls, summaryOptions);
   const completeSessions = sessionSummaries.filter(session => session.completion === 'complete').length;
   const partialSessions = sessionSummaries.filter(session => session.completion === 'partial').length;
   const emptySessions = sessionSummaries.filter(session => session.completion === 'none').length;
@@ -100,6 +215,9 @@ export function ClassSubmissionDetail({ record, cls, onRetry }: { record?: Class
         <span>Chưa có bài: {emptySessions}</span>
         <span>TB nộp/buổi: {sessionSummaries.length ? `${averageSessionSubmissionRate.toFixed(1)}%` : '—'}</span>
         <span>TB chấm/buổi: {sessionsWithSubmissions.length ? `${averageSessionGradingRate.toFixed(1)}%` : '—'}</span>
+      </div>
+      <div style={{ marginBottom: 8, color: 'var(--text-tertiary)', fontSize: 10.5 }}>
+        Thống kê tính theo phạm vi {dateFrom || 'đầu kỳ'} – {dateTo || 'hiện tại'}; bảng bên dưới hiển thị toàn bộ buổi của lớp.
       </div>
       {lessons.length === 0 ? (
         <div style={{ padding: 18, textAlign: 'center', color: 'var(--text-tertiary)' }}>Lớp chưa có bài học đang hoạt động.</div>
@@ -130,12 +248,16 @@ export function SubmissionControlView({
   classes,
   records,
   loading,
+  dateFrom,
+  dateTo,
   onReloadClass,
   onReloadAll,
 }: {
   classes: Class[];
   records: Record<string, ClassSubmissionRecord>;
   loading: boolean;
+  dateFrom?: string;
+  dateTo?: string;
   onReloadClass: (classId: string) => void;
   onReloadAll: () => void;
 }) {
@@ -144,6 +266,12 @@ export function SubmissionControlView({
   const [studentSearch, setStudentSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | SubmissionCellStatus>('all');
   const [breakdownDimension, setBreakdownDimension] = useState<SubmissionBreakdownDimension>('centre');
+  const [showCSVSettings, setShowCSVSettings] = useState(false);
+  const { columns: csvColumns, saveColumns: saveCSVColumns } = useCSVExportPreferences(
+    'operations-submission-control',
+    defaultSubmissionExportColumns,
+  );
+  const summaryOptions = useMemo(() => ({ dateFrom, dateTo }), [dateFrom, dateTo]);
   const visibleClasses = useMemo(() => {
     const normalized = search.trim().toLocaleLowerCase('vi');
     if (!normalized) return classes;
@@ -160,14 +288,54 @@ export function SubmissionControlView({
   const loadedEntries = useMemo(() => classes
     .map(cls => ({ cls, record: records[cls.id] }))
     .filter((entry): entry is { cls: Class; record: ClassSubmissionRecord & { data: ClassSubmissionData } } => entry.record?.state === 'loaded' && Boolean(entry.record.data)), [classes, records]);
+  const exportRows = useMemo<SubmissionExportRow[]>(() => loadedEntries.flatMap(({ cls, record }) => {
+    const lessons = getActiveSubmissionLessons(record.data, cls, summaryOptions);
+    const lessonOrderById = new Map(lessons.map((lesson, index) => [lesson.id, index + 1]));
+    const teachers = cls.teachers
+      .filter(teacherSlot => teacherSlot.isActive)
+      .map(teacherSlot => `${teacherSlot.teacher.fullName}${teacherSlot.role?.shortName ? ` (${teacherSlot.role.shortName})` : ''}`)
+      .join('; ');
+
+    return buildSubmissionCells(record.data, cls, summaryOptions)
+      .filter(cell => cell.status !== 'not_due')
+      .map(cell => ({
+        centre: cls.centre?.shortName || cls.centre?.name || '',
+        courseLine: getCourseCategory(cls),
+        className: cls.name,
+        classId: cls.id,
+        courseName: cls.course?.name || '',
+        teachers,
+        studentName: cell.student.displayName,
+        studentUid: cell.student.studentUid,
+        lessonOrder: lessonOrderById.get(cell.lesson.id) || 0,
+        lessonName: cell.lesson.name,
+        lessonId: cell.lesson.id,
+        sessionAt: formatDateTime(getLessonSessionAt(record.data, cls, cell.lesson.id)),
+        dueAt: formatDateTime(cell.dueAt),
+        status: statusMeta[cell.status].label,
+        lmsStatus: cell.submission?.status || '',
+        score: cell.submission?.score ?? '',
+        submittedCount: cell.submission?.submittedCount ?? '',
+        submittedAt: formatDateTime(cell.submission?.submittedAt),
+        markedAt: formatDateTime(cell.submission?.markedAt),
+        markedBy: cell.submission?.markedBy || '',
+        submissionType: cell.submission?.type || cell.submission?.content?.type || '',
+        category: cell.submission?.category || '',
+        note: cell.submission?.note || '',
+      }));
+  }), [loadedEntries, summaryOptions]);
+  const handleExport = useCallback(() => {
+    const rangeSuffix = dateFrom || dateTo ? `_${dateFrom || 'dau-ky'}_${dateTo || 'hien-tai'}` : '';
+    exportToCSV(exportRows, getSubmissionExportColumns(csvColumns), `du-lieu-cham-bai-tap${rangeSuffix}`);
+  }, [csvColumns, dateFrom, dateTo, exportRows]);
   const aggregate = useMemo(() => loadedEntries.reduce((total, { cls, record }) => {
-    const summary = summarizeSubmissionData(record.data, cls);
+    const summary = summarizeSubmissionData(record.data, cls, summaryOptions);
     total.expected += summary.totalExpected;
     total.missing += summary.missing;
     total.pending += summary.pending;
     total.graded += summary.graded;
     return total;
-  }, { expected: 0, missing: 0, pending: 0, graded: 0 }), [loadedEntries]);
+  }, { expected: 0, missing: 0, pending: 0, graded: 0 }), [loadedEntries, summaryOptions]);
   const aggregateSubmitted = aggregate.pending + aggregate.graded;
   const aggregateGradingRate = aggregateSubmitted > 0 ? (aggregate.graded / aggregateSubmitted) * 100 : 0;
   const failedClassCount = classes.filter(cls => records[cls.id]?.state === 'error').length;
@@ -175,8 +343,8 @@ export function SubmissionControlView({
   const hasIncompleteCoverage = loadedEntries.length < classes.length;
   const coverageRate = classes.length > 0 ? (loadedEntries.length / classes.length) * 100 : 0;
   const aggregateSessions = useMemo(() => loadedEntries.flatMap(({ cls, record }) => (
-    summarizeSubmissionSessions(record.data, cls)
-  )), [loadedEntries]);
+    summarizeSubmissionSessions(record.data, cls, summaryOptions)
+  )), [loadedEntries, summaryOptions]);
   const completeSessionCount = aggregateSessions.filter(session => session.completion === 'complete').length;
   const partialSessionCount = aggregateSessions.filter(session => session.completion === 'partial').length;
   const emptySessionCount = aggregateSessions.filter(session => session.completion === 'none').length;
@@ -219,13 +387,13 @@ export function SubmissionControlView({
       row.totalClasses += 1;
       const record = records[cls.id];
       if (record?.state === 'loaded' && record.data) {
-        const summary = summarizeSubmissionData(record.data, cls);
+        const summary = summarizeSubmissionData(record.data, cls, summaryOptions);
         row.loadedClasses += 1;
         row.expected += summary.totalExpected;
         row.missing += summary.missing;
         row.pending += summary.pending;
         row.graded += summary.graded;
-        row.sessions.push(...summarizeSubmissionSessions(record.data, cls));
+        row.sessions.push(...summarizeSubmissionSessions(record.data, cls, summaryOptions));
       }
       groups.set(key, row);
     });
@@ -236,17 +404,17 @@ export function SubmissionControlView({
       const rightRate = right.expected > 0 ? rightSubmitted / right.expected : Number.POSITIVE_INFINITY;
       return leftRate - rightRate || left.label.localeCompare(right.label, 'vi');
     });
-  }, [breakdownDimension, classes, records]);
+  }, [breakdownDimension, classes, records, summaryOptions]);
 
   const selectedClass = classes.find(cls => cls.id === selectedClassId);
   const selectedRecord = selectedClassId ? records[selectedClassId] : undefined;
   const selectedData = selectedRecord?.data;
-  const selectedCells = selectedData ? buildSubmissionCells(selectedData, selectedClass) : [];
+  const selectedCells = selectedData ? buildSubmissionCells(selectedData, selectedClass, summaryOptions) : [];
   const selectedDueLessonIds = new Set(selectedData
-    ? summarizeSubmissionSessions(selectedData, selectedClass).map(session => session.lesson.id)
+    ? summarizeSubmissionSessions(selectedData, selectedClass, summaryOptions).map(session => session.lesson.id)
     : []);
   const selectedLessons = selectedData
-    ? getActiveSubmissionLessons(selectedData, selectedClass).filter(lesson => selectedDueLessonIds.has(lesson.id))
+    ? getActiveSubmissionLessons(selectedData, selectedClass, summaryOptions).filter(lesson => selectedDueLessonIds.has(lesson.id))
     : [];
   const cellsByStudentLesson = new Map(selectedCells.map(cell => [`${cell.student.studentUid}:${cell.lesson.id}`, cell]));
   const selectedStudents = (selectedData?.students || []).filter(student => {
@@ -266,13 +434,22 @@ export function SubmissionControlView({
         <div>
           <h2 style={{ margin: 0, fontSize: 18 }}>Kiểm soát nộp và chấm bài</h2>
           <div style={{ color: 'var(--text-tertiary)', fontSize: 12, marginTop: 4 }}>
-            Đã tải {loadedEntries.length}/{classes.length} lớp trong phạm vi hiện tại.
+            Đã tải {loadedEntries.length}/{classes.length} lớp · buổi học từ {dateFrom || 'đầu kỳ'} đến {dateTo || 'hiện tại'}.
           </div>
         </div>
-        <button type="button" className={styles.primaryBtn} onClick={onReloadAll} disabled={loading}>
-          {loading ? <Spinner size={14} /> : <Icon.Refresh />}
-          {loading ? 'Đang đồng bộ tự động...' : 'Làm mới dữ liệu bài tập'}
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <ExportButton
+            onClick={handleExport}
+            onSettingsClick={() => setShowCSVSettings(true)}
+            disabled={loading || exportRows.length === 0}
+            label={loading ? 'Chờ tải đủ dữ liệu...' : 'Xuất CSV'}
+            count={exportRows.length}
+          />
+          <button type="button" className={styles.primaryBtn} onClick={onReloadAll} disabled={loading}>
+            {loading ? <Spinner size={14} /> : <Icon.Refresh />}
+            {loading ? 'Đang đồng bộ tự động...' : 'Làm mới dữ liệu bài tập'}
+          </button>
+        </div>
       </div>
 
       {loadedEntries.length > 0 && (
@@ -369,8 +546,8 @@ export function SubmissionControlView({
             <tbody>
               {visibleClasses.map(cls => {
                 const record = records[cls.id];
-                const summary = record?.data ? summarizeSubmissionData(record.data, cls) : null;
-                const sessionSummaries = record?.data ? summarizeSubmissionSessions(record.data, cls) : [];
+                const summary = record?.data ? summarizeSubmissionData(record.data, cls, summaryOptions) : null;
+                const sessionSummaries = record?.data ? summarizeSubmissionSessions(record.data, cls, summaryOptions) : [];
                 const sessionsWithSubmissions = sessionSummaries.filter(session => session.submitted > 0);
                 const averageSessionSubmission = sessionSummaries.length > 0 ? sessionSummaries.reduce((sum, session) => sum + session.submissionRate, 0) / sessionSummaries.length : 0;
                 const averageSessionGrading = sessionsWithSubmissions.length > 0 ? sessionsWithSubmissions.reduce((sum, session) => sum + session.gradingRate, 0) / sessionsWithSubmissions.length : 0;
@@ -425,6 +602,13 @@ export function SubmissionControlView({
             </>}
         </section>
       )}
+      <CSVExportSettings
+        isOpen={showCSVSettings}
+        onClose={() => setShowCSVSettings(false)}
+        columns={csvColumns}
+        onSave={saveCSVColumns}
+        title="Cài đặt xuất CSV - Chấm bài tập"
+      />
     </div>
   );
 }

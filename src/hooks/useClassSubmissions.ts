@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Class } from '@/types/classes';
 import {
   fetchStudentSubmissionsByClass,
+  fetchStudentSubmissionsByClasses,
   type ClassSubmissionData,
 } from '@/services/studentSubmissionService';
 
@@ -17,7 +18,10 @@ export interface ClassSubmissionRecord {
 }
 
 const MAX_FETCH_ATTEMPTS = 3;
-const SUBMISSION_DATA_VERSION = 3;
+const BATCH_FETCH_ATTEMPTS = 2;
+const BATCH_SIZE = 6;
+const BATCH_WORKERS = 2;
+const SUBMISSION_DATA_VERSION = 4;
 
 function waitForRetry(delayMs: number, signal?: AbortSignal) {
   return new Promise<void>((resolve, reject) => {
@@ -96,20 +100,65 @@ export function useClassSubmissions(classes: Class[]) {
     ));
     if (queue.length === 0) return;
 
+    setRecords(previous => {
+      const next = { ...previous };
+      queue.forEach(classId => {
+        next[classId] = { ...previous[classId], state: 'loading', error: undefined };
+      });
+      recordsRef.current = next;
+      return next;
+    });
     setLoading(true);
+    const batches = Array.from(
+      { length: Math.ceil(queue.length / BATCH_SIZE) },
+      (_, index) => queue.slice(index * BATCH_SIZE, (index + 1) * BATCH_SIZE),
+    );
     const worker = async () => {
-      while (queue.length > 0 && !controller.signal.aborted) {
-        const classId = queue.shift();
-        if (classId) await fetchClass(classId, controller.signal);
+      while (batches.length > 0 && !controller.signal.aborted) {
+        const batch = batches.shift();
+        if (!batch) continue;
+
+        let result: Awaited<ReturnType<typeof fetchStudentSubmissionsByClasses>> | undefined;
+        let lastError: unknown;
+        for (let attempt = 1; attempt <= BATCH_FETCH_ATTEMPTS; attempt += 1) {
+          try {
+            result = await fetchStudentSubmissionsByClasses(batch, controller.signal);
+            break;
+          } catch (error) {
+            if (controller.signal.aborted || (error instanceof DOMException && error.name === 'AbortError')) return;
+            lastError = error;
+            if (attempt < BATCH_FETCH_ATTEMPTS) {
+              await waitForRetry(500, controller.signal).catch(() => undefined);
+            }
+          }
+        }
+        if (controller.signal.aborted) return;
+
+        setRecords(previous => {
+          const next = { ...previous };
+          batch.forEach(classId => {
+            const data = result?.data[classId];
+            next[classId] = data
+              ? { state: 'loaded', data, dataVersion: SUBMISSION_DATA_VERSION }
+              : {
+                  ...previous[classId],
+                  state: 'error',
+                  error: result?.errors[classId]
+                    || (lastError instanceof Error ? lastError.message : 'Không thể tải dữ liệu bài tập'),
+                };
+          });
+          recordsRef.current = next;
+          return next;
+        });
       }
     };
 
     try {
-      await Promise.all(Array.from({ length: Math.min(3, queue.length) }, worker));
+      await Promise.all(Array.from({ length: Math.min(BATCH_WORKERS, batches.length) }, worker));
     } finally {
       if (!controller.signal.aborted) setLoading(false);
     }
-  }, [fetchClass]);
+  }, []);
 
   useEffect(() => {
     if (!classIdsKey) return;
@@ -121,7 +170,6 @@ export function useClassSubmissions(classes: Class[]) {
 
   const reloadClass = useCallback((classId: string) => fetchClass(classId), [fetchClass]);
   const reloadAll = useCallback(() => loadClasses(classIds, true), [classIds, loadClasses]);
-  const preloadClassIds = useCallback((ids: string[]) => loadClasses(ids), [loadClasses]);
   const cancelLoading = useCallback(() => {
     abortRef.current?.abort();
     setLoading(false);
@@ -136,5 +184,5 @@ export function useClassSubmissions(classes: Class[]) {
     };
   }, [classIds, records]);
 
-  return { records, loading, progress, preloadClassIds, cancelLoading, reloadClass, reloadAll };
+  return { records, loading, progress, cancelLoading, reloadClass, reloadAll };
 }

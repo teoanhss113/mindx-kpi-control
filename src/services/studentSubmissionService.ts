@@ -86,45 +86,60 @@ interface FindStudentSubmissionBundleByClassResponse {
   };
 }
 
+interface BatchSubmissionResult {
+  data: Record<string, ClassSubmissionData>;
+  errors: Record<string, string>;
+}
+
+interface SubmissionBundleParts {
+  submissionData: ClassSubmissionData | null | undefined;
+  courseVersionData: FindStudentSubmissionBundleByClassResponse['data']['findCourseVersionByClass'];
+  classData: FindStudentSubmissionBundleByClassResponse['data']['classesById'];
+}
+
+const STUDENT_SUBMISSION_SELECTION = `
+  students { id displayName studentUid }
+  lessons { id name type isActive displayOrder }
+  submissions {
+    id type note score status category classId lessonId learningCourseId
+    studentUid markedAt markedBy createdAt submittedAt submittedCount
+    content { scratchState type attachments totalQuiz submitQuiz correctAnswer }
+  }
+`;
+
+const COURSE_VERSION_SELECTION = `
+  usedVersion { id name isEnabled learningCourseId description }
+  lessons { id name type isActive learningCourseId displayOrder courseVersionId }
+  versions { id name isEnabled learningCourseId description }
+`;
+
+const CLASS_SCHEDULE_SELECTION = `
+  slots { date startTime endTime index learningLessonId }
+`;
+
 const FIND_STUDENT_SUBMISSION_BUNDLE_BY_CLASS_QUERY = `
   query FindStudentSubmissionBundleByClass($payload: FindStudentSubmissionByClassQuery, $classId: String!, $entityId: ID!) {
     findStudentSubmissionByClass(payload: $payload) {
-      students { id displayName studentUid }
-      lessons { id name type isActive displayOrder }
-      submissions {
-        id type note score status category classId lessonId learningCourseId
-        studentUid markedAt markedBy createdAt submittedAt submittedCount
-        content { scratchState type attachments totalQuiz submitQuiz correctAnswer }
-      }
+      ${STUDENT_SUBMISSION_SELECTION}
     }
     findCourseVersionByClass(payload: { classId: $classId }) {
-      usedVersion { id name isEnabled learningCourseId description }
-      lessons { id name type isActive learningCourseId displayOrder courseVersionId }
-      versions { id name isEnabled learningCourseId description }
+      ${COURSE_VERSION_SELECTION}
     }
     classesById(id: $entityId) {
-      slots { date startTime endTime index learningLessonId }
+      ${CLASS_SCHEDULE_SELECTION}
     }
   }
 `;
 
-export async function fetchStudentSubmissionsByClass(
-  classId: string,
-  signal?: AbortSignal,
-): Promise<ClassSubmissionData> {
-  const response = await lmsQuery<FindStudentSubmissionBundleByClassResponse>({
-    query: FIND_STUDENT_SUBMISSION_BUNDLE_BY_CLASS_QUERY,
-    operationName: 'FindStudentSubmissionBundleByClass',
-    variables: { payload: { classId }, classId, entityId: classId },
-    signal,
-  });
-
-  const submissionData = response.data.findStudentSubmissionByClass;
-  const courseVersionData = response.data.findCourseVersionByClass;
+function normalizeSubmissionBundle({
+  submissionData,
+  courseVersionData,
+  classData,
+}: SubmissionBundleParts): ClassSubmissionData {
   const versionLessons = courseVersionData?.usedVersion
     ? courseVersionData.lessons.filter(lesson => lesson.courseVersionId === courseVersionData.usedVersion?.id)
     : [];
-  const lessonSchedule = (response.data.classesById?.slots || [])
+  const lessonSchedule = (classData?.slots || [])
     .filter(slot => Boolean(slot.learningLessonId))
     .map(slot => ({
       lessonId: slot.learningLessonId as string,
@@ -146,4 +161,86 @@ export async function fetchStudentSubmissionsByClass(
     usedVersion: courseVersionData?.usedVersion || null,
     lessonSchedule,
   };
+}
+
+export async function fetchStudentSubmissionsByClass(
+  classId: string,
+  signal?: AbortSignal,
+): Promise<ClassSubmissionData> {
+  const response = await lmsQuery<FindStudentSubmissionBundleByClassResponse>({
+    query: FIND_STUDENT_SUBMISSION_BUNDLE_BY_CLASS_QUERY,
+    operationName: 'FindStudentSubmissionBundleByClass',
+    variables: { payload: { classId }, classId, entityId: classId },
+    signal,
+  });
+
+  return normalizeSubmissionBundle({
+    submissionData: response.data.findStudentSubmissionByClass,
+    courseVersionData: response.data.findCourseVersionByClass,
+    classData: response.data.classesById,
+  });
+}
+
+/**
+ * Loads several classes in one HTTP/GraphQL request. GraphQL cannot pass the
+ * result of the class-list field into another field in the same operation, so
+ * aliases are used once the class IDs are known to avoid one request per class.
+ */
+export async function fetchStudentSubmissionsByClasses(
+  classIds: string[],
+  signal?: AbortSignal,
+): Promise<BatchSubmissionResult> {
+  const uniqueClassIds = Array.from(new Set(classIds.filter(Boolean)));
+  if (uniqueClassIds.length === 0) return { data: {}, errors: {} };
+
+  const variableDefinitions = uniqueClassIds.flatMap((_, index) => [
+    `$payload${index}: FindStudentSubmissionByClassQuery`,
+    `$classId${index}: String!`,
+    `$entityId${index}: ID!`,
+  ]).join(', ');
+  const fields = uniqueClassIds.map((_, index) => `
+    submission${index}: findStudentSubmissionByClass(payload: $payload${index}) {
+      ${STUDENT_SUBMISSION_SELECTION}
+    }
+    course${index}: findCourseVersionByClass(payload: { classId: $classId${index} }) {
+      ${COURSE_VERSION_SELECTION}
+    }
+    class${index}: classesById(id: $entityId${index}) {
+      ${CLASS_SCHEDULE_SELECTION}
+    }
+  `).join('\n');
+  const variables = uniqueClassIds.reduce<Record<string, unknown>>((result, classId, index) => {
+    result[`payload${index}`] = { classId };
+    result[`classId${index}`] = classId;
+    result[`entityId${index}`] = classId;
+    return result;
+  }, {});
+
+  const response = await lmsQuery<{
+    data?: Record<string, unknown>;
+    errors?: Array<{ message?: string; path?: Array<string | number> }>;
+  }>({
+    query: `query FindStudentSubmissionBundlesByClass(${variableDefinitions}) { ${fields} }`,
+    operationName: 'FindStudentSubmissionBundlesByClass',
+    variables,
+    signal,
+    allowPartialErrors: true,
+  });
+
+  const result: BatchSubmissionResult = { data: {}, errors: {} };
+  const responseData = response.data || {};
+  uniqueClassIds.forEach((classId, index) => {
+    const submissionData = responseData[`submission${index}`] as ClassSubmissionData | null | undefined;
+    const matchingError = response.errors?.find(error => error.path?.[0] === `submission${index}`);
+    if (submissionData === undefined || matchingError) {
+      result.errors[classId] = matchingError?.message || 'Không thể tải dữ liệu bài tập';
+      return;
+    }
+    result.data[classId] = normalizeSubmissionBundle({
+      submissionData,
+      courseVersionData: responseData[`course${index}`] as SubmissionBundleParts['courseVersionData'],
+      classData: responseData[`class${index}`] as SubmissionBundleParts['classData'],
+    });
+  });
+  return result;
 }

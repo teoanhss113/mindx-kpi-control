@@ -3192,14 +3192,6 @@ export default function TeacherSchedulePage() {
           )
         : Promise.resolve([] as Class[]);
 
-      // Begin loading submission data as soon as the class IDs are available.
-      // This runs alongside the remaining toolbar requests and is awaited before
-      // publishing the new class dataset, so the submissions view does not need
-      // a second loading phase after the main data load finishes.
-      const submissionPrefetchPromise = shouldLoadClasses
-        ? classesPromise.then(classes => classSubmissions.preloadClassIds(classes.map(cls => cls.id)))
-        : Promise.resolve();
-
       const officeHoursPromise = shouldLoadOfficeHours
         ? fetchOfficeHours(
             {
@@ -3245,8 +3237,6 @@ export default function TeacherSchedulePage() {
         scopedClasses, // preFetchedClasses
         officeHoursResult.data // preFetchedOfficeHours
       );
-      await submissionPrefetchPromise;
-
       console.log(`[TeacherSchedule] Loaded ${scopedClasses.length} scoped classes and ${classes.length} filtered classes for week ${start} to ${end}`);
       if (classes.length > 0) {
         console.log(`[TeacherSchedule] Example class ${classes[0].name} has ${classes[0].slots?.length} slots`);
@@ -3391,7 +3381,7 @@ export default function TeacherSchedulePage() {
         setProgress({ loaded: 100, total: 100 });
       }
     }
-  }, [centres, selectedCentres, calendarSelectedTeachers, calendarSelectedCourseLines, calendarSelectedRoles, selectedTeachers, selectedCourseLines, selectedClassStatuses, classStatusFilterOptions, scheduleTypeFilter, exemptedSessions, exemptOneOnOneClasses, holidayPeriods, addToast, classCodeSearch, dataLimit, fromDate, toDate, toolbarTeacherFilter.selectedTeacherId, toolbarTeacherFilter.selectedTeacherName, classSubmissions.preloadClassIds, classSubmissions.cancelLoading]);
+  }, [centres, selectedCentres, calendarSelectedTeachers, calendarSelectedCourseLines, calendarSelectedRoles, selectedTeachers, selectedCourseLines, selectedClassStatuses, classStatusFilterOptions, scheduleTypeFilter, exemptedSessions, exemptOneOnOneClasses, holidayPeriods, addToast, classCodeSearch, dataLimit, fromDate, toDate, toolbarTeacherFilter.selectedTeacherId, toolbarTeacherFilter.selectedTeacherName, classSubmissions.cancelLoading]);
 
   const handleCancelFetch = () => {
     if (abortRef.current) {
@@ -4843,6 +4833,8 @@ export default function TeacherSchedulePage() {
             classes={rawClasses}
             records={classSubmissions.records}
             loading={classSubmissions.loading}
+            dateFrom={loadedRange?.from || fromDate}
+            dateTo={loadedRange?.to || toDate}
             onReloadClass={(classId) => { void classSubmissions.reloadClass(classId); }}
             onReloadAll={() => { void classSubmissions.reloadAll(); }}
           />
@@ -5077,6 +5069,8 @@ export default function TeacherSchedulePage() {
                     <ClassSubmissionDetail
                       record={classSubmissions.records[selectedSlot.classId]}
                       cls={classQualityData?.cls || selectedClassForModal || undefined}
+                      dateFrom={loadedRange?.from || fromDate}
+                      dateTo={loadedRange?.to || toDate}
                       onRetry={() => { void classSubmissions.reloadClass(selectedSlot.classId); }}
                     />
                   )}
