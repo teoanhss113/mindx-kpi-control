@@ -305,6 +305,35 @@ const FIND_ALL_STUDENT_WORKS_QUERY = /* graphql */ `
   }
 `;
 
+const STUDENT_WORKS_SELECTION = /* graphql */ `
+  data {
+    id
+    status
+    studentId
+    classSessionId
+    classId
+    version
+    displayOrder
+    latestData {
+      title
+      thumbnail
+      videoUrls
+      imageUrl
+      attachmentUrls
+      comment
+      rejectReason
+      relatedUrls {
+        name
+        url
+      }
+    }
+    createdBy { displayName }
+    createdAt
+    lastModifiedBy { displayName }
+    lastModifiedAt
+  }
+`;
+
 interface StudentWorksResponse {
   data: {
     findAllStudentWorks: {
@@ -349,6 +378,49 @@ async function fetchStudentWorksOnce(
   return response.data.findAllStudentWorks.data || [];
 }
 
+async function fetchStudentWorksConfigBatch(
+  configs: StudentWorkClassConfig[],
+  signal?: AbortSignal,
+): Promise<Map<string, StudentWork[]>> {
+  const uniqueConfigs = Array.from(
+    new Map(configs.filter(config => config.classId).map(config => [config.classId, config])).values(),
+  );
+  const result = new Map<string, StudentWork[]>();
+  if (uniqueConfigs.length === 0) return result;
+
+  const variableDefinitions = uniqueConfigs.flatMap((_, index) => [
+    `$classId${index}: String`,
+    `$classSessionId${index}: String`,
+  ]).join(', ');
+  const fields = uniqueConfigs.map((config, index) => `
+    works${index}: findAllStudentWorks(payload: {
+      classId_equals: $classId${index},
+      classSessionId_equals: $classSessionId${index}
+    }) {
+      ${STUDENT_WORKS_SELECTION}
+    }
+  `).join('\n');
+  const variables = uniqueConfigs.reduce<Record<string, unknown>>((acc, config, index) => {
+    acc[`classId${index}`] = config.classId;
+    acc[`classSessionId${index}`] = config.classSessionId || null;
+    return acc;
+  }, {});
+
+  const response = await lmsQuery<{ data?: Record<string, { data?: StudentWork[] } | null> }>({
+    query: `query findAllStudentWorksBatch(${variableDefinitions}) { ${fields} }`,
+    operationName: 'findAllStudentWorksBatch',
+    variables,
+    signal,
+  });
+
+  uniqueConfigs.forEach((config, index) => {
+    const works = response.data?.[`works${index}`]?.data || [];
+    result.set(config.classId, ensureStudentWorkClassFields(works, config));
+  });
+
+  return result;
+}
+
 export async function fetchStudentWorks(
   variables: {
     studentId?: string;
@@ -360,32 +432,51 @@ export async function fetchStudentWorks(
   signal?: AbortSignal
 ): Promise<StudentWork[]> {
   if (variables.classConfigs && variables.classConfigs.length > 0) {
-    const concurrency = 10;
+    const batchSize = 10;
     const results: StudentWork[] = [];
+    const fallbackConfigs: StudentWorkClassConfig[] = [];
 
-    for (let index = 0; index < variables.classConfigs.length; index += concurrency) {
-      const chunk = variables.classConfigs.slice(index, index + concurrency);
-      const chunkResults = await Promise.all(chunk.map(async config => {
-        try {
-          if (config.classSessionId) {
-            const sessionWorks = await fetchStudentWorksOnce({
-              classId: config.classId,
-              classSessionId: config.classSessionId,
-            }, signal);
-            if (sessionWorks.length > 0) {
-              return ensureStudentWorkClassFields(sessionWorks, config);
-            }
+    for (let index = 0; index < variables.classConfigs.length; index += batchSize) {
+      const chunk = variables.classConfigs.slice(index, index + batchSize);
+      try {
+        const batchResults = await fetchStudentWorksConfigBatch(chunk, signal);
+        chunk.forEach(config => {
+          const classWorks = batchResults.get(config.classId) || [];
+          if (classWorks.length > 0 || !config.classSessionId) {
+            results.push(...classWorks);
+          } else {
+            fallbackConfigs.push({ classId: config.classId });
           }
+        });
+      } catch (error) {
+        if (signal?.aborted) return [];
+        console.warn('Unable to fetch student works batch:', error);
+        fallbackConfigs.push(...chunk.map(config => ({ classId: config.classId })));
+      }
+    }
 
-          const classWorks = await fetchStudentWorksOnce({ classId: config.classId }, signal);
-          return ensureStudentWorkClassFields(classWorks, { classId: config.classId });
-        } catch (error) {
-          if (signal?.aborted) return [];
-          console.warn(`Unable to fetch student works for class ${config.classId}:`, error);
-          return [];
-        }
-      }));
-      results.push(...chunkResults.flat());
+    for (let index = 0; index < fallbackConfigs.length; index += batchSize) {
+      const chunk = fallbackConfigs.slice(index, index + batchSize);
+      try {
+        const batchResults = await fetchStudentWorksConfigBatch(chunk, signal);
+        chunk.forEach(config => {
+          results.push(...(batchResults.get(config.classId) || []));
+        });
+      } catch (error) {
+        if (signal?.aborted) return [];
+        console.warn('Unable to fetch fallback student works batch:', error);
+        const chunkResults = await Promise.all(chunk.map(async config => {
+          try {
+            const classWorks = await fetchStudentWorksOnce({ classId: config.classId }, signal);
+            return ensureStudentWorkClassFields(classWorks, { classId: config.classId });
+          } catch (fallbackError) {
+            if (signal?.aborted) return [];
+            console.warn(`Unable to fetch student works for class ${config.classId}:`, fallbackError);
+            return [];
+          }
+        }));
+        results.push(...chunkResults.flat());
+      }
     }
 
     return results;

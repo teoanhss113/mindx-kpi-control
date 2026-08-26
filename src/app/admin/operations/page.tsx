@@ -10,7 +10,7 @@ import {
 } from 'recharts';
 import { useAuth } from '@/lib/AuthContext';
 import { loadSession } from '@/services/authService';
-import { fetchAllClasses, fetchClassStatusConfigs, fetchStudentCommentAreas, fetchStudentWorks, haveSlotInDateStringRangeToUtcRange } from '@/services/classesService';
+import { fetchAllClasses, fetchClassStatusConfigs, fetchStudentCommentAreas, fetchStudentWorks, dateStringRangeToUtcRange, haveSlotInDateStringRangeToUtcRange } from '@/services/classesService';
 import { fetchAllCentres, Centre } from '@/services/centresService';
 import { fetchOfficeHours } from '@/services/officeHoursService';
 import { getTeachers } from '@/services/teacherService';
@@ -40,6 +40,7 @@ import { ClassQualityUnifiedTable } from '@/components/ClassQualityUnifiedTable'
 import { ProtectedPage } from '@/components/ProtectedPage';
 import { StudentHoverCard } from '@/components/StudentHoverCard';
 import { ClassSubmissionDetail, SubmissionControlView } from '@/components/SubmissionControlView';
+import { FinalProductControlView } from '@/components/FinalProductControlView';
 import { useClassSubmissions } from '@/hooks/useClassSubmissions';
 
 import {
@@ -692,6 +693,7 @@ function ScheduleViewToggle({
         { value: 'calendar', label: TEACHER_SCHEDULE_LABELS.CALENDAR_VIEW, icon: <Icon.Calendar /> },
         { value: 'quality-table', label: TEACHER_SCHEDULE_LABELS.QUALITY_VIEW, icon: <Icon.Table /> },
         { value: 'submissions', label: 'Bài tập', icon: <Icon.BookOpen /> },
+        { value: 'final-products', label: 'Sản phẩm cuối khoá', icon: <Icon.Target /> },
       ]}
     />
   );
@@ -2765,6 +2767,8 @@ export default function TeacherSchedulePage() {
   
   // Shared filter state (synced across pages)
   const [fromDate, toDate, setFromDate, setToDate, datesLoaded] = useSharedDateRange();
+  const [endDateFrom, setEndDateFrom] = useState('');
+  const [endDateTo, setEndDateTo] = useState('');
   const [selectedCentres, setSelectedCentres, centresLoaded] = useSharedCentres();
   const [isPending, startTransition] = useTransition();
 
@@ -2793,7 +2797,8 @@ export default function TeacherSchedulePage() {
   const [classStatusFilterOptions, setClassStatusFilterOptions] = useState<SelectOption[]>(LMS_CLASS_STATUS_OPTIONS);
   const [rawClasses, setRawClasses] = useState<Class[]>([]);
   const [studentCommentAreas, setStudentCommentAreas] = useState<CommentAreaDef[]>([]);
-  const classSubmissions = useClassSubmissions(rawClasses);
+  const [loadSubmissionData, setLoadSubmissionData] = useState(false);
+  const classSubmissions = useClassSubmissions(rawClasses, loadSubmissionData);
   
   // ── Calendar collapse states ───────────────────────────────────────────────
   const [collapsedTimeSlots, setCollapsedTimeSlots] = useState<Set<string>>(new Set());
@@ -2824,6 +2829,8 @@ export default function TeacherSchedulePage() {
   const [studentWorksError, setStudentWorksError] = useState<string | null>(null);
   const [classStudentWorks, setClassStudentWorks] = useState<StudentWork[]>([]);
   const [classStudentWorksLoading, setClassStudentWorksLoading] = useState(false);
+  const [classStudentWorksError, setClassStudentWorksError] = useState<string | null>(null);
+  const [classStudentWorksReloadKey, setClassStudentWorksReloadKey] = useState(0);
   const [commentModalSessionIndex, setCommentModalSessionIndex] = useState<number | null>(null);
   const [exemptedSessions, setExemptedSessions] = useState<number[]>(DEFAULT_EXEMPTED_SESSIONS);
   const [exemptOneOnOneClasses, setExemptOneOnOneClasses] = useState(true);
@@ -2879,6 +2886,8 @@ export default function TeacherSchedulePage() {
     calendarSelectedRoles,
     classCodeSearch,
     dataLimit,
+    endDateFrom,
+    endDateTo,
     selectedToolbarTeacher: null as { id: string; fullName?: string; displayName?: string } | null,
     toolbarSelectedCentres: selectedCentres,
     selectedTeachers,
@@ -2899,6 +2908,8 @@ export default function TeacherSchedulePage() {
     calendarSelectedRoles,
     classCodeSearch,
     dataLimit,
+    endDateFrom,
+    endDateTo,
     selectedToolbarTeacher: toolbarTeacherFilter.selectedTeacherId
       ? {
           id: toolbarTeacherFilter.selectedTeacherId,
@@ -2927,6 +2938,7 @@ export default function TeacherSchedulePage() {
     
     if (view === 'quality-table') setViewMode('quality-table');
     if (view === 'submissions') setViewMode('submissions');
+    if (view === 'final-products') setViewMode('final-products');
     if (tab === 'violations') setQualityTab('comments');
     if (tab === 'attendance') setQualityTab('attendance');
     if (tab === 'rescheduling') setQualityTab('rescheduling');
@@ -2998,9 +3010,12 @@ export default function TeacherSchedulePage() {
     setAppliedCalendarClassCodeSearch('');
     setSearchTerm('');
     setDataLimit('all');
+    setEndDateFrom('');
+    setEndDateTo('');
     toolbarTeacherFilter.onTeacherClear();
     setClassStudentWorks([]);
     setClassStudentWorksLoading(false);
+    setClassStudentWorksError(null);
     setStudentWorks([]);
     setStudentWorksLoading(false);
     setStudentWorksError(null);
@@ -3111,6 +3126,14 @@ export default function TeacherSchedulePage() {
       addToast(MESSAGES.ERROR.DATE_RANGE_INVALID, 'error');
       return;
     }
+    if ((endDateFrom && !endDateTo) || (!endDateFrom && endDateTo)) {
+      addToast('Vui lòng chọn đủ khoảng End date', 'error');
+      return;
+    }
+    if (endDateFrom && endDateTo && endDateFrom > endDateTo) {
+      addToast('End date bắt đầu phải trước ngày kết thúc', 'error');
+      return;
+    }
     if (abortRef.current) abortRef.current.abort();
     classSubmissions.cancelLoading();
     abortRef.current = new AbortController();
@@ -3159,6 +3182,7 @@ export default function TeacherSchedulePage() {
       visibleWeekStart.setHours(0, 0, 0, 0);
       visibleWeekEnd.setHours(23, 59, 59, 999);
       const toolbarHaveSlotIn = hasDateRange ? haveSlotInDateStringRangeToUtcRange(start, end) : undefined;
+      const endDateRange = endDateFrom && endDateTo ? dateStringRangeToUtcRange(endDateFrom, endDateTo) : undefined;
       const qualityComparisonStart = hasDateRange ? new Date(weekDateFrom) : null;
       qualityComparisonStart?.setDate(qualityComparisonStart.getDate() - 7);
       const classHaveSlotIn = qualityComparisonStart
@@ -3176,6 +3200,7 @@ export default function TeacherSchedulePage() {
         ? fetchAllClasses(
             {
               ...(classHaveSlotIn ? { haveSlotIn: { from: classHaveSlotIn.from, to: classHaveSlotIn.to } } : {}),
+              ...(endDateRange ? { endDateFrom: endDateRange.endDateFrom, endDateTo: endDateRange.endDateTo } : {}),
               ...(classStatuses ? { statusIn: classStatuses } : {}),
               ...(centreIds && centreIds.length > 0 ? { centres: centreIds } : {}),
               ...(toolbarTeacherFilter.selectedTeacherId ? { teacherSlot: [toolbarTeacherFilter.selectedTeacherId] } : {}),
@@ -3346,6 +3371,8 @@ export default function TeacherSchedulePage() {
           selectedToolbarTeacher: toolbarSelectedTeacher,
           classCodeSearch,
           dataLimit,
+          endDateFrom,
+          endDateTo,
           loadedCentreIds: centreIds,
           calendarCentreFilter: [],
           calendarSelectedTeachers,
@@ -3381,7 +3408,7 @@ export default function TeacherSchedulePage() {
         setProgress({ loaded: 100, total: 100 });
       }
     }
-  }, [centres, selectedCentres, calendarSelectedTeachers, calendarSelectedCourseLines, calendarSelectedRoles, selectedTeachers, selectedCourseLines, selectedClassStatuses, classStatusFilterOptions, scheduleTypeFilter, exemptedSessions, exemptOneOnOneClasses, holidayPeriods, addToast, classCodeSearch, dataLimit, fromDate, toDate, toolbarTeacherFilter.selectedTeacherId, toolbarTeacherFilter.selectedTeacherName, classSubmissions.cancelLoading]);
+  }, [centres, selectedCentres, calendarSelectedTeachers, calendarSelectedCourseLines, calendarSelectedRoles, selectedTeachers, selectedCourseLines, selectedClassStatuses, classStatusFilterOptions, scheduleTypeFilter, exemptedSessions, exemptOneOnOneClasses, holidayPeriods, addToast, classCodeSearch, dataLimit, endDateFrom, endDateTo, fromDate, toDate, toolbarTeacherFilter.selectedTeacherId, toolbarTeacherFilter.selectedTeacherName, classSubmissions.cancelLoading]);
 
   const handleCancelFetch = () => {
     if (abortRef.current) {
@@ -3705,6 +3732,8 @@ export default function TeacherSchedulePage() {
           if (Array.isArray(cached.toolbarSelectedCentres)) setSelectedCentres(cached.toolbarSelectedCentres);
           if (typeof cached.classCodeSearch === 'string') setClassCodeSearch(cached.classCodeSearch);
           if (cached.dataLimit) setDataLimit(cached.dataLimit as DataLimitValue);
+          if (typeof cached.endDateFrom === 'string') setEndDateFrom(cached.endDateFrom);
+          if (typeof cached.endDateTo === 'string') setEndDateTo(cached.endDateTo);
           if (cached.selectedToolbarTeacher?.id) {
             toolbarTeacherFilter.hydrateSelectedTeacher(cached.selectedToolbarTeacher);
           }
@@ -3967,6 +3996,7 @@ export default function TeacherSchedulePage() {
   useEffect(() => {
     if (rawClasses.length === 0) {
       setClassStudentWorks([]);
+      setClassStudentWorksError(null);
       return;
     }
 
@@ -3978,6 +4008,7 @@ export default function TeacherSchedulePage() {
       }))
       .filter(config => Boolean(config.classId));
     const loadingTimer = window.setTimeout(() => setClassStudentWorksLoading(true), 0);
+    setClassStudentWorksError(null);
 
     fetchStudentWorks({ classConfigs }, controller.signal)
       .then(setClassStudentWorks)
@@ -3985,6 +4016,7 @@ export default function TeacherSchedulePage() {
         if (controller.signal.aborted) return;
         console.error('Error fetching class student works:', error);
         setClassStudentWorks([]);
+        setClassStudentWorksError(error instanceof Error ? error.message : 'Không thể tải dữ liệu sản phẩm cuối khoá');
       })
       .finally(() => {
         if (!controller.signal.aborted) setClassStudentWorksLoading(false);
@@ -3994,7 +4026,7 @@ export default function TeacherSchedulePage() {
       window.clearTimeout(loadingTimer);
       controller.abort();
     };
-  }, [rawClasses]);
+  }, [classStudentWorksReloadKey, rawClasses]);
 
   const finalProductStatsByClassId = useMemo(() => {
     const worksByClass = new Map<string, StudentWork[]>();
@@ -4473,6 +4505,17 @@ export default function TeacherSchedulePage() {
           dateTo={toDate}
           onDateFromChange={setFromDate}
           onDateToChange={setToDate}
+          dateRangeLabel="Có buổi học"
+          dateRangeExtraSlot={
+            <DateRangeInput
+              label="End date"
+              dateFrom={endDateFrom}
+              dateTo={endDateTo}
+              onDateFromChange={setEndDateFrom}
+              onDateToChange={setEndDateTo}
+              menuPosition="fixed"
+            />
+          }
           onFetch={() => loadData(fromDate, toDate)}
           onCancel={handleCancelFetch}
           loading={loading}
@@ -4493,6 +4536,64 @@ export default function TeacherSchedulePage() {
           onDataLimitChange={setDataLimit}
           quickFilterSlots={
             <div className={styles.toolbarCluster}>
+              <ScheduleTypeSelect
+                value={scheduleTypeFilter}
+                onChange={setScheduleTypeFilter}
+              />
+              <ClassStatusFilterSelect
+                selected={selectedClassStatuses}
+                onChange={setSelectedClassStatuses}
+                options={classStatusFilterOptions}
+              />
+              <label
+                title="Tự động tải dữ liệu nộp và chấm bài sau khi tải danh sách lớp"
+                style={{
+                  display: 'inline-flex',
+                  flexDirection: 'column',
+                  alignItems: 'flex-start',
+                  justifyContent: 'flex-end',
+                  height: 46,
+                  boxSizing: 'border-box',
+                  gap: 4,
+                  padding: 0,
+                  border: 0,
+                  color: 'var(--text-tertiary)',
+                  fontSize: 11,
+                  fontWeight: 590,
+                  cursor: loading ? 'not-allowed' : 'pointer',
+                  whiteSpace: 'nowrap',
+                  background: 'transparent',
+                }}
+              >
+                <span>Tùy chọn</span>
+                <span
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 7,
+                    padding: '7px 9px',
+                    border: '1px solid var(--border-primary)',
+                    borderRadius: 8,
+                    color: 'var(--text-secondary)',
+                    fontSize: 12,
+                    fontWeight: 590,
+                    background: loadSubmissionData ? 'rgba(99, 102, 241, 0.08)' : 'var(--bg-surface)',
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={loadSubmissionData}
+                    disabled={loading}
+                    onChange={event => {
+                      const checked = event.target.checked;
+                      if (!checked) classSubmissions.cancelLoading();
+                      setLoadSubmissionData(checked);
+                    }}
+                    style={{ accentColor: 'var(--brand-indigo)' }}
+                  />
+                  Tải dữ liệu bài tập
+                </span>
+              </label>
               {hasPreferences && (
                 <QuickFilterChips
                   centres={centres}
@@ -4504,15 +4605,6 @@ export default function TeacherSchedulePage() {
                   showCourses={true}
                 />
               )}
-              <ScheduleTypeSelect
-                value={scheduleTypeFilter}
-                onChange={setScheduleTypeFilter}
-              />
-              <ClassStatusFilterSelect
-                selected={selectedClassStatuses}
-                onChange={setSelectedClassStatuses}
-                options={classStatusFilterOptions}
-              />
             </div>
           }
         />
@@ -4837,6 +4929,16 @@ export default function TeacherSchedulePage() {
             dateTo={loadedRange?.to || toDate}
             onReloadClass={(classId) => { void classSubmissions.reloadClass(classId); }}
             onReloadAll={() => { void classSubmissions.reloadAll(); }}
+          />
+        )}
+
+        {viewMode === 'final-products' && (
+          <FinalProductControlView
+            classes={rawClasses}
+            works={classStudentWorks}
+            loading={classStudentWorksLoading}
+            error={classStudentWorksError}
+            onReload={() => setClassStudentWorksReloadKey(key => key + 1)}
           />
         )}
 

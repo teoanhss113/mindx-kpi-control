@@ -7,6 +7,7 @@ import type { ClassSubmissionRecord } from '@/hooks/useClassSubmissions';
 import {
   buildSubmissionCells,
   getActiveSubmissionLessons,
+  getSubmissionStudents,
   summarizeSubmissionData,
   summarizeSubmissionSessions,
   type SubmissionCellStatus,
@@ -184,6 +185,7 @@ export function ClassSubmissionDetail({
   const data = record.data;
   const summaryOptions = { dateFrom, dateTo };
   const lessons = getActiveSubmissionLessons(data, cls);
+  const students = getSubmissionStudents(data, cls);
   const cells = buildSubmissionCells(data, cls);
   const summary = summarizeSubmissionData(data, cls, summaryOptions);
   const sessionSummaries = summarizeSubmissionSessions(data, cls, summaryOptions);
@@ -228,7 +230,7 @@ export function ClassSubmissionDetail({
               <th style={{ position: 'sticky', left: 0, zIndex: 2, background: 'var(--bg-elevated)', padding: 8, minWidth: 190, textAlign: 'left', borderBottom: '1px solid var(--border-primary)' }}>Học viên</th>
               {lessons.map((lesson, index) => <th key={lesson.id} title={lesson.name} style={{ padding: 8, minWidth: 120, textAlign: 'left', borderBottom: '1px solid var(--border-primary)' }}>{index + 1}. {lesson.name}</th>)}
             </tr></thead>
-            <tbody>{data.students.map(student => <tr key={student.studentUid}>
+            <tbody>{students.map(student => <tr key={student.studentUid}>
               <td style={{ position: 'sticky', left: 0, background: 'var(--bg-surface)', padding: 8, fontWeight: 650, borderBottom: '1px solid var(--border-primary)' }}>
                 <StudentHoverCard studentId={student.id} studentName={student.displayName} />
               </td>
@@ -417,7 +419,7 @@ export function SubmissionControlView({
     ? getActiveSubmissionLessons(selectedData, selectedClass, summaryOptions).filter(lesson => selectedDueLessonIds.has(lesson.id))
     : [];
   const cellsByStudentLesson = new Map(selectedCells.map(cell => [`${cell.student.studentUid}:${cell.lesson.id}`, cell]));
-  const selectedStudents = (selectedData?.students || []).filter(student => {
+  const selectedStudents = (selectedData ? getSubmissionStudents(selectedData, selectedClass) : []).filter(student => {
     const matchesSearch = student.displayName.toLocaleLowerCase('vi').includes(studentSearch.trim().toLocaleLowerCase('vi'));
     if (!matchesSearch) return false;
     if (statusFilter === 'all') return true;
@@ -558,7 +560,7 @@ export function SubmissionControlView({
                     {record?.state === 'loading' ? <td colSpan={10} style={{ padding: 12, borderBottom: '1px solid var(--border-primary)', color: 'var(--text-tertiary)' }}><Spinner size={14} /> Đang tải...</td>
                       : record?.state === 'error' ? <td colSpan={10} style={{ padding: 12, borderBottom: '1px solid var(--border-primary)', color: 'var(--status-error)' }}>Không tải được — bấm để thử lại</td>
                       : summary ? <>
-                        <td style={{ padding: 12, borderBottom: '1px solid var(--border-primary)' }}>{record.data?.students.length || 0}</td>
+                        <td style={{ padding: 12, borderBottom: '1px solid var(--border-primary)' }}>{getSubmissionStudents(record.data!, cls).length}</td>
                         <td style={{ padding: 12, borderBottom: '1px solid var(--border-primary)' }}>{sessionSummaries.length}</td>
                         <td style={{ padding: 12, borderBottom: '1px solid var(--border-primary)' }}><StatusPill status="missing" count={summary.missing} /></td>
                         <td style={{ padding: 12, borderBottom: '1px solid var(--border-primary)' }}><StatusPill status="pending" count={summary.pending} /></td>

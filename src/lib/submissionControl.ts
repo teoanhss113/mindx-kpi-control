@@ -46,6 +46,18 @@ const GRADED_STATUS_MARKERS = ['GRADED', 'MARKED', 'COMPLETED', 'APPROVED', 'PAS
 const SUBMITTED_STATUS_MARKERS = ['SUBMITTED', 'TURNED_IN', 'PENDING', 'REVIEW', ...GRADED_STATUS_MARKERS];
 const MISSING_STATUS_MARKERS = ['NOT_SUBMITTED', 'UNSUBMITTED', 'MISSING', 'DRAFT'];
 
+export function getSubmissionStudents(data: ClassSubmissionData, cls?: Class): SubmissionStudent[] {
+  if (!cls) return data.students;
+  const activeStudentIds = new Set(
+    (cls.students || [])
+      .filter(student => student.activeInClass)
+      .map(student => student.student.id)
+      .filter(Boolean),
+  );
+  if (activeStudentIds.size === 0) return [];
+  return data.students.filter(student => activeStudentIds.has(student.id));
+}
+
 function getLessonSessionAt(data: ClassSubmissionData, cls: Class | undefined, lessonId: string): string | null {
   const authoritativeSlot = (data.lessonSchedule || []).find(slot => slot.lessonId === lessonId);
   if (authoritativeSlot) return authoritativeSlot.startTime || authoritativeSlot.date || authoritativeSlot.endTime || null;
@@ -168,7 +180,7 @@ export function buildSubmissionCells(
     submissionsByStudentLesson.set(key, current);
   });
 
-  return data.students.flatMap(student => lessons.map(lesson => {
+  return getSubmissionStudents(data, cls).flatMap(student => lessons.map(lesson => {
     const candidates = submissionsByStudentLesson.get(`${student.studentUid}:${lesson.id}`) || [];
     const teacherTasks = candidates.filter(isTeacherMarkedTask);
     const relevantTasks = teacherTasks.length > 0 ? teacherTasks : candidates;

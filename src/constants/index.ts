@@ -332,6 +332,7 @@ export const TEACHER_SCHEDULE_VIEW_OPTIONS = [
   { value: 'calendar', label: TEACHER_SCHEDULE_LABELS.CALENDAR_VIEW },
   { value: 'quality-table', label: TEACHER_SCHEDULE_LABELS.QUALITY_VIEW },
   { value: 'submissions', label: 'Bài tập' },
+  { value: 'final-products', label: 'Sản phẩm cuối khoá' },
 ] as const;
 
 export const MANAGER_SCHEDULE_LABELS = {

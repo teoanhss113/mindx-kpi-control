@@ -1473,7 +1473,7 @@ export function DateRangePicker({
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TOOLBAR — standardised request filter bar
-// Order (canonical): [Cơ sở] [│] [Date from-to] [│] [Tải dữ liệu] [Làm mới]
+// Order (canonical): [Identity filters] [Date range] [Data scope] [Custom filters] [Actions]
 // ─────────────────────────────────────────────────────────────────────────────
 export const Toolbar = React.memo(function Toolbar({
   centres,
@@ -1485,6 +1485,8 @@ export const Toolbar = React.memo(function Toolbar({
   dateTo,
   onDateFromChange,
   onDateToChange,
+  dateRangeLabel,
+  dateRangeExtraSlot,
   onFetch,
   loading,
   progress,
@@ -1517,6 +1519,8 @@ export const Toolbar = React.memo(function Toolbar({
   dateTo: string
   onDateFromChange: (v: string) => void
   onDateToChange: (v: string) => void
+  dateRangeLabel?: string
+  dateRangeExtraSlot?: React.ReactNode
   onFetch: () => void
   loading: boolean
   progress?: { loaded: number; total: number }
@@ -1644,21 +1648,20 @@ export const Toolbar = React.memo(function Toolbar({
 
         {/* Date range */}
         <DateRangeInput
+          label={dateRangeLabel}
           dateFrom={dateFrom}
           dateTo={dateTo}
           onDateFromChange={onDateFromChange}
           onDateToChange={onDateToChange}
         />
 
-        <div className={styles.toolbarSeparator} />
-
-        {/* Quick Filter Slots */}
-        {quickFilterSlots && (
+        {dateRangeExtraSlot && (
           <>
-            {quickFilterSlots}
-            <div className={styles.toolbarSeparator} />
+            {dateRangeExtraSlot}
           </>
         )}
+
+        <div className={styles.toolbarSeparator} />
 
         {dataLimit !== undefined && onDataLimitChange && (
           <>
@@ -1669,6 +1672,14 @@ export const Toolbar = React.memo(function Toolbar({
               onChange={onDataLimitChange}
               menuPosition="fixed"
             />
+            <div className={styles.toolbarSeparator} />
+          </>
+        )}
+
+        {/* Quick Filter Slots */}
+        {quickFilterSlots && (
+          <>
+            {quickFilterSlots}
             <div className={styles.toolbarSeparator} />
           </>
         )}
@@ -2868,7 +2879,7 @@ export function CompactSelect<T extends string>({
 
   return (
     <div ref={ref} className={styles.compactSelectWrapper} style={{ position: 'relative' }}>
-      {label && <span className={styles.compactSelectLabel}>{label}:</span>}
+      {label && <span className={styles.compactSelectLabel}>{label}</span>}
       <div style={{ position: 'relative', display: 'inline-block' }}>
         <button
           ref={buttonRef}

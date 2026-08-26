@@ -37,7 +37,7 @@ function waitForRetry(delayMs: number, signal?: AbortSignal) {
   });
 }
 
-export function useClassSubmissions(classes: Class[]) {
+export function useClassSubmissions(classes: Class[], autoLoad = true) {
   const [records, setRecords] = useState<Record<string, ClassSubmissionRecord>>({});
   const [loading, setLoading] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
@@ -161,12 +161,15 @@ export function useClassSubmissions(classes: Class[]) {
   }, []);
 
   useEffect(() => {
-    if (!classIdsKey) return;
+    if (!autoLoad || !classIdsKey) {
+      abortRef.current?.abort();
+      return;
+    }
     void loadClasses(classIds);
     return () => abortRef.current?.abort();
     // classIdsKey is the stable trigger; classIds itself changes with the Class[] identity.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [classIdsKey, loadClasses]);
+  }, [autoLoad, classIdsKey, loadClasses]);
 
   const reloadClass = useCallback((classId: string) => fetchClass(classId), [fetchClass]);
   const reloadAll = useCallback(() => loadClasses(classIds, true), [classIds, loadClasses]);

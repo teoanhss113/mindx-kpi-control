@@ -418,10 +418,10 @@
 
 .toolbarRow {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: var(--space-3);
   flex-wrap: wrap;
-  row-gap: var(--space-2);
+  row-gap: var(--space-3);
 }
 
 .usageAnalyticsGrid {
@@ -471,15 +471,17 @@
 
 .dateControls {
   display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  /* Remove flex-wrap to keep items in one row */
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  min-width: 0;
 }
 
 /* Caption 13px weight 510 */
 .dateLabel {
-  font-size: 13px; color: var(--text-tertiary);
-  font-weight: 510; white-space: nowrap; letter-spacing: -0.13px;
+  font-size: 11px; color: var(--text-tertiary);
+  font-weight: 590; white-space: nowrap; letter-spacing: 0;
+  line-height: 1.15;
 }
 
 .dateInput {
@@ -996,7 +998,7 @@
 
 .toolbarCluster {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: var(--space-2);
   flex-wrap: wrap;
 }
@@ -1432,8 +1434,9 @@
 .toolbarSeparator {
   width: 1px; height: 24px;
   background: var(--border-primary);
-  flex-shrink: 0; align-self: center;
+  flex-shrink: 0; align-self: flex-end;
   margin: 0 var(--space-1);
+  margin-bottom: 2px;
 }
 
 @media (max-width: 600px) { .toolbarSeparator { display: none; } }
@@ -1456,15 +1459,17 @@
 
 .compactSelectWrapper {
   display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
 }
 
 .compactSelectLabel {
-  font-size: 13px;
-  font-weight: 510;
+  font-size: 11px;
+  font-weight: 590;
   color: var(--text-tertiary);
   white-space: nowrap;
+  line-height: 1.15;
 }
 
 .compactSelect {
