@@ -622,6 +622,20 @@ function normalizeStatus(value?: string | null): string {
   return (value || '').trim().toUpperCase();
 }
 
+function getInactiveStudentStatusLabel(studentSlot?: Class['students'][number]): string {
+  if (!studentSlot || studentSlot.activeInClass) return '';
+
+  const reason = normalizeStatus(studentSlot.completionInfo?.reason).replace(/\s+/g, '_');
+  const status = normalizeStatus(studentSlot.completionInfo?.status);
+
+  if (reason === 'ON_HOLD') return 'Bảo lưu';
+  if (reason === 'DROP_OUT' || status === 'DROPPED' || status === 'DROP_OUT') return 'Nghỉ học';
+  if (reason === 'TRANSFER_COURSE_LINE' || reason.includes('TRANSFER')) return 'Chuyển lớp/khối';
+  if (reason === 'CHANGE_CLASS_SCHEDULE_CHANGE') return 'Đổi lịch/lớp';
+  if (status === 'WAITING') return 'Chờ xử lý';
+  return 'Không còn trong lớp';
+}
+
 function isAllClassStatusesSelected(selected: ClassStatusFilter[], options: SelectOption[]): boolean {
   if (selected.length === 0) return false;
   const selectedValues = new Set(selected.map(normalizeStatus));
@@ -3497,7 +3511,12 @@ export default function TeacherSchedulePage() {
       const existingAnalysis = analyzedClassesRef.current.find(a => a.cls.id === slot.classId);
       if (existingAnalysis) {
         setCommentModalSessionIndex(getSlotSessionIndex(existingAnalysis.cls, slot));
-        setClassQualityData(existingAnalysis);
+        setClassQualityData(applyQualityExemptionRules(
+          analyzeClassQuality(existingAnalysis.cls, exemptedSessions, studentCommentAreas, {
+            includeInactiveStudents: true,
+          }),
+          { exemptOneOnOneClasses, holidayPeriods },
+        ));
         return;
       }
 
@@ -3505,7 +3524,9 @@ export default function TeacherSchedulePage() {
       if (existingClass) {
         setCommentModalSessionIndex(getSlotSessionIndex(existingClass, slot));
         setClassQualityData(applyQualityExemptionRules(
-          analyzeClassQuality(existingClass, exemptedSessions, studentCommentAreas),
+          analyzeClassQuality(existingClass, exemptedSessions, studentCommentAreas, {
+            includeInactiveStudents: true,
+          }),
           { exemptOneOnOneClasses, holidayPeriods },
         ));
       } else {
@@ -3515,7 +3536,9 @@ export default function TeacherSchedulePage() {
             if (cls) {
               setCommentModalSessionIndex(getSlotSessionIndex(cls, slot));
               setClassQualityData(applyQualityExemptionRules(
-                analyzeClassQuality(cls, exemptedSessions, studentCommentAreas),
+                analyzeClassQuality(cls, exemptedSessions, studentCommentAreas, {
+                  includeInactiveStudents: true,
+                }),
                 { exemptOneOnOneClasses, holidayPeriods },
               ));
             }
@@ -4883,7 +4906,16 @@ export default function TeacherSchedulePage() {
                       setQualityTab('comments');
                       setCoordinationCourseLineFilter([]);
                       setShowCoordinationPanel(true);
-                      setClassQualityData(a);
+                      setClassQualityData(applyQualityExemptionRules(
+                        analyzeClassQuality(a.cls, exemptedSessions, studentCommentAreas, {
+                          commentDateRange: {
+                            dateFrom: deferredClassQualityDateFrom,
+                            dateTo: deferredClassQualityDateTo,
+                          },
+                          includeInactiveStudents: true,
+                        }),
+                        { exemptOneOnOneClasses, holidayPeriods },
+                      ));
                       setClassQualityLoading(false);
 
                       setCalculatingTeachers(true);
@@ -5215,6 +5247,9 @@ export default function TeacherSchedulePage() {
                     const scoreByStudentId = new Map(
                       scoreAnalysis?.analysis.students.map(student => [student.studentId, student]) || [],
                     );
+                    const studentSlotById = new Map(
+                      (classQualityData.cls.students || []).map(studentSlot => [studentSlot.student.id, studentSlot]),
+                    );
                     const formatQualityScore = (score: number | null | undefined) => (
                       typeof score === 'number' && Number.isFinite(score) ? score.toFixed(2).replace(/\.?0+$/, '') : '—'
                     );
@@ -5351,9 +5386,22 @@ export default function TeacherSchedulePage() {
                               <tbody>
                                 {ca.students.map(st => {
                                   const c = st.comments.find(x => x.sessionIndex === activeIndex);
+                                  const studentSlot = studentSlotById.get(st.studentId);
+                                  const inactiveStatusLabel = getInactiveStudentStatusLabel(studentSlot);
+                                  const attendance = sessionStats[activeIndex].slot.studentAttendance?.find(sa => sa.student.id === st.studentId);
+                                  const attendanceStatus = normalizeStatus(attendance?.status);
+                                  const isAbsentAttendance = attendanceStatus === 'ABSENT'
+                                    || attendanceStatus === 'ABSENT_UNEXCUSED'
+                                    || attendanceStatus === 'ABSENT_WITH_NOTICE'
+                                    || attendanceStatus === 'EXCUSED';
                                   const status = c?.customStatus && c.customStatus !== 'not_applicable'
                                     ? c.customStatus
-                                    : c?.status ?? 'not_required';
+                                    : c?.status ?? (inactiveStatusLabel && !attendance ? 'inactive' : 'not_required');
+                                  const statusLabel = status === 'inactive'
+                                    ? inactiveStatusLabel
+                                    : !c && isAbsentAttendance
+                                      ? 'Vắng buổi này'
+                                      : undefined;
                                   const scoreStudent = scoreByStudentId.get(st.studentId) as any;
                                   const score = scoreAnalysis
                                     ? scoreAnalysis.scoreKey === 'demoScore'
@@ -5366,7 +5414,9 @@ export default function TeacherSchedulePage() {
                                         <StudentHoverCard studentId={st.studentId} studentName={st.studentName} />
                                       </td>
                                       <td>
-                                        <CommentStatusBadge status={status} />
+                                        <CommentStatusBadge status={status}>
+                                          {statusLabel}
+                                        </CommentStatusBadge>
                                         {c?.customStatus === 'duplicate_self' && (
                                           <div
                                             style={{ marginTop: 4, fontSize: 10, color: 'var(--text-tertiary)', lineHeight: 1.35, whiteSpace: 'nowrap' }}
@@ -5402,7 +5452,15 @@ export default function TeacherSchedulePage() {
                                                 : ''}
                                             </em>
                                           ) : (
-                                            <em>{c ? 'Không có nội dung' : 'Không yêu cầu'}</em>
+                                            <em>
+                                              {c
+                                                ? 'Không có nội dung'
+                                                : inactiveStatusLabel && !attendance
+                                                  ? `${inactiveStatusLabel} - không áp dụng buổi này`
+                                                  : isAbsentAttendance
+                                                    ? 'Học viên vắng buổi này - không yêu cầu nhận xét'
+                                                    : 'Không yêu cầu'}
+                                            </em>
                                           )
                                         )}
                                       </td>
@@ -5427,13 +5485,21 @@ export default function TeacherSchedulePage() {
                       .filter(s => s.date)
                       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
-                    // Build student map from raw class data (all active students)
-                    const studentMap = new Map<string, { id: string; name: string; sessions: Map<string, { date: string; status: string }> }>();
+                    // Keep inactive students visible here so staff can audit historical
+                    // attendance/comment data after deactivate, on-hold, or dropout.
+                    const studentMap = new Map<string, {
+                      id: string;
+                      name: string;
+                      activeInClass: boolean;
+                      inactiveStatusLabel: string;
+                      sessions: Map<string, { date: string; status: string }>;
+                    }>();
                     (cls.students ?? []).forEach(s => {
-                      if (!s.activeInClass) return;
                       studentMap.set(s.student.id, {
                         id: s.student.id,
                         name: s.student.fullName || s.student.customer?.fullName || '',
+                        activeInClass: s.activeInClass,
+                        inactiveStatusLabel: getInactiveStudentStatusLabel(s),
                         sessions: new Map(),
                       });
                     });
@@ -5523,6 +5589,10 @@ export default function TeacherSchedulePage() {
                                             {alertData.alerts.includes('consecutive_absent') && <AttendanceAlertBadge type="consecutive_absent" />}
                                             {alertData.alerts.includes('late_stage_absent') && <AttendanceAlertBadge type="late_stage_absent" />}
                                           </div>
+                                        ) : !st.activeInClass ? (
+                                          <Badge variant="exempt" size="sm" shape="rounded">
+                                            {st.inactiveStatusLabel || 'Không còn lớp'}
+                                          </Badge>
                                         ) : (
                                           <span style={{ fontSize: 10, color: 'var(--status-success)', fontWeight: 600 }}>✓</span>
                                         )}
@@ -5533,7 +5603,7 @@ export default function TeacherSchedulePage() {
                                         return (
                                         <td key={slot._id} style={{ textAlign: 'center', padding: '2px', opacity: isUpcoming ? 0.45 : 1 }}>
                                           <AttendanceSessionCell
-                                            status={sess?.status || 'UNKNOWN'}
+                                            status={sess?.status || (!st.activeInClass ? 'INACTIVE_IN_CLASS' : 'UNKNOWN')}
                                             index={idx}
                                             date={slot.date}
                                             size={26}

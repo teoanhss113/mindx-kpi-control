@@ -10,7 +10,8 @@ export type CommentQualityStatus =
   | 'duplicate_other'
   | 'template_exact'
   | 'template_modified'
-  | 'not_required';
+  | 'not_required'
+  | 'inactive';
 
 export const COMMENT_STATUS_LABELS: Record<CommentQualityStatus, string> = {
   ok: 'Đủ',
@@ -21,7 +22,8 @@ export const COMMENT_STATUS_LABELS: Record<CommentQualityStatus, string> = {
   duplicate_other: 'Lặp giữa học sinh',
   template_exact: 'Trùng mẫu',
   template_modified: 'Dựa mẫu',
-  not_required: '—',
+  not_required: 'Không yêu cầu',
+  inactive: 'Không còn trong lớp',
 };
 
 export const COMMENT_STATUS_COUNT_LABELS = {

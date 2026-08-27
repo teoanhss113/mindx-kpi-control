@@ -1,7 +1,7 @@
 import React from 'react';
 import { Badge, type BadgeShape, type BadgeSize } from './Badge';
 
-export type AttendanceStatusKind = 'present' | 'late' | 'excused' | 'absent' | 'unchecked';
+export type AttendanceStatusKind = 'present' | 'late' | 'excused' | 'absent' | 'unchecked' | 'inactive';
 
 export interface AttendanceStatusMeta {
   kind: AttendanceStatusKind;
@@ -47,6 +47,13 @@ export const ATTENDANCE_STATUS_STYLES: Record<AttendanceStatusKind, AttendanceSt
     color: 'var(--text-quaternary)',
     border: 'var(--border-primary)',
   },
+  inactive: {
+    kind: 'inactive',
+    label: 'Không còn trong lớp',
+    background: 'var(--bg-panel)',
+    color: 'var(--text-quaternary)',
+    border: 'var(--border-primary)',
+  },
 };
 
 export function normalizeAttendanceStatus(status: string | null | undefined): string {
@@ -62,6 +69,7 @@ export function getAttendanceStatusKind(status: string | null | undefined): Atte
   if (normalized === 'LATE' || normalized === 'LATE_ARRIVED') return 'late';
   if (normalized === 'ABSENT_WITH_NOTICE' || normalized === 'EXCUSED') return 'excused';
   if (normalized === 'ABSENT' || normalized === 'ABSENT_UNEXCUSED') return 'absent';
+  if (normalized === 'INACTIVE_IN_CLASS') return 'inactive';
   return 'unchecked';
 }
 
@@ -119,6 +127,7 @@ export function AttendanceSessionCell({
   highlightLabel?: string;
 }) {
   const meta = getAttendanceStatusMeta(status);
+  const kind = getAttendanceStatusKind(status);
   const dateLabel = date ? new Date(date).toLocaleDateString('vi-VN') : null;
   const title = [
     `Buổi ${index + 1}`,
@@ -145,7 +154,7 @@ export function AttendanceSessionCell({
         boxSizing: 'border-box',
       }}
     >
-      {index + 1}
+      {kind === 'inactive' ? '-' : index + 1}
     </span>
   );
 }

@@ -127,6 +127,7 @@ function getCustomCommentText(
 interface CommentAnalysisOptions {
   dateFrom?: string;
   dateTo?: string;
+  includeInactiveStudents?: boolean;
 }
 
 interface CommentDateRangeBounds {
@@ -219,8 +220,7 @@ export function analyzeComments(
 
   const studentMap = new Map<string, StudentCommentStatus>();
   (cls.students ?? []).forEach(s => {
-    // Skip students who are no longer active in class
-    if (!s.activeInClass) return;
+    if (!options.includeInactiveStudents && !s.activeInClass) return;
     
     const status: StudentCommentStatus = {
       studentId: s.student.id,
@@ -417,7 +417,10 @@ export function analyzeComments(
   };
 }
 
-export function analyzeAttendance(cls: Class): ClassAttendanceAnalysis {
+export function analyzeAttendance(
+  cls: Class,
+  options: { includeInactiveStudents?: boolean } = {},
+): ClassAttendanceAnalysis {
   const studentsWithAlerts: StudentAttendanceAnalysis[] = [];
   let totalAlerts = 0;
   
@@ -430,8 +433,7 @@ export function analyzeAttendance(cls: Class): ClassAttendanceAnalysis {
   const studentMap = new Map<string, StudentAttendanceAnalysis>();
   
   (cls.students ?? []).forEach(s => {
-    // Skip students who are no longer active in class
-    if (!s.activeInClass) return;
+    if (!options.includeInactiveStudents && !s.activeInClass) return;
     
     studentMap.set(s.student.id, {
       studentId: s.student.id,
@@ -1340,7 +1342,7 @@ export function analyzeClassQuality(
   cls: Class,
   exemptedSessions?: number[],
   commentAreas: CommentAreaDef[] = [],
-  options: { commentDateRange?: CommentAnalysisOptions } = {}
+  options: { commentDateRange?: CommentAnalysisOptions; includeInactiveStudents?: boolean } = {}
 ): AnalyzedClassForQuality {
   const preferredSessions = getPreferredCheckpointSessions(cls);
   const scoreCommentAreaLookup = buildCommentAreaLookup(cls.courseProcess, commentAreas);
@@ -1373,8 +1375,13 @@ export function analyzeClassQuality(
   return {
     cls,
     courseLineName: getCourseCategory(cls),
-    commentAnalysis: analyzeComments(cls, exemptedSessions, commentAreas, options.commentDateRange),
-    attendanceAnalysis: analyzeAttendance(cls),
+    commentAnalysis: analyzeComments(cls, exemptedSessions, commentAreas, {
+      ...options.commentDateRange,
+      includeInactiveStudents: options.includeInactiveStudents,
+    }),
+    attendanceAnalysis: analyzeAttendance(cls, {
+      includeInactiveStudents: options.includeInactiveStudents,
+    }),
     reschedulingAnalysis: analyzeSessionRescheduling(cls),
     cp1Analysis,
     cp2Analysis,
