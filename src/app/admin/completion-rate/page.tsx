@@ -16,6 +16,7 @@ import { Class, StudentSlot } from '@/types/classes';
 import { PageLayout } from '@/components/PageLayout';
 import { ProtectedPage } from '@/components/ProtectedPage';
 import { StudentHoverCard } from '@/components/StudentHoverCard';
+import { ExemptionRulesPanel } from '@/components/ExemptionRulesPanel';
 import {
   Icon, SortIcon, Spinner, useToast, ToastContainer,
   MultiSelect, SelectOption, RangeSlider, Toolbar, KPIStatCard,
@@ -879,39 +880,12 @@ export default function DashboardPage() {
 
                 {/* RIGHT PANELS */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-                  <div className={styles.chartsSection}>
-                    <div className={styles.chartsSectionHeader} onClick={() => setShowExemptPanel(!showExemptPanel)} style={{ cursor: 'pointer' }}>
-                      <div className={styles.chartsSectionTitle}>
-                        <Icon.CheckCircle size={15} />
-	                        Quy tắc Miễn trừ
-	                      </div>
-	                      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-	                        <button
-	                          type="button"
-	                          className={styles.chartToggle}
-	                          aria-label="Khôi phục quy tắc mặc định"
-	                          title="Khôi phục quy tắc mặc định"
-	                          onClick={(e) => {
-	                            e.stopPropagation();
-	                            handleResetExemptions();
-	                          }}
-	                        >
-	                          <Icon.Refresh />
-	                        </button>
-	                        <Icon.ChevronDown
-	                          size={16}
-	                          color="var(--text-tertiary)"
-	                          style={{
-	                            transform: showExemptPanel ? 'rotate(180deg)' : 'rotate(0deg)',
-	                            transition: 'transform 0.2s ease'
-	                          }}
-	                        />
-	                      </div>
-	                    </div>
-                    <AnimatePresence initial={false}>
-                      {showExemptPanel && (
-                        <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} style={{ overflow: 'hidden' }}>
-                          <div style={{ padding: 'var(--space-4)' }}>
+                  <ExemptionRulesPanel
+                    isExpanded={showExemptPanel}
+                    onToggle={() => setShowExemptPanel(!showExemptPanel)}
+                    onReset={handleResetExemptions}
+                  >
+                    <div style={{ padding: 'var(--space-4)' }}>
                             {(() => {
                               const visibleReasons = Object.keys(exemptedReasons)
                                 .sort()
@@ -975,11 +949,8 @@ export default function DashboardPage() {
                                 </div>
                               </div>
                             )}
-                          </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </div>
+                    </div>
+                  </ExemptionRulesPanel>
                 </div>
               </motion.div>
             )}

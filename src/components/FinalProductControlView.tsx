@@ -26,10 +26,61 @@ import {
   type CSVColumnConfig,
 } from '@/components/ui';
 import { StudentHoverCard } from '@/components/StudentHoverCard';
+import { ExemptionRulesPanel } from '@/components/ExemptionRulesPanel';
 import styles from '@/app/dashboard.module.css';
 import controlStyles from './OperationsControlView.module.css';
 
 type BreakdownDimension = 'centre' | 'courseLine' | 'centreCourseLine';
+
+const FINAL_PRODUCT_EXEMPTED_COURSES_STORAGE_KEY = 'operations-final-product-exempted-courses';
+const DEFAULT_FINAL_PRODUCT_EXEMPT_CLASS_KEYWORDS = ['WRO', 'CSB', 'PTB', 'RBS26', 'TC5O'] as const;
+
+type FinalProductExemptedCourseState = Record<string, boolean>;
+
+interface FinalProductCourseExemptionOption {
+  key: string;
+  label: string;
+  count: number;
+  defaultChecked: boolean;
+  matchedKeywords: string[];
+}
+
+function getInitialFinalProductExemptedCourses(): FinalProductExemptedCourseState {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = window.localStorage.getItem(FINAL_PRODUCT_EXEMPTED_COURSES_STORAGE_KEY);
+    if (!raw) return {};
+    return JSON.parse(raw) as FinalProductExemptedCourseState;
+  } catch {
+    return {};
+  }
+}
+
+function saveFinalProductExemptedCourses(state: FinalProductExemptedCourseState) {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(FINAL_PRODUCT_EXEMPTED_COURSES_STORAGE_KEY, JSON.stringify(state));
+}
+
+function normalizeSearchText(value?: string | null) {
+  return (value || '').toLocaleLowerCase('vi');
+}
+
+function getFinalProductCourseKey(cls: Class) {
+  return cls.course?.id || cls.course?.name || cls.course?.shortName || 'unknown-course';
+}
+
+function getFinalProductCourseLabel(cls: Class) {
+  return cls.course?.name || cls.course?.shortName || 'Chưa xác định khoá học';
+}
+
+function getDefaultMatchedClassKeywords(cls: Class) {
+  const className = normalizeSearchText(cls.name);
+  return DEFAULT_FINAL_PRODUCT_EXEMPT_CLASS_KEYWORDS.filter(keyword => className.includes(normalizeSearchText(keyword)));
+}
+
+function shouldExemptCourse(option: FinalProductCourseExemptionOption, state: FinalProductExemptedCourseState) {
+  return typeof state[option.key] === 'boolean' ? state[option.key] : option.defaultChecked;
+}
 
 interface ClassFinalProductRow {
   cls: Class;
@@ -135,6 +186,8 @@ export function FinalProductControlView({
   const [breakdownCourseLineFilter, setBreakdownCourseLineFilter] = useState<string[]>([]);
   const [tableCentreFilter, setTableCentreFilter] = useState<string[]>([]);
   const [tableCourseLineFilter, setTableCourseLineFilter] = useState<string[]>([]);
+  const [exemptedCourses, setExemptedCourses] = useState<FinalProductExemptedCourseState>(getInitialFinalProductExemptedCourses);
+  const [showExemptionPanel, setShowExemptionPanel] = useState(true);
   const [showCSVSettings, setShowCSVSettings] = useState(false);
   const { columns: csvColumns, saveColumns } = useCSVExportPreferences('operations-final-products', defaultExportColumns);
 
@@ -159,24 +212,60 @@ export function FinalProductControlView({
     };
   }), [classes, worksByClass]);
 
-  const dueRows = useMemo(() => classRows.filter(row => row.stats.isFinalSessionCompleted), [classRows]);
+  const courseExemptionOptions = useMemo<FinalProductCourseExemptionOption[]>(() => {
+    const courseMap = new Map<string, { key: string; label: string; count: number; matchedKeywords: Set<string> }>();
+
+    classRows.forEach(({ cls }) => {
+      const key = getFinalProductCourseKey(cls);
+      const current = courseMap.get(key) || {
+        key,
+        label: getFinalProductCourseLabel(cls),
+        count: 0,
+        matchedKeywords: new Set<string>(),
+      };
+      current.count += 1;
+      getDefaultMatchedClassKeywords(cls).forEach(keyword => current.matchedKeywords.add(keyword));
+      courseMap.set(key, current);
+    });
+
+    return [...courseMap.values()]
+      .map(course => ({
+        key: course.key,
+        label: course.label,
+        count: course.count,
+        matchedKeywords: [...course.matchedKeywords].sort(),
+        defaultChecked: course.matchedKeywords.size > 0,
+      }))
+      .sort((left, right) => {
+        if (left.defaultChecked !== right.defaultChecked) return left.defaultChecked ? -1 : 1;
+        return left.label.localeCompare(right.label, 'vi');
+      });
+  }, [classRows]);
+  const courseExemptionOptionByKey = useMemo(() => new Map(courseExemptionOptions.map(option => [option.key, option])), [courseExemptionOptions]);
+  const isClassExcluded = useCallback((cls: Class) => {
+    const option = courseExemptionOptionByKey.get(getFinalProductCourseKey(cls));
+    return option ? shouldExemptCourse(option, exemptedCourses) : false;
+  }, [courseExemptionOptionByKey, exemptedCourses]);
+  const excludedRows = useMemo(() => classRows.filter(row => isClassExcluded(row.cls)), [classRows, isClassExcluded]);
+  const includedRows = useMemo(() => classRows.filter(row => !isClassExcluded(row.cls)), [classRows, isClassExcluded]);
+  const dueRows = useMemo(() => includedRows.filter(row => row.stats.isFinalSessionCompleted), [includedRows]);
   const classCentreOptions = useMemo<SelectOption[]>(() => {
     const options = new Map<string, SelectOption>();
-    classRows.forEach(row => {
+    includedRows.forEach(row => {
       const value = row.cls.centre?.id || row.cls.centre?.name || 'unknown';
       const label = row.cls.centre?.shortName || row.cls.centre?.name || 'Chưa xác định cơ sở';
       if (!options.has(value)) options.set(value, { value, label });
     });
     return [...options.values()].sort((left, right) => left.label.localeCompare(right.label, 'vi'));
-  }, [classRows]);
+  }, [includedRows]);
   const classCourseLineOptions = useMemo<SelectOption[]>(() => {
     const options = new Map<string, SelectOption>();
-    classRows.forEach(row => {
+    includedRows.forEach(row => {
       const value = getCourseCategory(row.cls);
       if (!options.has(value)) options.set(value, { value, label: value });
     });
     return [...options.values()].sort((left, right) => left.label.localeCompare(right.label, 'vi'));
-  }, [classRows]);
+  }, [includedRows]);
   const breakdownCentreOptions = useMemo<SelectOption[]>(() => {
     const options = new Map<string, SelectOption>();
     dueRows.forEach(row => {
@@ -214,7 +303,7 @@ export function FinalProductControlView({
 
   const visibleRows = useMemo(() => {
     const normalized = search.trim().toLocaleLowerCase('vi');
-    return classRows.filter(row => {
+    return includedRows.filter(row => {
       const centreValue = row.cls.centre?.id || row.cls.centre?.name || 'unknown';
       const courseLineValue = getCourseCategory(row.cls);
       if (tableCentreFilter.length > 0 && !tableCentreFilter.includes(centreValue)) return false;
@@ -223,7 +312,7 @@ export function FinalProductControlView({
       return [row.cls.name, row.cls.centre?.name, row.cls.centre?.shortName, row.cls.course?.name]
         .some(value => (value || '').toLocaleLowerCase('vi').includes(normalized));
     });
-  }, [classRows, search, tableCentreFilter, tableCourseLineFilter]);
+  }, [includedRows, search, tableCentreFilter, tableCourseLineFilter]);
 
   const breakdownRows = (() => {
     const groups = new Map<string, { key: string; label: string; secondary?: string; classes: number; expected: number; submitted: number; missing: number; pending: number; approved: number; rejected: number }>();
@@ -293,9 +382,72 @@ export function FinalProductControlView({
     exportToCSV(exportRows, selectedColumns, 'kiem-soat-san-pham-cuoi-khoa');
   }, [csvColumns, exportRows]);
 
-  const selectedRow = classRows.find(row => row.cls.id === selectedClassId);
-  const showBreakdown = new Set(classes.map(cls => cls.centre?.id)).size > 1
-    || new Set(classes.map(cls => getCourseCategory(cls))).size > 1;
+  const handleToggleExemptedCourse = useCallback((courseKey: string, defaultChecked: boolean) => {
+    setExemptedCourses(current => {
+      const next = { ...current, [courseKey]: !(typeof current[courseKey] === 'boolean' ? current[courseKey] : defaultChecked) };
+      saveFinalProductExemptedCourses(next);
+      return next;
+    });
+  }, []);
+  const handleResetExemptedCourses = useCallback(() => {
+    setExemptedCourses({});
+    saveFinalProductExemptedCourses({});
+  }, []);
+  const selectedRow = includedRows.find(row => row.cls.id === selectedClassId);
+  const showBreakdown = new Set(includedRows.map(row => row.cls.centre?.id)).size > 1
+    || new Set(includedRows.map(row => getCourseCategory(row.cls))).size > 1;
+  const exemptionPanel = (
+    <ExemptionRulesPanel
+      title="Quy tắc Miễn trừ"
+      count={excludedRows.length}
+      isExpanded={showExemptionPanel}
+      onToggle={() => setShowExemptionPanel(current => !current)}
+      onReset={handleResetExemptedCourses}
+    >
+      <div style={{ padding: 'var(--space-4)' }}>
+        <div className={`${controlStyles.notice} ${controlStyles.noticeWarning}`} style={{ marginBottom: 'var(--space-3)' }}>
+          Tick khoá học để miễn trừ khỏi thống kê Sản phẩm cuối khoá. Hệ thống tự tick sẵn các khoá học được suy ra từ mã lớp có chứa {DEFAULT_FINAL_PRODUCT_EXEMPT_CLASS_KEYWORDS.join(', ')}. Hiện đang tính {includedRows.length}/{classRows.length} lớp, miễn trừ {excludedRows.length} lớp.
+        </div>
+        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 'var(--space-2)' }}>
+          Miễn trừ theo Khoá học
+        </div>
+        <div className={styles.reasonList}>
+          {courseExemptionOptions.map(course => {
+            const checked = shouldExemptCourse(course, exemptedCourses);
+            return (
+              <label key={course.key} className={styles.reasonItem}>
+                <input
+                  type="checkbox"
+                  className={styles.reasonCheckbox}
+                  checked={checked}
+                  onChange={() => handleToggleExemptedCourse(course.key, course.defaultChecked)}
+                />
+                <div className={styles.reasonLabel}>
+                  <span style={{ fontSize: 12 }}>{course.label}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-1)', flexShrink: 0 }}>
+                    {course.matchedKeywords.length > 0 && (
+                      <span className={styles.reasonTag} style={{ maxWidth: 220 }}>
+                        Gợi ý: {course.matchedKeywords.join(', ')}
+                      </span>
+                    )}
+                    <span className={styles.reasonCount}>{course.count}</span>
+                    <div className={styles.tooltipWrap}>
+                      <i className={styles.tooltipIcon}>i</i>
+                      <div className={styles.tooltipBox}>
+                        {course.matchedKeywords.length > 0
+                          ? `Tự tick vì có lớp thuộc khoá học này có mã chứa: ${course.matchedKeywords.join(', ')}`
+                          : 'Khoá học trong dữ liệu đã tải; không thuộc nhóm gợi ý mặc định.'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </label>
+            );
+          })}
+        </div>
+      </div>
+    </ExemptionRulesPanel>
+  );
 
   if (classes.length === 0) {
     return <EmptyState icon={<Icon.Target size={42} />} title="Chưa có lớp để kiểm tra" subtitle="Tải dữ liệu lớp bằng bộ lọc phía trên trước khi xem sản phẩm cuối khoá." />;
@@ -304,9 +456,10 @@ export function FinalProductControlView({
   return <div className={controlStyles.controlRoot}>
     {error && <div className={`${controlStyles.notice} ${controlStyles.noticeError}`}>Không thể tải dữ liệu sản phẩm cuối khoá. {error}</div>}
 
-    {!error && <>
+    {!error && <div className={controlStyles.splitLayout}>
+      <div className={controlStyles.mainColumn}>
       <div className={styles.statsGrid}>
-        <StatCard label="CẦN NỘP" value={aggregate.expected.toLocaleString('vi-VN')} desc={`${dueRows.length} lớp đã đến hạn`} />
+        <StatCard label="CẦN NỘP" value={aggregate.expected.toLocaleString('vi-VN')} desc={`${dueRows.length} lớp đã đến hạn · miễn trừ ${excludedRows.length} lớp`} />
         <StatCard label="CHƯA NỘP" value={aggregate.missing.toLocaleString('vi-VN')} desc={aggregate.expected ? `${(aggregate.missing / aggregate.expected * 100).toFixed(1)}% học viên` : 'Chưa có lớp đến hạn'} />
         <StatCard label="CHỜ DUYỆT" value={aggregate.pending.toLocaleString('vi-VN')} desc="Gồm bản nháp/chờ xử lý" />
         <StatCard label="BỊ TỪ CHỐI" value={aggregate.rejected.toLocaleString('vi-VN')} desc="Cần học viên cập nhật lại" />
@@ -391,7 +544,7 @@ export function FinalProductControlView({
                   maxDisplay={1}
                 />
                 <span className={styles.metricText}>
-                  {dueRows.length}/{classes.length} lớp đã đến buổi cuối · {visibleRows.length}/{classes.length} lớp hiển thị
+                  {dueRows.length}/{includedRows.length} lớp đã đến buổi cuối · {visibleRows.length}/{includedRows.length} lớp hiển thị · miễn trừ {excludedRows.length}
                 </span>
               </div>
             }
@@ -437,7 +590,11 @@ export function FinalProductControlView({
           </tr>;
         })}</tbody></table></div>
       </section>}
-    </>}
+      </div>
+      <aside className={controlStyles.sideColumn}>
+        {exemptionPanel}
+      </aside>
+    </div>}
 
     <CSVExportSettings isOpen={showCSVSettings} onClose={() => setShowCSVSettings(false)} columns={csvColumns} onSave={saveColumns} title="Cài đặt xuất CSV - Sản phẩm cuối khoá" />
   </div>;
