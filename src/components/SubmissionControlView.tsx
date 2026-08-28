@@ -16,13 +16,17 @@ import { getCourseCategory } from '@/lib/courseCategories';
 import { exportToCSV, type CSVColumn } from '@/lib/csvExport';
 import { useCSVExportPreferences } from '@/hooks/useCSVExportPreferences';
 import {
+  AdminTableSection,
   CSVExportSettings,
   EmptyState,
   ExportButton,
   Icon,
+  MultiSelect,
   Spinner,
   StatCard,
+  TableToolbar,
   type CSVColumnConfig,
+  type SelectOption,
 } from '@/components/ui';
 import { StudentHoverCard } from '@/components/StudentHoverCard';
 import styles from '@/app/dashboard.module.css';
@@ -269,18 +273,43 @@ export function SubmissionControlView({
   const [studentSearch, setStudentSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | SubmissionCellStatus>('all');
   const [breakdownDimension, setBreakdownDimension] = useState<SubmissionBreakdownDimension>('centre');
+  const [tableCentreFilter, setTableCentreFilter] = useState<string[]>([]);
+  const [tableCourseLineFilter, setTableCourseLineFilter] = useState<string[]>([]);
   const [showCSVSettings, setShowCSVSettings] = useState(false);
   const { columns: csvColumns, saveColumns: saveCSVColumns } = useCSVExportPreferences(
     'operations-submission-control',
     defaultSubmissionExportColumns,
   );
   const summaryOptions = useMemo(() => ({ dateFrom, dateTo }), [dateFrom, dateTo]);
+  const tableCentreOptions = useMemo<SelectOption[]>(() => {
+    const options = new Map<string, SelectOption>();
+    classes.forEach(cls => {
+      const value = cls.centre?.id || cls.centre?.name || 'unknown-centre';
+      const label = cls.centre?.shortName || cls.centre?.name || 'Chưa xác định cơ sở';
+      if (!options.has(value)) options.set(value, { value, label });
+    });
+    return [...options.values()].sort((left, right) => left.label.localeCompare(right.label, 'vi'));
+  }, [classes]);
+  const tableCourseLineOptions = useMemo<SelectOption[]>(() => {
+    const options = new Map<string, SelectOption>();
+    classes.forEach(cls => {
+      const value = getCourseCategory(cls);
+      if (!options.has(value)) options.set(value, { value, label: value });
+    });
+    return [...options.values()].sort((left, right) => left.label.localeCompare(right.label, 'vi'));
+  }, [classes]);
   const visibleClasses = useMemo(() => {
     const normalized = search.trim().toLocaleLowerCase('vi');
-    if (!normalized) return classes;
-    return classes.filter(cls => [cls.name, cls.centre?.name, cls.centre?.shortName, cls.course?.name]
-      .some(value => (value || '').toLocaleLowerCase('vi').includes(normalized)));
-  }, [classes, search]);
+    return classes.filter(cls => {
+      const centreValue = cls.centre?.id || cls.centre?.name || 'unknown-centre';
+      const courseLineValue = getCourseCategory(cls);
+      if (tableCentreFilter.length > 0 && !tableCentreFilter.includes(centreValue)) return false;
+      if (tableCourseLineFilter.length > 0 && !tableCourseLineFilter.includes(courseLineValue)) return false;
+      if (!normalized) return true;
+      return [cls.name, cls.centre?.name, cls.centre?.shortName, cls.course?.name]
+        .some(value => (value || '').toLocaleLowerCase('vi').includes(normalized));
+    });
+  }, [classes, search, tableCentreFilter, tableCourseLineFilter]);
 
   const handleSelectClass = useCallback((classId: string) => {
     setSelectedClassId(classId);
@@ -345,6 +374,7 @@ export function SubmissionControlView({
   const pendingClassCount = classes.length - loadedEntries.length - failedClassCount;
   const hasIncompleteCoverage = loadedEntries.length < classes.length;
   const coverageRate = classes.length > 0 ? (loadedEntries.length / classes.length) * 100 : 0;
+  const hasTableFilter = tableCentreFilter.length > 0 || tableCourseLineFilter.length > 0 || search.trim().length > 0;
   const aggregateSessions = useMemo(() => loadedEntries.flatMap(({ cls, record }) => (
     summarizeSubmissionSessions(record.data, cls, summaryOptions)
   )), [loadedEntries, summaryOptions]);
@@ -433,28 +463,6 @@ export function SubmissionControlView({
 
   return (
     <div className={controlStyles.controlRoot}>
-      <div className={controlStyles.controlHeader}>
-        <div>
-          <h2 className={controlStyles.controlTitle}>Kiểm soát nộp và chấm bài</h2>
-          <div className={controlStyles.controlSubtitle}>
-            Đã tải {loadedEntries.length}/{classes.length} lớp · buổi học từ {dateFrom || 'đầu kỳ'} đến {dateTo || 'hiện tại'}.
-          </div>
-        </div>
-        <div className={controlStyles.controlActions}>
-          <ExportButton
-            onClick={handleExport}
-            onSettingsClick={() => setShowCSVSettings(true)}
-            disabled={loading || exportRows.length === 0}
-            label={loading ? 'Chờ tải đủ dữ liệu...' : 'Xuất CSV'}
-            count={exportRows.length}
-          />
-          <button type="button" className={styles.primaryBtn} onClick={onReloadAll} disabled={loading}>
-            {loading ? <Spinner size={14} /> : <Icon.Refresh />}
-            {loading ? 'Đang đồng bộ tự động...' : 'Làm mới dữ liệu bài tập'}
-          </button>
-        </div>
-      </div>
-
       {loadedEntries.length > 0 && (
         <div className={styles.statsGrid}>
           <StatCard label="ĐỘ PHỦ DỮ LIỆU" value={`${coverageRate.toFixed(1)}%`} desc={`${loadedEntries.length}/${classes.length} lớp đã tải`} />
@@ -489,12 +497,11 @@ export function SubmissionControlView({
       )}
 
       {showBreakdown && (
-        <section className={controlStyles.panel}>
-          <div className={controlStyles.panelHeader}>
-            <div>
-              <div className={controlStyles.panelTitle}>Phân loại thống kê bài tập</div>
-              <div className={controlStyles.panelSubtitle}>Chỉ tính bài và buổi đã đến hạn · xếp tỷ lệ nộp thấp trước</div>
-            </div>
+        <AdminTableSection
+          title="Phân loại thống kê bài tập"
+          count={breakdownRows.length}
+          isExpanded={true}
+          toolbarSlot={
             <div className={controlStyles.segmented}>
               {([
                 ['centre', 'Theo cơ sở'],
@@ -510,8 +517,10 @@ export function SubmissionControlView({
                   {label}
                 </button>
               ))}
+              <span className={styles.metricText}>Chỉ tính bài và buổi đã đến hạn · xếp tỷ lệ nộp thấp trước</span>
             </div>
-          </div>
+          }
+        >
           <div className={controlStyles.tableScroll}>
             <table className={controlStyles.table} style={{ minWidth: 900 }}>
               <thead><tr>
@@ -539,15 +548,67 @@ export function SubmissionControlView({
               })}</tbody>
             </table>
           </div>
-        </section>
+        </AdminTableSection>
       )}
 
-      <section className={controlStyles.panel}>
-        <div className={controlStyles.searchBar}>
-          <Icon.Search />
-          <input className={controlStyles.searchInput} value={search} onChange={event => setSearch(event.target.value)} placeholder="Tìm mã lớp, cơ sở, khoá học..." />
-          <span className={controlStyles.resultCount}>{visibleClasses.length} lớp</span>
-        </div>
+      <AdminTableSection
+        title="Kiểm soát nộp và chấm bài"
+        count={visibleClasses.length}
+        isExpanded={true}
+        actionSlot={
+          <div className={controlStyles.controlActions}>
+            <ExportButton
+              onClick={handleExport}
+              onSettingsClick={() => setShowCSVSettings(true)}
+              disabled={loading || exportRows.length === 0}
+              label={loading ? 'Chờ tải đủ dữ liệu...' : 'Xuất CSV'}
+              count={exportRows.length}
+            />
+            <button type="button" className={styles.primaryBtn} onClick={onReloadAll} disabled={loading}>
+              {loading ? <Spinner size={14} /> : <Icon.Refresh />}
+              {loading ? 'Đang đồng bộ tự động...' : 'Làm mới dữ liệu bài tập'}
+            </button>
+          </div>
+        }
+        toolbarSlot={
+          <TableToolbar
+            search={search}
+            onSearchChange={setSearch}
+            searchPlaceholder="Tìm mã lớp, cơ sở, khoá học..."
+            filterSlots={
+              <div className={styles.toolbarCluster}>
+                <MultiSelect
+                  menuPosition="fixed"
+                  options={tableCentreOptions}
+                  selected={tableCentreFilter}
+                  onChange={setTableCentreFilter}
+                  placeholder={tableCentreFilter.length > 0 ? `Cơ sở (${tableCentreFilter.length})` : 'Tất cả cơ sở'}
+                  searchable
+                  maxDisplay={1}
+                />
+                <MultiSelect
+                  menuPosition="fixed"
+                  options={tableCourseLineOptions}
+                  selected={tableCourseLineFilter}
+                  onChange={setTableCourseLineFilter}
+                  placeholder={tableCourseLineFilter.length > 0 ? `Khối học (${tableCourseLineFilter.length})` : 'Tất cả khối học'}
+                  searchable
+                  maxDisplay={1}
+                />
+                <span className={styles.metricText}>
+                  Đã tải {loadedEntries.length}/{classes.length} lớp · {visibleClasses.length}/{classes.length} lớp hiển thị
+                </span>
+              </div>
+            }
+            hasFilter={hasTableFilter}
+            onClearFilter={() => {
+              setSearch('');
+              setTableCentreFilter([]);
+              setTableCourseLineFilter([]);
+            }}
+          />
+        }
+      >
         <div className={controlStyles.tableScroll}>
           <table className={controlStyles.table} style={{ minWidth: 900 }}>
             <thead><tr>
@@ -585,7 +646,7 @@ export function SubmissionControlView({
             </tbody>
           </table>
         </div>
-      </section>
+      </AdminTableSection>
 
       {selectedClass && (
         <section className={controlStyles.panel}>

@@ -13,6 +13,7 @@ import { getCourseCategory } from '@/lib/courseCategories';
 import { exportToCSV, type CSVColumn } from '@/lib/csvExport';
 import { useCSVExportPreferences } from '@/hooks/useCSVExportPreferences';
 import {
+  AdminTableSection,
   CSVExportSettings,
   EmptyState,
   ExportButton,
@@ -21,6 +22,7 @@ import {
   type SelectOption,
   Spinner,
   StatCard,
+  TableToolbar,
   type CSVColumnConfig,
 } from '@/components/ui';
 import { StudentHoverCard } from '@/components/StudentHoverCard';
@@ -300,17 +302,6 @@ export function FinalProductControlView({
   }
 
   return <div className={controlStyles.controlRoot}>
-    <div className={controlStyles.controlHeader}>
-      <div>
-        <h2 className={controlStyles.controlTitle}>Kiểm soát nộp sản phẩm cuối khoá</h2>
-        <div className={controlStyles.controlSubtitle}>{dueRows.length}/{classes.length} lớp đã đến buổi cuối · dữ liệu tải theo batch.</div>
-      </div>
-      <div className={controlStyles.controlActions}>
-        <ExportButton onClick={handleExport} onSettingsClick={() => setShowCSVSettings(true)} disabled={loading || exportRows.length === 0} label="Xuất CSV" count={exportRows.length} />
-        <button type="button" className={styles.primaryBtn} onClick={onReload} disabled={loading}>{loading ? <Spinner size={14} /> : <Icon.Refresh />}{loading ? 'Đang đồng bộ...' : 'Làm mới dữ liệu'}</button>
-      </div>
-    </div>
-
     {error && <div className={`${controlStyles.notice} ${controlStyles.noticeError}`}>Không thể tải dữ liệu sản phẩm cuối khoá. {error}</div>}
 
     {!error && <>
@@ -323,12 +314,13 @@ export function FinalProductControlView({
         <StatCard label="TỶ LỆ NỘP" value={aggregate.expected ? `${submissionRate.toFixed(1)}%` : '—'} desc={aggregate.expected ? `${aggregate.submitted}/${aggregate.expected} học viên` : 'Chưa có lớp đến hạn'} />
       </div>
 
-      {showBreakdown && dueRows.length > 0 && <section className={controlStyles.panel}>
-        <div className={controlStyles.panelHeader}>
-          <div><div className={controlStyles.panelTitle}>Phân loại sản phẩm cuối khoá</div><div className={controlStyles.panelSubtitle}>Chỉ tính lớp đã tới buổi cuối · tỷ lệ nộp thấp trước</div></div>
-          <div className={controlStyles.panelControls}>
-            <div className={controlStyles.filterGroup}>
-              <span className={controlStyles.filterLabel}>Cơ sở</span>
+      {showBreakdown && dueRows.length > 0 && <AdminTableSection
+        title="Phân loại sản phẩm cuối khoá"
+        count={breakdownRows.length}
+        isExpanded={true}
+        toolbarSlot={
+          <div className={styles.tableToolbar}>
+            <div className={styles.toolbarCluster}>
               <MultiSelect
                 menuPosition="fixed"
                 options={breakdownCentreOptions}
@@ -338,9 +330,6 @@ export function FinalProductControlView({
                 searchable
                 maxDisplay={1}
               />
-            </div>
-            <div className={controlStyles.filterGroup}>
-              <span className={controlStyles.filterLabel}>Khối học</span>
               <MultiSelect
                 menuPosition="fixed"
                 options={breakdownCourseLineOptions}
@@ -350,76 +339,71 @@ export function FinalProductControlView({
                 searchable
                 maxDisplay={1}
               />
+              <div className={controlStyles.segmented}>{([['centre', 'Theo cơ sở'], ['courseLine', 'Theo khối'], ['centreCourseLine', 'Cơ sở × khối']] as [BreakdownDimension, string][]).map(([value, label]) => <button key={value} type="button" onClick={() => setBreakdownDimension(value)} className={`${controlStyles.segmentButton} ${breakdownDimension === value ? controlStyles.segmentButtonActive : ''}`}>{label}</button>)}</div>
+              <span className={styles.metricText}>Chỉ tính lớp đã tới buổi cuối · tỷ lệ nộp thấp trước</span>
             </div>
-            {hasBreakdownFilter && (
-              <button
-                type="button"
-                onClick={() => {
-                  setBreakdownCentreFilter([]);
-                  setBreakdownCourseLineFilter([]);
-                }}
-                className={controlStyles.clearButton}
-              >
-                Xoá lọc
-              </button>
-            )}
-            <div className={controlStyles.segmented}>{([['centre', 'Theo cơ sở'], ['courseLine', 'Theo khối'], ['centreCourseLine', 'Cơ sở × khối']] as [BreakdownDimension, string][]).map(([value, label]) => <button key={value} type="button" onClick={() => setBreakdownDimension(value)} className={`${controlStyles.segmentButton} ${breakdownDimension === value ? controlStyles.segmentButtonActive : ''}`}>{label}</button>)}</div>
+            {hasBreakdownFilter && <button type="button" onClick={() => { setBreakdownCentreFilter([]); setBreakdownCourseLineFilter([]); }} className={controlStyles.clearButton}>Xoá lọc</button>}
           </div>
-        </div>
+        }
+      >
         <div className={controlStyles.tableScroll}><table className={controlStyles.table} style={{ minWidth: 800 }}><thead><tr>{['Nhóm', 'Lớp đến hạn', 'Cần nộp', 'Chưa nộp', 'Chờ duyệt', 'Từ chối', 'Đã duyệt', 'Tỷ lệ nộp', 'Tỷ lệ duyệt'].map(label => <th key={label}>{label}</th>)}</tr></thead><tbody>{breakdownRows.length === 0 ? <tr><td colSpan={9} className={controlStyles.emptyCell}>Không có nhóm phù hợp với bộ lọc.</td></tr> : breakdownRows.map(row => <tr key={row.key}>
           <td className={controlStyles.primaryCell}>{row.label}{row.secondary && <div className={controlStyles.secondaryText}>{row.secondary}</div>}</td>
           {[row.classes, row.expected, row.missing, row.pending, row.rejected, row.approved].map((value, index) => <td key={index}>{value}</td>)}
           <td className={controlStyles.primaryCell}>{row.expected ? `${(row.submitted / row.expected * 100).toFixed(1)}%` : '—'}</td>
           <td className={controlStyles.primaryCell}>{row.submitted ? `${(row.approved / row.submitted * 100).toFixed(1)}%` : '—'}</td>
         </tr>)}</tbody></table></div>
-      </section>}
+      </AdminTableSection>}
 
-      <section className={controlStyles.panel}>
-        <div className={controlStyles.panelHeader}>
-          <div>
-            <div className={controlStyles.panelTitle}>Danh sách lớp</div>
-            <div className={controlStyles.panelSubtitle}>Lọc nhanh lớp theo cơ sở, khối học hoặc mã lớp trước khi xem chi tiết.</div>
+      <AdminTableSection
+        title="Kiểm soát nộp sản phẩm cuối khoá"
+        count={visibleRows.length}
+        loading={loading && works.length === 0}
+        isExpanded={true}
+        actionSlot={
+          <div className={controlStyles.controlActions}>
+            <ExportButton onClick={handleExport} onSettingsClick={() => setShowCSVSettings(true)} disabled={loading || exportRows.length === 0} label="Xuất CSV" count={exportRows.length} />
+            <button type="button" className={styles.primaryBtn} onClick={onReload} disabled={loading}>{loading ? <Spinner size={14} /> : <Icon.Refresh />}{loading ? 'Đang đồng bộ...' : 'Làm mới dữ liệu'}</button>
           </div>
-          <div className={controlStyles.panelControls}>
-            <div className={controlStyles.filterGroup}>
-              <span className={controlStyles.filterLabel}>Cơ sở</span>
-              <MultiSelect
-                menuPosition="fixed"
-                options={classCentreOptions}
-                selected={tableCentreFilter}
-                onChange={setTableCentreFilter}
-                placeholder="Tất cả cơ sở"
-                searchable
-                maxDisplay={1}
-              />
-            </div>
-            <div className={controlStyles.filterGroup}>
-              <span className={controlStyles.filterLabel}>Khối học</span>
-              <MultiSelect
-                menuPosition="fixed"
-                options={classCourseLineOptions}
-                selected={tableCourseLineFilter}
-                onChange={setTableCourseLineFilter}
-                placeholder="Tất cả khối"
-                searchable
-                maxDisplay={1}
-              />
-            </div>
-            {hasTableFilter && (
-              <button
-                type="button"
-                onClick={() => {
-                  setTableCentreFilter([]);
-                  setTableCourseLineFilter([]);
-                }}
-                className={controlStyles.clearButton}
-              >
-                Xoá lọc
-              </button>
-            )}
-          </div>
-        </div>
-        <div className={controlStyles.searchBar}><Icon.Search /><input className={controlStyles.searchInput} value={search} onChange={event => setSearch(event.target.value)} placeholder="Tìm mã lớp, cơ sở, khoá học..." /><span className={controlStyles.resultCount}>{visibleRows.length} lớp</span></div>
+        }
+        toolbarSlot={
+          <TableToolbar
+            search={search}
+            onSearchChange={setSearch}
+            searchPlaceholder="Tìm mã lớp, cơ sở, khoá học..."
+            filterSlots={
+              <div className={styles.toolbarCluster}>
+                <MultiSelect
+                  menuPosition="fixed"
+                  options={classCentreOptions}
+                  selected={tableCentreFilter}
+                  onChange={setTableCentreFilter}
+                  placeholder={tableCentreFilter.length > 0 ? `Cơ sở (${tableCentreFilter.length})` : 'Tất cả cơ sở'}
+                  searchable
+                  maxDisplay={1}
+                />
+                <MultiSelect
+                  menuPosition="fixed"
+                  options={classCourseLineOptions}
+                  selected={tableCourseLineFilter}
+                  onChange={setTableCourseLineFilter}
+                  placeholder={tableCourseLineFilter.length > 0 ? `Khối học (${tableCourseLineFilter.length})` : 'Tất cả khối học'}
+                  searchable
+                  maxDisplay={1}
+                />
+                <span className={styles.metricText}>
+                  {dueRows.length}/{classes.length} lớp đã đến buổi cuối · {visibleRows.length}/{classes.length} lớp hiển thị
+                </span>
+              </div>
+            }
+            hasFilter={hasTableFilter || search.trim().length > 0}
+            onClearFilter={() => {
+              setSearch('');
+              setTableCentreFilter([]);
+              setTableCourseLineFilter([]);
+            }}
+          />
+        }
+      >
         {loading && works.length === 0 ? <div className={controlStyles.loadingPanel}><Spinner /> Đang tải dữ liệu sản phẩm cuối khoá...</div> : <div className={controlStyles.tableScroll}><table className={controlStyles.table} style={{ minWidth: 1000 }}><thead><tr>{['Lớp', 'Cơ sở', 'Buổi cuối', 'Học viên', 'Đã nộp', 'Chưa nộp', 'Chờ duyệt', 'Từ chối', 'Đã duyệt', 'Tỷ lệ nộp', 'Tỷ lệ duyệt'].map(label => <th key={label}>{label}</th>)}</tr></thead><tbody>{visibleRows.map(row => {
           const isDue = row.stats.isFinalSessionCompleted;
           return <tr key={row.cls.id} onClick={() => setSelectedClassId(row.cls.id)} className={`${controlStyles.clickableRow} ${selectedClassId === row.cls.id ? controlStyles.rowSelected : ''}`}>
@@ -436,7 +420,7 @@ export function FinalProductControlView({
             <td className={controlStyles.primaryCell}>{row.stats.submittedCount ? `${(row.stats.approvedCount / row.stats.submittedCount * 100).toFixed(1)}%` : '—'}</td>
           </tr>;
         })}</tbody></table></div>}
-      </section>
+      </AdminTableSection>
 
       {selectedRow && <section className={controlStyles.panel}>
         <div className={controlStyles.panelHeader}><div><div className={controlStyles.panelTitle}>Chi tiết {selectedRow.cls.name}</div><div className={controlStyles.panelSubtitle}>{selectedRow.cls.centre?.name} · buổi cuối {formatDateTime(selectedRow.stats.finalSessionDate)}</div></div></div>
