@@ -1,0 +1,328 @@
+.controlRoot {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin-top: var(--space-2);
+}
+
+.controlHeader {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.controlTitle {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.controlSubtitle {
+  margin-top: var(--space-1);
+  color: var(--text-tertiary);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.controlActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.sectionEyebrow {
+  margin-bottom: var(--space-2);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.panel {
+  overflow: hidden;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+}
+
+.panelHeader {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.panelTitle {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.panelSubtitle {
+  margin-top: 3px;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.panelControls {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.filterGroup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 150px;
+}
+
+.filterLabel {
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.searchBar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.searchInput,
+.textInput {
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-comfortable);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-size: 13px;
+  outline: none;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.searchInput {
+  flex: 1;
+  min-width: 180px;
+  border-color: transparent;
+  background: transparent;
+}
+
+.textInput {
+  min-width: 220px;
+  padding: 8px 10px;
+}
+
+.searchInput:focus,
+.textInput:focus {
+  border-color: var(--brand-indigo);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
+}
+
+.resultCount {
+  white-space: nowrap;
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+.segmented {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.segmentButton,
+.clearButton,
+.secondaryButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid var(--border-primary);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 650;
+  transition: background 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+
+.segmentButton {
+  padding: 6px 9px;
+  border-radius: 999px;
+}
+
+.segmentButtonActive {
+  border-color: var(--brand-indigo);
+  background: rgba(99, 102, 241, 0.09);
+  color: var(--brand-indigo);
+}
+
+.clearButton,
+.secondaryButton {
+  height: 32px;
+  padding: 7px 10px;
+  border-radius: var(--radius-comfortable);
+}
+
+.secondaryButton {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}
+
+.segmentButton:hover,
+.clearButton:hover,
+.secondaryButton:hover {
+  background: var(--bg-elevated);
+}
+
+.notice {
+  padding: 10px 12px;
+  border-radius: var(--radius-comfortable);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.noticeWarning {
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  background: rgba(245, 158, 11, 0.08);
+  color: var(--text-secondary);
+}
+
+.noticeError {
+  border: 1px solid rgba(220, 38, 38, 0.25);
+  background: rgba(220, 38, 38, 0.08);
+  color: var(--status-error);
+}
+
+.metaStrip {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-2);
+  padding: 8px 10px;
+  border-radius: var(--radius-comfortable);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.hintText {
+  margin-bottom: var(--space-2);
+  color: var(--text-tertiary);
+  font-size: 10.5px;
+}
+
+.tableScroll {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.table th {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-primary);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  font-weight: 700;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.table td {
+  padding: 12px;
+  border-bottom: 1px solid var(--border-primary);
+  color: var(--text-primary);
+  vertical-align: middle;
+}
+
+.table tbody tr {
+  transition: background 140ms ease;
+}
+
+.clickableRow {
+  cursor: pointer;
+}
+
+.clickableRow:hover {
+  background: var(--bg-elevated);
+}
+
+.rowSelected,
+.rowSelected:hover {
+  background: rgba(99, 102, 241, 0.06);
+}
+
+.stickyHeaderCell {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: var(--bg-elevated) !important;
+}
+
+.stickyBodyCell {
+  position: sticky;
+  left: 0;
+  background: var(--bg-surface);
+  font-weight: 650;
+}
+
+.primaryCell {
+  font-weight: 700;
+}
+
+.secondaryText {
+  margin-top: 2px;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.emptyPanel {
+  padding: 30px;
+  text-align: center;
+  color: var(--text-tertiary);
+}
+
+.loadingPanel {
+  padding: 32px;
+  text-align: center;
+  color: var(--text-tertiary);
+}
+
+.emptyCell {
+  padding: 18px !important;
+  text-align: center;
+  color: var(--text-tertiary) !important;
+}
+
+.statusPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 650;
+  white-space: nowrap;
+}

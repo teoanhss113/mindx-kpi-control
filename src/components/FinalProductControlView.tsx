@@ -25,6 +25,7 @@ import {
 } from '@/components/ui';
 import { StudentHoverCard } from '@/components/StudentHoverCard';
 import styles from '@/app/dashboard.module.css';
+import controlStyles from './OperationsControlView.module.css';
 
 type BreakdownDimension = 'centre' | 'courseLine' | 'centreCourseLine';
 
@@ -109,7 +110,7 @@ function getStudentStatus(work: StudentWork | undefined, isDue: boolean) {
 
 function StatusPill({ work, isDue }: { work?: StudentWork; isDue: boolean }) {
   const meta = getStudentStatus(work, isDue);
-  return <span style={{ display: 'inline-flex', padding: '3px 8px', borderRadius: 999, fontSize: 11, fontWeight: 650, color: meta.color, background: meta.bg, whiteSpace: 'nowrap' }}>{meta.label}</span>;
+  return <span className={controlStyles.statusPill} style={{ color: meta.color, background: meta.bg }}>{meta.label}</span>;
 }
 
 export function FinalProductControlView({
@@ -130,6 +131,8 @@ export function FinalProductControlView({
   const [breakdownDimension, setBreakdownDimension] = useState<BreakdownDimension>('centre');
   const [breakdownCentreFilter, setBreakdownCentreFilter] = useState<string[]>([]);
   const [breakdownCourseLineFilter, setBreakdownCourseLineFilter] = useState<string[]>([]);
+  const [tableCentreFilter, setTableCentreFilter] = useState<string[]>([]);
+  const [tableCourseLineFilter, setTableCourseLineFilter] = useState<string[]>([]);
   const [showCSVSettings, setShowCSVSettings] = useState(false);
   const { columns: csvColumns, saveColumns } = useCSVExportPreferences('operations-final-products', defaultExportColumns);
 
@@ -155,6 +158,23 @@ export function FinalProductControlView({
   }), [classes, worksByClass]);
 
   const dueRows = useMemo(() => classRows.filter(row => row.stats.isFinalSessionCompleted), [classRows]);
+  const classCentreOptions = useMemo<SelectOption[]>(() => {
+    const options = new Map<string, SelectOption>();
+    classRows.forEach(row => {
+      const value = row.cls.centre?.id || row.cls.centre?.name || 'unknown';
+      const label = row.cls.centre?.shortName || row.cls.centre?.name || 'Chưa xác định cơ sở';
+      if (!options.has(value)) options.set(value, { value, label });
+    });
+    return [...options.values()].sort((left, right) => left.label.localeCompare(right.label, 'vi'));
+  }, [classRows]);
+  const classCourseLineOptions = useMemo<SelectOption[]>(() => {
+    const options = new Map<string, SelectOption>();
+    classRows.forEach(row => {
+      const value = getCourseCategory(row.cls);
+      if (!options.has(value)) options.set(value, { value, label: value });
+    });
+    return [...options.values()].sort((left, right) => left.label.localeCompare(right.label, 'vi'));
+  }, [classRows]);
   const breakdownCentreOptions = useMemo<SelectOption[]>(() => {
     const options = new Map<string, SelectOption>();
     dueRows.forEach(row => {
@@ -192,10 +212,16 @@ export function FinalProductControlView({
 
   const visibleRows = useMemo(() => {
     const normalized = search.trim().toLocaleLowerCase('vi');
-    if (!normalized) return classRows;
-    return classRows.filter(row => [row.cls.name, row.cls.centre?.name, row.cls.centre?.shortName, row.cls.course?.name]
-      .some(value => (value || '').toLocaleLowerCase('vi').includes(normalized)));
-  }, [classRows, search]);
+    return classRows.filter(row => {
+      const centreValue = row.cls.centre?.id || row.cls.centre?.name || 'unknown';
+      const courseLineValue = getCourseCategory(row.cls);
+      if (tableCentreFilter.length > 0 && !tableCentreFilter.includes(centreValue)) return false;
+      if (tableCourseLineFilter.length > 0 && !tableCourseLineFilter.includes(courseLineValue)) return false;
+      if (!normalized) return true;
+      return [row.cls.name, row.cls.centre?.name, row.cls.centre?.shortName, row.cls.course?.name]
+        .some(value => (value || '').toLocaleLowerCase('vi').includes(normalized));
+    });
+  }, [classRows, search, tableCentreFilter, tableCourseLineFilter]);
 
   const breakdownRows = (() => {
     const groups = new Map<string, { key: string; label: string; secondary?: string; classes: number; expected: number; submitted: number; missing: number; pending: number; approved: number; rejected: number }>();
@@ -226,6 +252,7 @@ export function FinalProductControlView({
     });
   })();
   const hasBreakdownFilter = breakdownCentreFilter.length > 0 || breakdownCourseLineFilter.length > 0;
+  const hasTableFilter = tableCentreFilter.length > 0 || tableCourseLineFilter.length > 0;
 
   const exportRows: FinalProductExportRow[] = dueRows.flatMap(row => {
     const teachers = getTeachers(row.cls);
@@ -272,19 +299,19 @@ export function FinalProductControlView({
     return <EmptyState icon={<Icon.Target size={42} />} title="Chưa có lớp để kiểm tra" subtitle="Tải dữ liệu lớp bằng bộ lọc phía trên trước khi xem sản phẩm cuối khoá." />;
   }
 
-  return <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', marginTop: 'var(--space-2)' }}>
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+  return <div className={controlStyles.controlRoot}>
+    <div className={controlStyles.controlHeader}>
       <div>
-        <h2 style={{ margin: 0, fontSize: 18 }}>Kiểm soát nộp sản phẩm cuối khoá</h2>
-        <div style={{ color: 'var(--text-tertiary)', fontSize: 12, marginTop: 4 }}>{dueRows.length}/{classes.length} lớp đã đến buổi cuối · dữ liệu tải theo batch.</div>
+        <h2 className={controlStyles.controlTitle}>Kiểm soát nộp sản phẩm cuối khoá</h2>
+        <div className={controlStyles.controlSubtitle}>{dueRows.length}/{classes.length} lớp đã đến buổi cuối · dữ liệu tải theo batch.</div>
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <div className={controlStyles.controlActions}>
         <ExportButton onClick={handleExport} onSettingsClick={() => setShowCSVSettings(true)} disabled={loading || exportRows.length === 0} label="Xuất CSV" count={exportRows.length} />
         <button type="button" className={styles.primaryBtn} onClick={onReload} disabled={loading}>{loading ? <Spinner size={14} /> : <Icon.Refresh />}{loading ? 'Đang đồng bộ...' : 'Làm mới dữ liệu'}</button>
       </div>
     </div>
 
-    {error && <div style={{ padding: '10px 12px', borderRadius: 8, color: 'var(--status-error)', background: 'rgba(220,38,38,.08)' }}>Không thể tải dữ liệu sản phẩm cuối khoá. {error}</div>}
+    {error && <div className={`${controlStyles.notice} ${controlStyles.noticeError}`}>Không thể tải dữ liệu sản phẩm cuối khoá. {error}</div>}
 
     {!error && <>
       <div className={styles.statsGrid}>
@@ -296,12 +323,12 @@ export function FinalProductControlView({
         <StatCard label="TỶ LỆ NỘP" value={aggregate.expected ? `${submissionRate.toFixed(1)}%` : '—'} desc={aggregate.expected ? `${aggregate.submitted}/${aggregate.expected} học viên` : 'Chưa có lớp đến hạn'} />
       </div>
 
-      {showBreakdown && dueRows.length > 0 && <section style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-primary)', borderRadius: 'var(--radius-card)', overflow: 'hidden' }}>
-        <div style={{ padding: 12, borderBottom: '1px solid var(--border-primary)', display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-          <div><strong style={{ fontSize: 13 }}>Phân loại sản phẩm cuối khoá</strong><div style={{ color: 'var(--text-tertiary)', fontSize: 11, marginTop: 3 }}>Chỉ tính lớp đã tới buổi cuối · tỷ lệ nộp thấp trước</div></div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end', justifyContent: 'flex-end' }}>
-            <div className={styles.dateControls}>
-              <span className={styles.dateLabel}>Cơ sở</span>
+      {showBreakdown && dueRows.length > 0 && <section className={controlStyles.panel}>
+        <div className={controlStyles.panelHeader}>
+          <div><div className={controlStyles.panelTitle}>Phân loại sản phẩm cuối khoá</div><div className={controlStyles.panelSubtitle}>Chỉ tính lớp đã tới buổi cuối · tỷ lệ nộp thấp trước</div></div>
+          <div className={controlStyles.panelControls}>
+            <div className={controlStyles.filterGroup}>
+              <span className={controlStyles.filterLabel}>Cơ sở</span>
               <MultiSelect
                 menuPosition="fixed"
                 options={breakdownCentreOptions}
@@ -312,8 +339,8 @@ export function FinalProductControlView({
                 maxDisplay={1}
               />
             </div>
-            <div className={styles.dateControls}>
-              <span className={styles.dateLabel}>Khối học</span>
+            <div className={controlStyles.filterGroup}>
+              <span className={controlStyles.filterLabel}>Khối học</span>
               <MultiSelect
                 menuPosition="fixed"
                 options={breakdownCourseLineOptions}
@@ -331,54 +358,98 @@ export function FinalProductControlView({
                   setBreakdownCentreFilter([]);
                   setBreakdownCourseLineFilter([]);
                 }}
-                style={{ height: 30, padding: '6px 9px', borderRadius: 8, border: '1px solid var(--border-primary)', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: 11 }}
+                className={controlStyles.clearButton}
               >
                 Xoá lọc
               </button>
             )}
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>{([['centre', 'Theo cơ sở'], ['courseLine', 'Theo khối'], ['centreCourseLine', 'Cơ sở × khối']] as [BreakdownDimension, string][]).map(([value, label]) => <button key={value} type="button" onClick={() => setBreakdownDimension(value)} style={{ padding: '6px 9px', borderRadius: 999, border: breakdownDimension === value ? '1px solid var(--brand-indigo)' : '1px solid var(--border-primary)', background: breakdownDimension === value ? 'rgba(99,102,241,.09)' : 'transparent', color: breakdownDimension === value ? 'var(--brand-indigo)' : 'var(--text-secondary)', cursor: 'pointer', fontSize: 11 }}>{label}</button>)}</div>
+            <div className={controlStyles.segmented}>{([['centre', 'Theo cơ sở'], ['courseLine', 'Theo khối'], ['centreCourseLine', 'Cơ sở × khối']] as [BreakdownDimension, string][]).map(([value, label]) => <button key={value} type="button" onClick={() => setBreakdownDimension(value)} className={`${controlStyles.segmentButton} ${breakdownDimension === value ? controlStyles.segmentButtonActive : ''}`}>{label}</button>)}</div>
           </div>
         </div>
-        <div style={{ overflowX: 'auto' }}><table style={{ width: '100%', minWidth: 800, borderCollapse: 'collapse', fontSize: 12 }}><thead><tr style={{ background: 'var(--bg-elevated)', textAlign: 'left' }}>{['Nhóm', 'Lớp đến hạn', 'Cần nộp', 'Chưa nộp', 'Chờ duyệt', 'Từ chối', 'Đã duyệt', 'Tỷ lệ nộp', 'Tỷ lệ duyệt'].map(label => <th key={label} style={{ padding: '9px 12px', borderBottom: '1px solid var(--border-primary)', whiteSpace: 'nowrap' }}>{label}</th>)}</tr></thead><tbody>{breakdownRows.length === 0 ? <tr><td colSpan={9} style={{ padding: 18, textAlign: 'center', borderBottom: '1px solid var(--border-primary)', color: 'var(--text-tertiary)' }}>Không có nhóm phù hợp với bộ lọc.</td></tr> : breakdownRows.map(row => <tr key={row.key}>
-          <td style={{ padding: 12, borderBottom: '1px solid var(--border-primary)', fontWeight: 700 }}>{row.label}{row.secondary && <div style={{ color: 'var(--text-tertiary)', fontSize: 11 }}>{row.secondary}</div>}</td>
-          {[row.classes, row.expected, row.missing, row.pending, row.rejected, row.approved].map((value, index) => <td key={index} style={{ padding: 12, borderBottom: '1px solid var(--border-primary)' }}>{value}</td>)}
-          <td style={{ padding: 12, borderBottom: '1px solid var(--border-primary)', fontWeight: 700 }}>{row.expected ? `${(row.submitted / row.expected * 100).toFixed(1)}%` : '—'}</td>
-          <td style={{ padding: 12, borderBottom: '1px solid var(--border-primary)', fontWeight: 700 }}>{row.submitted ? `${(row.approved / row.submitted * 100).toFixed(1)}%` : '—'}</td>
+        <div className={controlStyles.tableScroll}><table className={controlStyles.table} style={{ minWidth: 800 }}><thead><tr>{['Nhóm', 'Lớp đến hạn', 'Cần nộp', 'Chưa nộp', 'Chờ duyệt', 'Từ chối', 'Đã duyệt', 'Tỷ lệ nộp', 'Tỷ lệ duyệt'].map(label => <th key={label}>{label}</th>)}</tr></thead><tbody>{breakdownRows.length === 0 ? <tr><td colSpan={9} className={controlStyles.emptyCell}>Không có nhóm phù hợp với bộ lọc.</td></tr> : breakdownRows.map(row => <tr key={row.key}>
+          <td className={controlStyles.primaryCell}>{row.label}{row.secondary && <div className={controlStyles.secondaryText}>{row.secondary}</div>}</td>
+          {[row.classes, row.expected, row.missing, row.pending, row.rejected, row.approved].map((value, index) => <td key={index}>{value}</td>)}
+          <td className={controlStyles.primaryCell}>{row.expected ? `${(row.submitted / row.expected * 100).toFixed(1)}%` : '—'}</td>
+          <td className={controlStyles.primaryCell}>{row.submitted ? `${(row.approved / row.submitted * 100).toFixed(1)}%` : '—'}</td>
         </tr>)}</tbody></table></div>
       </section>}
 
-      <section style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-primary)', borderRadius: 'var(--radius-card)', overflow: 'hidden' }}>
-        <div style={{ padding: 12, borderBottom: '1px solid var(--border-primary)', display: 'flex', gap: 8, alignItems: 'center' }}><Icon.Search /><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Tìm mã lớp, cơ sở, khoá học..." style={{ flex: 1, border: 0, outline: 0, background: 'transparent', color: 'var(--text-primary)' }} /><span style={{ color: 'var(--text-tertiary)', fontSize: 12 }}>{visibleRows.length} lớp</span></div>
-        {loading && works.length === 0 ? <div style={{ padding: 32, textAlign: 'center' }}><Spinner /> Đang tải dữ liệu sản phẩm cuối khoá...</div> : <div style={{ overflowX: 'auto' }}><table style={{ width: '100%', minWidth: 1000, borderCollapse: 'collapse', fontSize: 12 }}><thead><tr style={{ background: 'var(--bg-elevated)', textAlign: 'left' }}>{['Lớp', 'Cơ sở', 'Buổi cuối', 'Học viên', 'Đã nộp', 'Chưa nộp', 'Chờ duyệt', 'Từ chối', 'Đã duyệt', 'Tỷ lệ nộp', 'Tỷ lệ duyệt'].map(label => <th key={label} style={{ padding: '10px 12px', borderBottom: '1px solid var(--border-primary)', whiteSpace: 'nowrap' }}>{label}</th>)}</tr></thead><tbody>{visibleRows.map(row => {
+      <section className={controlStyles.panel}>
+        <div className={controlStyles.panelHeader}>
+          <div>
+            <div className={controlStyles.panelTitle}>Danh sách lớp</div>
+            <div className={controlStyles.panelSubtitle}>Lọc nhanh lớp theo cơ sở, khối học hoặc mã lớp trước khi xem chi tiết.</div>
+          </div>
+          <div className={controlStyles.panelControls}>
+            <div className={controlStyles.filterGroup}>
+              <span className={controlStyles.filterLabel}>Cơ sở</span>
+              <MultiSelect
+                menuPosition="fixed"
+                options={classCentreOptions}
+                selected={tableCentreFilter}
+                onChange={setTableCentreFilter}
+                placeholder="Tất cả cơ sở"
+                searchable
+                maxDisplay={1}
+              />
+            </div>
+            <div className={controlStyles.filterGroup}>
+              <span className={controlStyles.filterLabel}>Khối học</span>
+              <MultiSelect
+                menuPosition="fixed"
+                options={classCourseLineOptions}
+                selected={tableCourseLineFilter}
+                onChange={setTableCourseLineFilter}
+                placeholder="Tất cả khối"
+                searchable
+                maxDisplay={1}
+              />
+            </div>
+            {hasTableFilter && (
+              <button
+                type="button"
+                onClick={() => {
+                  setTableCentreFilter([]);
+                  setTableCourseLineFilter([]);
+                }}
+                className={controlStyles.clearButton}
+              >
+                Xoá lọc
+              </button>
+            )}
+          </div>
+        </div>
+        <div className={controlStyles.searchBar}><Icon.Search /><input className={controlStyles.searchInput} value={search} onChange={event => setSearch(event.target.value)} placeholder="Tìm mã lớp, cơ sở, khoá học..." /><span className={controlStyles.resultCount}>{visibleRows.length} lớp</span></div>
+        {loading && works.length === 0 ? <div className={controlStyles.loadingPanel}><Spinner /> Đang tải dữ liệu sản phẩm cuối khoá...</div> : <div className={controlStyles.tableScroll}><table className={controlStyles.table} style={{ minWidth: 1000 }}><thead><tr>{['Lớp', 'Cơ sở', 'Buổi cuối', 'Học viên', 'Đã nộp', 'Chưa nộp', 'Chờ duyệt', 'Từ chối', 'Đã duyệt', 'Tỷ lệ nộp', 'Tỷ lệ duyệt'].map(label => <th key={label}>{label}</th>)}</tr></thead><tbody>{visibleRows.map(row => {
           const isDue = row.stats.isFinalSessionCompleted;
-          return <tr key={row.cls.id} onClick={() => setSelectedClassId(row.cls.id)} style={{ cursor: 'pointer', background: selectedClassId === row.cls.id ? 'rgba(99,102,241,.06)' : undefined }}>
-            <td style={{ padding: 12, borderBottom: '1px solid var(--border-primary)' }}><strong>{row.cls.name}</strong><div style={{ color: 'var(--text-tertiary)' }}>{row.cls.course?.name}</div></td>
-            <td style={{ padding: 12, borderBottom: '1px solid var(--border-primary)' }}>{row.cls.centre?.shortName || row.cls.centre?.name || '—'}</td>
-            <td style={{ padding: 12, borderBottom: '1px solid var(--border-primary)', whiteSpace: 'nowrap' }}>{formatDateTime(row.stats.finalSessionDate)}{!isDue && <div style={{ marginTop: 3 }}><StatusPill isDue={false} /></div>}</td>
-            <td style={{ padding: 12, borderBottom: '1px solid var(--border-primary)' }}>{row.stats.totalStudents}</td>
-            <td style={{ padding: 12, borderBottom: '1px solid var(--border-primary)' }}>{row.stats.submittedCount}</td>
-            <td style={{ padding: 12, borderBottom: '1px solid var(--border-primary)', color: isDue && row.stats.missingCount ? 'var(--status-error)' : undefined }}>{isDue ? row.stats.missingCount : '—'}</td>
-            <td style={{ padding: 12, borderBottom: '1px solid var(--border-primary)' }}>{row.stats.pendingCount}</td>
-            <td style={{ padding: 12, borderBottom: '1px solid var(--border-primary)' }}>{row.stats.rejectedCount}</td>
-            <td style={{ padding: 12, borderBottom: '1px solid var(--border-primary)' }}>{row.stats.approvedCount}</td>
-            <td style={{ padding: 12, borderBottom: '1px solid var(--border-primary)', fontWeight: 700 }}>{isDue && row.stats.totalStudents ? `${(row.stats.submittedCount / row.stats.totalStudents * 100).toFixed(1)}%` : '—'}</td>
-            <td style={{ padding: 12, borderBottom: '1px solid var(--border-primary)', fontWeight: 700 }}>{row.stats.submittedCount ? `${(row.stats.approvedCount / row.stats.submittedCount * 100).toFixed(1)}%` : '—'}</td>
+          return <tr key={row.cls.id} onClick={() => setSelectedClassId(row.cls.id)} className={`${controlStyles.clickableRow} ${selectedClassId === row.cls.id ? controlStyles.rowSelected : ''}`}>
+            <td><strong>{row.cls.name}</strong><div className={controlStyles.secondaryText}>{row.cls.course?.name}</div></td>
+            <td>{row.cls.centre?.shortName || row.cls.centre?.name || '—'}</td>
+            <td style={{ whiteSpace: 'nowrap' }}>{formatDateTime(row.stats.finalSessionDate)}{!isDue && <div style={{ marginTop: 3 }}><StatusPill isDue={false} /></div>}</td>
+            <td>{row.stats.totalStudents}</td>
+            <td>{row.stats.submittedCount}</td>
+            <td style={{ color: isDue && row.stats.missingCount ? 'var(--status-error)' : undefined }}>{isDue ? row.stats.missingCount : '—'}</td>
+            <td>{row.stats.pendingCount}</td>
+            <td>{row.stats.rejectedCount}</td>
+            <td>{row.stats.approvedCount}</td>
+            <td className={controlStyles.primaryCell}>{isDue && row.stats.totalStudents ? `${(row.stats.submittedCount / row.stats.totalStudents * 100).toFixed(1)}%` : '—'}</td>
+            <td className={controlStyles.primaryCell}>{row.stats.submittedCount ? `${(row.stats.approvedCount / row.stats.submittedCount * 100).toFixed(1)}%` : '—'}</td>
           </tr>;
         })}</tbody></table></div>}
       </section>
 
-      {selectedRow && <section style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-primary)', borderRadius: 'var(--radius-card)', overflow: 'hidden' }}>
-        <div style={{ padding: 14, borderBottom: '1px solid var(--border-primary)' }}><strong>Chi tiết {selectedRow.cls.name}</strong><div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 3 }}>{selectedRow.cls.centre?.name} · buổi cuối {formatDateTime(selectedRow.stats.finalSessionDate)}</div></div>
-        <div style={{ overflowX: 'auto' }}><table style={{ width: '100%', minWidth: 850, borderCollapse: 'collapse', fontSize: 12 }}><thead><tr style={{ background: 'var(--bg-elevated)', textAlign: 'left' }}>{['Học viên', 'Trạng thái', 'Tên sản phẩm', 'Tài nguyên', 'Cập nhật gần nhất', 'Người cập nhật', 'Ghi chú / Lý do'].map(label => <th key={label} style={{ padding: '10px 12px', borderBottom: '1px solid var(--border-primary)' }}>{label}</th>)}</tr></thead><tbody>{getActiveClassStudents(selectedRow.cls).map(student => {
+      {selectedRow && <section className={controlStyles.panel}>
+        <div className={controlStyles.panelHeader}><div><div className={controlStyles.panelTitle}>Chi tiết {selectedRow.cls.name}</div><div className={controlStyles.panelSubtitle}>{selectedRow.cls.centre?.name} · buổi cuối {formatDateTime(selectedRow.stats.finalSessionDate)}</div></div></div>
+        <div className={controlStyles.tableScroll}><table className={controlStyles.table} style={{ minWidth: 850 }}><thead><tr>{['Học viên', 'Trạng thái', 'Tên sản phẩm', 'Tài nguyên', 'Cập nhật gần nhất', 'Người cập nhật', 'Ghi chú / Lý do'].map(label => <th key={label}>{label}</th>)}</tr></thead><tbody>{getActiveClassStudents(selectedRow.cls).map(student => {
           const work = selectedRow.worksByStudent.get(student.id);
           return <tr key={student.id}>
-            <td style={{ padding: 12, borderBottom: '1px solid var(--border-primary)', fontWeight: 650 }}><StudentHoverCard studentId={student.id} studentName={student.name} /></td>
-            <td style={{ padding: 12, borderBottom: '1px solid var(--border-primary)' }}><StatusPill work={work} isDue={selectedRow.stats.isFinalSessionCompleted} /></td>
-            <td style={{ padding: 12, borderBottom: '1px solid var(--border-primary)' }}>{work?.latestData?.title || '—'}</td>
-            <td style={{ padding: 12, borderBottom: '1px solid var(--border-primary)' }}>{work ? getStudentWorkAssetCount(work) : '—'}</td>
-            <td style={{ padding: 12, borderBottom: '1px solid var(--border-primary)', whiteSpace: 'nowrap' }}>{formatDateTime(work?.lastModifiedAt || work?.createdAt)}</td>
-            <td style={{ padding: 12, borderBottom: '1px solid var(--border-primary)' }}>{work?.lastModifiedBy?.displayName || work?.createdBy?.displayName || '—'}</td>
-            <td style={{ padding: 12, borderBottom: '1px solid var(--border-primary)' }}>{work?.latestData?.rejectReason || work?.latestData?.comment || '—'}</td>
+            <td className={controlStyles.primaryCell}><StudentHoverCard studentId={student.id} studentName={student.name} /></td>
+            <td><StatusPill work={work} isDue={selectedRow.stats.isFinalSessionCompleted} /></td>
+            <td>{work?.latestData?.title || '—'}</td>
+            <td>{work ? getStudentWorkAssetCount(work) : '—'}</td>
+            <td style={{ whiteSpace: 'nowrap' }}>{formatDateTime(work?.lastModifiedAt || work?.createdAt)}</td>
+            <td>{work?.lastModifiedBy?.displayName || work?.createdBy?.displayName || '—'}</td>
+            <td>{work?.latestData?.rejectReason || work?.latestData?.comment || '—'}</td>
           </tr>;
         })}</tbody></table></div>
       </section>}

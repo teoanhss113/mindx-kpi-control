@@ -26,6 +26,7 @@ import {
 } from '@/components/ui';
 import { StudentHoverCard } from '@/components/StudentHoverCard';
 import styles from '@/app/dashboard.module.css';
+import controlStyles from './OperationsControlView.module.css';
 
 const statusMeta: Record<SubmissionCellStatus, { label: string; color: string; background: string }> = {
   not_due: { label: 'Chưa tới hạn', color: 'var(--text-tertiary)', background: 'var(--bg-elevated)' },
@@ -137,7 +138,7 @@ function getSubmissionExportColumns(config: CSVColumnConfig[]) {
 function StatusPill({ status, count }: { status: SubmissionCellStatus; count?: number }) {
   const meta = statusMeta[status];
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 8px', borderRadius: 999, fontSize: 11, fontWeight: 650, color: meta.color, background: meta.background, whiteSpace: 'nowrap' }}>
+    <span className={controlStyles.statusPill} style={{ color: meta.color, background: meta.background }}>
       {meta.label}{count !== undefined ? `: ${count}` : ''}
     </span>
   );
@@ -170,14 +171,14 @@ export function ClassSubmissionDetail({
   onRetry?: () => void;
 }) {
   if (!record || record.state === 'idle' || record.state === 'loading') {
-    return <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-tertiary)' }}><Spinner size={18} /> Đang đồng bộ tình trạng bài tập...</div>;
+    return <div className={controlStyles.loadingPanel}><Spinner size={18} /> Đang đồng bộ tình trạng bài tập...</div>;
   }
   if (record.state === 'error' || !record.data) {
     return (
-      <div style={{ padding: 24, textAlign: 'center' }}>
+      <div className={controlStyles.emptyPanel}>
         <div style={{ color: 'var(--status-error)', fontWeight: 600 }}>Không thể tải dữ liệu bài tập của lớp.</div>
         {record.error && <div style={{ marginTop: 6, color: 'var(--text-tertiary)', fontSize: 11, wordBreak: 'break-word' }}>{record.error}</div>}
-        {onRetry && <button type="button" onClick={onRetry} style={{ marginTop: 10, border: '1px solid var(--border-primary)', borderRadius: 8, background: 'var(--bg-elevated)', color: 'var(--text-primary)', padding: '7px 10px', cursor: 'pointer' }}><Icon.Refresh /> Thử lại</button>}
+        {onRetry && <button type="button" onClick={onRetry} className={controlStyles.secondaryButton} style={{ marginTop: 10 }}><Icon.Refresh /> Thử lại</button>}
       </div>
     );
   }
@@ -210,7 +211,7 @@ export function ClassSubmissionDetail({
         <span style={{ fontSize: 11, fontWeight: 650, color: 'var(--text-secondary)', padding: '3px 8px' }}>Tỷ lệ nộp: {summary.totalExpected ? `${summary.submissionRate.toFixed(1)}%` : '—'}</span>
         <span style={{ fontSize: 11, fontWeight: 650, color: 'var(--text-secondary)', padding: '3px 8px' }}>Tỷ lệ chấm: {summary.submitted ? `${summary.gradingRate.toFixed(1)}%` : '—'}</span>
       </div>
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10, padding: '8px 10px', borderRadius: 8, background: 'var(--bg-elevated)', color: 'var(--text-secondary)', fontSize: 11 }}>
+      <div className={controlStyles.metaStrip}>
         <strong>Theo buổi đã đến hạn:</strong>
         <span>Đủ bài: {completeSessions}</span>
         <span>Một phần: {partialSessions}</span>
@@ -218,25 +219,25 @@ export function ClassSubmissionDetail({
         <span>TB nộp/buổi: {sessionSummaries.length ? `${averageSessionSubmissionRate.toFixed(1)}%` : '—'}</span>
         <span>TB chấm/buổi: {sessionsWithSubmissions.length ? `${averageSessionGradingRate.toFixed(1)}%` : '—'}</span>
       </div>
-      <div style={{ marginBottom: 8, color: 'var(--text-tertiary)', fontSize: 10.5 }}>
+      <div className={controlStyles.hintText}>
         Thống kê tính theo phạm vi {dateFrom || 'đầu kỳ'} – {dateTo || 'hiện tại'}; bảng bên dưới hiển thị toàn bộ buổi của lớp.
       </div>
       {lessons.length === 0 ? (
-        <div style={{ padding: 18, textAlign: 'center', color: 'var(--text-tertiary)' }}>Lớp chưa có bài học đang hoạt động.</div>
+        <div className={controlStyles.emptyCell}>Lớp chưa có bài học đang hoạt động.</div>
       ) : (
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ borderCollapse: 'collapse', fontSize: 11, minWidth: Math.max(620, 200 + lessons.length * 130) }}>
-            <thead><tr style={{ background: 'var(--bg-elevated)' }}>
-              <th style={{ position: 'sticky', left: 0, zIndex: 2, background: 'var(--bg-elevated)', padding: 8, minWidth: 190, textAlign: 'left', borderBottom: '1px solid var(--border-primary)' }}>Học viên</th>
-              {lessons.map((lesson, index) => <th key={lesson.id} title={lesson.name} style={{ padding: 8, minWidth: 120, textAlign: 'left', borderBottom: '1px solid var(--border-primary)' }}>{index + 1}. {lesson.name}</th>)}
+        <div className={controlStyles.tableScroll}>
+          <table className={controlStyles.table} style={{ minWidth: Math.max(620, 200 + lessons.length * 130) }}>
+            <thead><tr>
+              <th className={controlStyles.stickyHeaderCell} style={{ minWidth: 190 }}>Học viên</th>
+              {lessons.map((lesson, index) => <th key={lesson.id} title={lesson.name} style={{ minWidth: 120 }}>{index + 1}. {lesson.name}</th>)}
             </tr></thead>
             <tbody>{students.map(student => <tr key={student.studentUid}>
-              <td style={{ position: 'sticky', left: 0, background: 'var(--bg-surface)', padding: 8, fontWeight: 650, borderBottom: '1px solid var(--border-primary)' }}>
+              <td className={controlStyles.stickyBodyCell}>
                 <StudentHoverCard studentId={student.id} studentName={student.displayName} />
               </td>
               {lessons.map(lesson => {
                 const cell = cellsByKey.get(`${student.studentUid}:${lesson.id}`)!;
-                return <td key={lesson.id} style={{ padding: 7, borderBottom: '1px solid var(--border-primary)', verticalAlign: 'top' }}><StatusPill status={cell.status} />{cell.dueAt && <div style={{ marginTop: 4, color: 'var(--text-tertiary)' }}>Hạn: {formatDateTime(cell.dueAt)}</div>}{cell.submission?.score !== null && cell.submission?.score !== undefined && cell.status === 'graded' ? <div style={{ marginTop: 3, color: 'var(--text-tertiary)' }}>Điểm: {cell.submission.score}</div> : null}</td>;
+                return <td key={lesson.id} style={{ verticalAlign: 'top' }}><StatusPill status={cell.status} />{cell.dueAt && <div className={controlStyles.secondaryText}>Hạn: {formatDateTime(cell.dueAt)}</div>}{cell.submission?.score !== null && cell.submission?.score !== undefined && cell.status === 'graded' ? <div className={controlStyles.secondaryText}>Điểm: {cell.submission.score}</div> : null}</td>;
               })}
             </tr>)}</tbody>
           </table>
@@ -431,15 +432,15 @@ export function SubmissionControlView({
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', marginTop: 'var(--space-2)' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+    <div className={controlStyles.controlRoot}>
+      <div className={controlStyles.controlHeader}>
         <div>
-          <h2 style={{ margin: 0, fontSize: 18 }}>Kiểm soát nộp và chấm bài</h2>
-          <div style={{ color: 'var(--text-tertiary)', fontSize: 12, marginTop: 4 }}>
+          <h2 className={controlStyles.controlTitle}>Kiểm soát nộp và chấm bài</h2>
+          <div className={controlStyles.controlSubtitle}>
             Đã tải {loadedEntries.length}/{classes.length} lớp · buổi học từ {dateFrom || 'đầu kỳ'} đến {dateTo || 'hiện tại'}.
           </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <div className={controlStyles.controlActions}>
           <ExportButton
             onClick={handleExport}
             onSettingsClick={() => setShowCSVSettings(true)}
@@ -466,7 +467,7 @@ export function SubmissionControlView({
       )}
 
       {hasIncompleteCoverage && (
-        <div style={{ padding: '10px 12px', borderRadius: 8, border: '1px solid rgba(245, 158, 11, 0.3)', background: 'rgba(245, 158, 11, 0.08)', color: 'var(--text-secondary)', fontSize: 12, lineHeight: 1.5 }}>
+        <div className={`${controlStyles.notice} ${controlStyles.noticeWarning}`}>
           <strong>Thống kê đang tạm tính trên {loadedEntries.length}/{classes.length} lớp.</strong>{' '}
           {failedClassCount > 0 ? `${failedClassCount} lớp tải lỗi. ` : ''}
           {pendingClassCount > 0 ? `${pendingClassCount} lớp đang chờ tải. ` : ''}
@@ -476,7 +477,7 @@ export function SubmissionControlView({
 
       {aggregateSessions.length > 0 && (
         <div>
-          <div style={{ marginBottom: 8, fontSize: 12, fontWeight: 650, color: 'var(--text-secondary)' }}>QUY ĐỔI THEO BUỔI ĐÃ ĐẾN HẠN{hasIncompleteCoverage ? ' · TẠM TÍNH' : ''}</div>
+          <div className={controlStyles.sectionEyebrow}>QUY ĐỔI THEO BUỔI ĐÃ ĐẾN HẠN{hasIncompleteCoverage ? ' · TẠM TÍNH' : ''}</div>
           <div className={styles.statsGrid}>
             <StatCard label="BUỔI ĐỦ BÀI" value={completeSessionCount.toLocaleString('vi-VN')} desc={`${(completeSessionCount / aggregateSessions.length * 100).toFixed(1)}% số buổi`} />
             <StatCard label="BUỔI LÀM MỘT PHẦN" value={partialSessionCount.toLocaleString('vi-VN')} desc={`${(partialSessionCount / aggregateSessions.length * 100).toFixed(1)}% số buổi`} />
@@ -488,26 +489,33 @@ export function SubmissionControlView({
       )}
 
       {showBreakdown && (
-        <section style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-primary)', borderRadius: 'var(--radius-card)', overflow: 'hidden' }}>
-          <div style={{ padding: 12, borderBottom: '1px solid var(--border-primary)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <section className={controlStyles.panel}>
+          <div className={controlStyles.panelHeader}>
             <div>
-              <strong style={{ fontSize: 13 }}>Phân loại thống kê bài tập</strong>
-              <div style={{ color: 'var(--text-tertiary)', fontSize: 11, marginTop: 3 }}>Chỉ tính bài và buổi đã đến hạn · xếp tỷ lệ nộp thấp trước</div>
+              <div className={controlStyles.panelTitle}>Phân loại thống kê bài tập</div>
+              <div className={controlStyles.panelSubtitle}>Chỉ tính bài và buổi đã đến hạn · xếp tỷ lệ nộp thấp trước</div>
             </div>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            <div className={controlStyles.segmented}>
               {([
                 ['centre', 'Theo cơ sở'],
                 ['courseLine', 'Theo khối học'],
                 ['centreCourseLine', 'Cơ sở × khối'],
               ] as [SubmissionBreakdownDimension, string][]).map(([dimension, label]) => (
-                <button key={dimension} type="button" onClick={() => setBreakdownDimension(dimension)} style={{ padding: '6px 9px', borderRadius: 999, border: breakdownDimension === dimension ? '1px solid var(--brand-indigo)' : '1px solid var(--border-primary)', background: breakdownDimension === dimension ? 'rgba(99,102,241,0.09)' : 'transparent', color: breakdownDimension === dimension ? 'var(--brand-indigo)' : 'var(--text-secondary)', cursor: 'pointer', fontSize: 11, fontWeight: 650 }}>{label}</button>
+                <button
+                  key={dimension}
+                  type="button"
+                  onClick={() => setBreakdownDimension(dimension)}
+                  className={`${controlStyles.segmentButton} ${breakdownDimension === dimension ? controlStyles.segmentButtonActive : ''}`}
+                >
+                  {label}
+                </button>
               ))}
             </div>
           </div>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', minWidth: 900, borderCollapse: 'collapse', fontSize: 12 }}>
-              <thead><tr style={{ background: 'var(--bg-elevated)', textAlign: 'left' }}>
-                {['Nhóm', 'Độ phủ lớp', 'Bài đến hạn', 'Chưa nộp', 'Chờ chấm', 'Tỷ lệ nộp', 'Tỷ lệ chấm', 'TB nộp / buổi', 'TB chấm / buổi'].map(label => <th key={label} style={{ padding: '9px 12px', borderBottom: '1px solid var(--border-primary)', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>{label}</th>)}
+          <div className={controlStyles.tableScroll}>
+            <table className={controlStyles.table} style={{ minWidth: 900 }}>
+              <thead><tr>
+                {['Nhóm', 'Độ phủ lớp', 'Bài đến hạn', 'Chưa nộp', 'Chờ chấm', 'Tỷ lệ nộp', 'Tỷ lệ chấm', 'TB nộp / buổi', 'TB chấm / buổi'].map(label => <th key={label}>{label}</th>)}
               </tr></thead>
               <tbody>{breakdownRows.map(row => {
                 const submitted = row.pending + row.graded;
@@ -518,15 +526,15 @@ export function SubmissionControlView({
                 const averageGrading = sessionsWithSubmissions.length > 0 ? sessionsWithSubmissions.reduce((sum, session) => sum + session.gradingRate, 0) / sessionsWithSubmissions.length : null;
                 const incomplete = row.loadedClasses < row.totalClasses;
                 return <tr key={row.key}>
-                  <td style={{ padding: 12, borderBottom: '1px solid var(--border-primary)', fontWeight: 700 }}>{row.label}{row.secondaryLabel && <div style={{ marginTop: 2, color: 'var(--text-tertiary)', fontSize: 11, fontWeight: 500 }}>{row.secondaryLabel}</div>}</td>
-                  <td style={{ padding: 12, borderBottom: '1px solid var(--border-primary)', color: incomplete ? 'var(--status-warning)' : 'var(--text-secondary)', whiteSpace: 'nowrap' }}>{row.loadedClasses}/{row.totalClasses}{incomplete ? ' · tạm tính' : ''}</td>
-                  <td style={{ padding: 12, borderBottom: '1px solid var(--border-primary)' }}>{row.expected.toLocaleString('vi-VN')}</td>
-                  <td style={{ padding: 12, borderBottom: '1px solid var(--border-primary)', color: row.missing > 0 ? 'var(--status-error)' : undefined, fontWeight: 650 }}>{row.missing.toLocaleString('vi-VN')}</td>
-                  <td style={{ padding: 12, borderBottom: '1px solid var(--border-primary)', color: row.pending > 0 ? 'var(--status-warning)' : undefined, fontWeight: 650 }}>{row.pending.toLocaleString('vi-VN')}</td>
-                  <td style={{ padding: 12, borderBottom: '1px solid var(--border-primary)', fontWeight: 700 }}>{submissionRate === null ? '—' : `${submissionRate.toFixed(1)}%`}</td>
-                  <td style={{ padding: 12, borderBottom: '1px solid var(--border-primary)', fontWeight: 700 }}>{gradingRate === null ? '—' : `${gradingRate.toFixed(1)}%`}</td>
-                  <td style={{ padding: 12, borderBottom: '1px solid var(--border-primary)', fontWeight: 700 }}>{averageSubmission === null ? '—' : `${averageSubmission.toFixed(1)}%`}</td>
-                  <td style={{ padding: 12, borderBottom: '1px solid var(--border-primary)', fontWeight: 700 }}>{averageGrading === null ? '—' : `${averageGrading.toFixed(1)}%`}</td>
+                  <td className={controlStyles.primaryCell}>{row.label}{row.secondaryLabel && <div className={controlStyles.secondaryText}>{row.secondaryLabel}</div>}</td>
+                  <td style={{ color: incomplete ? 'var(--status-warning)' : 'var(--text-secondary)', whiteSpace: 'nowrap' }}>{row.loadedClasses}/{row.totalClasses}{incomplete ? ' · tạm tính' : ''}</td>
+                  <td>{row.expected.toLocaleString('vi-VN')}</td>
+                  <td style={{ color: row.missing > 0 ? 'var(--status-error)' : undefined, fontWeight: 650 }}>{row.missing.toLocaleString('vi-VN')}</td>
+                  <td style={{ color: row.pending > 0 ? 'var(--status-warning)' : undefined, fontWeight: 650 }}>{row.pending.toLocaleString('vi-VN')}</td>
+                  <td className={controlStyles.primaryCell}>{submissionRate === null ? '—' : `${submissionRate.toFixed(1)}%`}</td>
+                  <td className={controlStyles.primaryCell}>{gradingRate === null ? '—' : `${gradingRate.toFixed(1)}%`}</td>
+                  <td className={controlStyles.primaryCell}>{averageSubmission === null ? '—' : `${averageSubmission.toFixed(1)}%`}</td>
+                  <td className={controlStyles.primaryCell}>{averageGrading === null ? '—' : `${averageGrading.toFixed(1)}%`}</td>
                 </tr>;
               })}</tbody>
             </table>
@@ -534,16 +542,16 @@ export function SubmissionControlView({
         </section>
       )}
 
-      <section style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-primary)', borderRadius: 'var(--radius-card)', overflow: 'hidden' }}>
-        <div style={{ padding: 12, borderBottom: '1px solid var(--border-primary)', display: 'flex', alignItems: 'center', gap: 8 }}>
+      <section className={controlStyles.panel}>
+        <div className={controlStyles.searchBar}>
           <Icon.Search />
-          <input value={search} onChange={event => setSearch(event.target.value)} placeholder="Tìm mã lớp, cơ sở, khoá học..." style={{ flex: 1, minWidth: 180, border: 0, outline: 0, background: 'transparent', color: 'var(--text-primary)', fontSize: 13 }} />
-          <span style={{ color: 'var(--text-tertiary)', fontSize: 12 }}>{visibleClasses.length} lớp</span>
+          <input className={controlStyles.searchInput} value={search} onChange={event => setSearch(event.target.value)} placeholder="Tìm mã lớp, cơ sở, khoá học..." />
+          <span className={controlStyles.resultCount}>{visibleClasses.length} lớp</span>
         </div>
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', minWidth: 900, borderCollapse: 'collapse', fontSize: 12 }}>
-            <thead><tr style={{ background: 'var(--bg-elevated)', textAlign: 'left' }}>
-              {['Lớp', 'Cơ sở', 'Học viên', 'Bài đến hạn', 'Chưa nộp', 'Chờ chấm', 'Đã chấm', 'Tỷ lệ nộp', 'Tỷ lệ chấm', 'Buổi đủ / phần / trống', 'TB nộp / buổi', 'TB chấm / buổi'].map(label => <th key={label} style={{ padding: '10px 12px', borderBottom: '1px solid var(--border-primary)', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>{label}</th>)}
+        <div className={controlStyles.tableScroll}>
+          <table className={controlStyles.table} style={{ minWidth: 900 }}>
+            <thead><tr>
+              {['Lớp', 'Cơ sở', 'Học viên', 'Bài đến hạn', 'Chưa nộp', 'Chờ chấm', 'Đã chấm', 'Tỷ lệ nộp', 'Tỷ lệ chấm', 'Buổi đủ / phần / trống', 'TB nộp / buổi', 'TB chấm / buổi'].map(label => <th key={label}>{label}</th>)}
             </tr></thead>
             <tbody>
               {visibleClasses.map(cls => {
@@ -554,23 +562,23 @@ export function SubmissionControlView({
                 const averageSessionSubmission = sessionSummaries.length > 0 ? sessionSummaries.reduce((sum, session) => sum + session.submissionRate, 0) / sessionSummaries.length : 0;
                 const averageSessionGrading = sessionsWithSubmissions.length > 0 ? sessionsWithSubmissions.reduce((sum, session) => sum + session.gradingRate, 0) / sessionsWithSubmissions.length : 0;
                 return (
-                  <tr key={cls.id} onClick={() => handleSelectClass(cls.id)} style={{ cursor: 'pointer', background: selectedClassId === cls.id ? 'rgba(99, 102, 241, 0.06)' : undefined }}>
-                    <td style={{ padding: 12, borderBottom: '1px solid var(--border-primary)' }}><strong>{cls.name}</strong><div style={{ color: 'var(--text-tertiary)', marginTop: 2 }}>{cls.course?.name || '—'}</div></td>
-                    <td style={{ padding: 12, borderBottom: '1px solid var(--border-primary)' }}>{cls.centre?.shortName || cls.centre?.name || '—'}</td>
-                    {record?.state === 'loading' ? <td colSpan={10} style={{ padding: 12, borderBottom: '1px solid var(--border-primary)', color: 'var(--text-tertiary)' }}><Spinner size={14} /> Đang tải...</td>
-                      : record?.state === 'error' ? <td colSpan={10} style={{ padding: 12, borderBottom: '1px solid var(--border-primary)', color: 'var(--status-error)' }}>Không tải được — bấm để thử lại</td>
+                  <tr key={cls.id} onClick={() => handleSelectClass(cls.id)} className={`${controlStyles.clickableRow} ${selectedClassId === cls.id ? controlStyles.rowSelected : ''}`}>
+                    <td><strong>{cls.name}</strong><div className={controlStyles.secondaryText}>{cls.course?.name || '—'}</div></td>
+                    <td>{cls.centre?.shortName || cls.centre?.name || '—'}</td>
+                    {record?.state === 'loading' ? <td colSpan={10} style={{ color: 'var(--text-tertiary)' }}><Spinner size={14} /> Đang tải...</td>
+                      : record?.state === 'error' ? <td colSpan={10} style={{ color: 'var(--status-error)' }}>Không tải được — bấm để thử lại</td>
                       : summary ? <>
-                        <td style={{ padding: 12, borderBottom: '1px solid var(--border-primary)' }}>{getSubmissionStudents(record.data!, cls).length}</td>
-                        <td style={{ padding: 12, borderBottom: '1px solid var(--border-primary)' }}>{sessionSummaries.length}</td>
-                        <td style={{ padding: 12, borderBottom: '1px solid var(--border-primary)' }}><StatusPill status="missing" count={summary.missing} /></td>
-                        <td style={{ padding: 12, borderBottom: '1px solid var(--border-primary)' }}><StatusPill status="pending" count={summary.pending} /></td>
-                        <td style={{ padding: 12, borderBottom: '1px solid var(--border-primary)' }}><StatusPill status="graded" count={summary.graded} /></td>
-                        <td style={{ padding: 12, borderBottom: '1px solid var(--border-primary)', fontWeight: 700 }}>{summary.totalExpected ? `${summary.submissionRate.toFixed(1)}%` : '—'}</td>
-                        <td style={{ padding: 12, borderBottom: '1px solid var(--border-primary)', fontWeight: 700 }}>{summary.submitted ? `${summary.gradingRate.toFixed(1)}%` : '—'}</td>
-                        <td style={{ padding: 12, borderBottom: '1px solid var(--border-primary)', whiteSpace: 'nowrap' }}>{sessionSummaries.filter(session => session.completion === 'complete').length} / {sessionSummaries.filter(session => session.completion === 'partial').length} / {sessionSummaries.filter(session => session.completion === 'none').length}</td>
-                        <td style={{ padding: 12, borderBottom: '1px solid var(--border-primary)', fontWeight: 700 }}>{sessionSummaries.length ? `${averageSessionSubmission.toFixed(1)}%` : '—'}</td>
-                        <td style={{ padding: 12, borderBottom: '1px solid var(--border-primary)', fontWeight: 700 }}>{sessionsWithSubmissions.length ? `${averageSessionGrading.toFixed(1)}%` : '—'}</td>
-                      </> : <td colSpan={10} style={{ padding: 12, borderBottom: '1px solid var(--border-primary)', color: 'var(--text-tertiary)' }}><Spinner size={14} /> Đang chờ đồng bộ tự động...</td>}
+                        <td>{getSubmissionStudents(record.data!, cls).length}</td>
+                        <td>{sessionSummaries.length}</td>
+                        <td><StatusPill status="missing" count={summary.missing} /></td>
+                        <td><StatusPill status="pending" count={summary.pending} /></td>
+                        <td><StatusPill status="graded" count={summary.graded} /></td>
+                        <td className={controlStyles.primaryCell}>{summary.totalExpected ? `${summary.submissionRate.toFixed(1)}%` : '—'}</td>
+                        <td className={controlStyles.primaryCell}>{summary.submitted ? `${summary.gradingRate.toFixed(1)}%` : '—'}</td>
+                        <td style={{ whiteSpace: 'nowrap' }}>{sessionSummaries.filter(session => session.completion === 'complete').length} / {sessionSummaries.filter(session => session.completion === 'partial').length} / {sessionSummaries.filter(session => session.completion === 'none').length}</td>
+                        <td className={controlStyles.primaryCell}>{sessionSummaries.length ? `${averageSessionSubmission.toFixed(1)}%` : '—'}</td>
+                        <td className={controlStyles.primaryCell}>{sessionsWithSubmissions.length ? `${averageSessionGrading.toFixed(1)}%` : '—'}</td>
+                      </> : <td colSpan={10} style={{ color: 'var(--text-tertiary)' }}><Spinner size={14} /> Đang chờ đồng bộ tự động...</td>}
                   </tr>
                 );
               })}
@@ -580,24 +588,39 @@ export function SubmissionControlView({
       </section>
 
       {selectedClass && (
-        <section style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-primary)', borderRadius: 'var(--radius-card)', overflow: 'hidden' }}>
-          <div style={{ padding: 14, borderBottom: '1px solid var(--border-primary)', display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-            <div><strong>Chi tiết {selectedClass.name}</strong><div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 3 }}>{selectedClass.centre?.name} · {selectedClass.course?.name}</div></div>
-            <button type="button" onClick={() => onReloadClass(selectedClass.id)} disabled={selectedRecord?.state === 'loading'} style={{ border: '1px solid var(--border-primary)', borderRadius: 8, background: 'var(--bg-elevated)', color: 'var(--text-primary)', padding: '7px 10px', cursor: 'pointer' }}><Icon.Refresh /> Làm mới</button>
+        <section className={controlStyles.panel}>
+          <div className={controlStyles.panelHeader}>
+            <div>
+              <div className={controlStyles.panelTitle}>Chi tiết {selectedClass.name}</div>
+              <div className={controlStyles.panelSubtitle}>{selectedClass.centre?.name} · {selectedClass.course?.name}</div>
+            </div>
+            <button type="button" onClick={() => onReloadClass(selectedClass.id)} disabled={selectedRecord?.state === 'loading'} className={controlStyles.secondaryButton}><Icon.Refresh /> Làm mới</button>
           </div>
-          {selectedRecord?.state === 'loading' ? <div style={{ padding: 32, textAlign: 'center' }}><Spinner /> Đang tải chi tiết...</div>
-            : selectedRecord?.state === 'error' ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--status-error)' }}>Không thể tải chi tiết lớp. Bấm “Làm mới” để thử lại.</div>
+          {selectedRecord?.state === 'loading' ? <div className={controlStyles.loadingPanel}><Spinner /> Đang tải chi tiết...</div>
+            : selectedRecord?.state === 'error' ? <div className={`${controlStyles.emptyPanel} ${controlStyles.noticeError}`}>Không thể tải chi tiết lớp. Bấm “Làm mới” để thử lại.</div>
             : selectedData && <>
-              <div style={{ padding: 12, display: 'flex', gap: 8, flexWrap: 'wrap', borderBottom: '1px solid var(--border-primary)' }}>
-                <input value={studentSearch} onChange={event => setStudentSearch(event.target.value)} placeholder="Tìm học viên..." style={{ minWidth: 220, padding: '8px 10px', border: '1px solid var(--border-primary)', borderRadius: 8, background: 'var(--bg-elevated)', color: 'var(--text-primary)' }} />
-                {(['all', 'missing', 'pending', 'graded'] as const).map(status => <button key={status} type="button" onClick={() => setStatusFilter(status)} style={{ padding: '7px 10px', borderRadius: 999, border: statusFilter === status ? '1px solid var(--brand-indigo)' : '1px solid var(--border-primary)', background: statusFilter === status ? 'rgba(99,102,241,0.09)' : 'transparent', color: statusFilter === status ? 'var(--brand-indigo)' : 'var(--text-secondary)', cursor: 'pointer', fontSize: 12 }}>{status === 'all' ? 'Tất cả' : statusMeta[status].label}</button>)}
+              <div className={controlStyles.searchBar}>
+                <Icon.Search />
+                <input className={controlStyles.textInput} value={studentSearch} onChange={event => setStudentSearch(event.target.value)} placeholder="Tìm học viên..." />
+                <div className={controlStyles.segmented}>
+                  {(['all', 'missing', 'pending', 'graded'] as const).map(status => (
+                    <button
+                      key={status}
+                      type="button"
+                      onClick={() => setStatusFilter(status)}
+                      className={`${controlStyles.segmentButton} ${statusFilter === status ? controlStyles.segmentButtonActive : ''}`}
+                    >
+                      {status === 'all' ? 'Tất cả' : statusMeta[status].label}
+                    </button>
+                  ))}
+                </div>
               </div>
-              {selectedLessons.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--text-tertiary)' }}>Lớp chưa có bài học đang hoạt động.</div> : <div style={{ overflowX: 'auto' }}>
-                <table style={{ borderCollapse: 'collapse', fontSize: 11, minWidth: Math.max(700, 240 + selectedLessons.length * 150) }}>
-                  <thead><tr style={{ background: 'var(--bg-elevated)' }}><th style={{ position: 'sticky', left: 0, zIndex: 2, background: 'var(--bg-elevated)', padding: 10, minWidth: 220, textAlign: 'left', borderBottom: '1px solid var(--border-primary)' }}>Học viên</th>{selectedLessons.map((lesson, index) => <th key={lesson.id} title={lesson.name} style={{ padding: 10, minWidth: 140, maxWidth: 180, textAlign: 'left', borderBottom: '1px solid var(--border-primary)' }}>{index + 1}. {lesson.name}</th>)}</tr></thead>
-                  <tbody>{selectedStudents.map(student => <tr key={student.studentUid}><td style={{ position: 'sticky', left: 0, background: 'var(--bg-surface)', padding: 10, fontWeight: 650, borderBottom: '1px solid var(--border-primary)' }}><StudentHoverCard studentId={student.id} studentName={student.displayName} /></td>{selectedLessons.map(lesson => {
+              {selectedLessons.length === 0 ? <div className={controlStyles.emptyPanel}>Lớp chưa có bài học đang hoạt động.</div> : <div className={controlStyles.tableScroll}>
+                <table className={controlStyles.table} style={{ minWidth: Math.max(700, 240 + selectedLessons.length * 150) }}>
+                  <thead><tr><th className={controlStyles.stickyHeaderCell} style={{ minWidth: 220 }}>Học viên</th>{selectedLessons.map((lesson, index) => <th key={lesson.id} title={lesson.name} style={{ minWidth: 140, maxWidth: 180 }}>{index + 1}. {lesson.name}</th>)}</tr></thead>
+                  <tbody>{selectedStudents.map(student => <tr key={student.studentUid}><td className={controlStyles.stickyBodyCell}><StudentHoverCard studentId={student.id} studentName={student.displayName} /></td>{selectedLessons.map(lesson => {
                     const cell = cellsByStudentLesson.get(`${student.studentUid}:${lesson.id}`)!;
-                    return <td key={lesson.id} style={{ padding: 8, borderBottom: '1px solid var(--border-primary)', verticalAlign: 'top' }}><StatusPill status={cell.status} /><div style={{ color: 'var(--text-tertiary)', marginTop: 5, lineHeight: 1.45 }}>{cell.dueAt ? <div>Hạn: {formatDateTime(cell.dueAt)}</div> : null}{cell.submission && cell.status === 'graded' && cell.submission.score !== null && cell.submission.score !== undefined ? <div>Điểm: {cell.submission.score}</div> : null}{cell.submission?.submittedAt ? <div>Nộp: {formatDateTime(cell.submission.submittedAt)}</div> : null}{cell.submission?.markedAt ? <div>Chấm: {formatDateTime(cell.submission.markedAt)}</div> : null}</div></td>;
+                    return <td key={lesson.id} style={{ verticalAlign: 'top' }}><StatusPill status={cell.status} /><div className={controlStyles.secondaryText} style={{ lineHeight: 1.45 }}>{cell.dueAt ? <div>Hạn: {formatDateTime(cell.dueAt)}</div> : null}{cell.submission && cell.status === 'graded' && cell.submission.score !== null && cell.submission.score !== undefined ? <div>Điểm: {cell.submission.score}</div> : null}{cell.submission?.submittedAt ? <div>Nộp: {formatDateTime(cell.submission.submittedAt)}</div> : null}{cell.submission?.markedAt ? <div>Chấm: {formatDateTime(cell.submission.markedAt)}</div> : null}</div></td>;
                   })}</tr>)}</tbody>
                 </table>
               </div>}
