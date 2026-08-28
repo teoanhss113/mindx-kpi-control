@@ -17,6 +17,8 @@ import {
   EmptyState,
   ExportButton,
   Icon,
+  MultiSelect,
+  type SelectOption,
   Spinner,
   StatCard,
   type CSVColumnConfig,
@@ -126,6 +128,8 @@ export function FinalProductControlView({
   const [search, setSearch] = useState('');
   const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
   const [breakdownDimension, setBreakdownDimension] = useState<BreakdownDimension>('centre');
+  const [breakdownCentreFilter, setBreakdownCentreFilter] = useState<string[]>([]);
+  const [breakdownCourseLineFilter, setBreakdownCourseLineFilter] = useState<string[]>([]);
   const [showCSVSettings, setShowCSVSettings] = useState(false);
   const { columns: csvColumns, saveColumns } = useCSVExportPreferences('operations-final-products', defaultExportColumns);
 
@@ -151,6 +155,30 @@ export function FinalProductControlView({
   }), [classes, worksByClass]);
 
   const dueRows = useMemo(() => classRows.filter(row => row.stats.isFinalSessionCompleted), [classRows]);
+  const breakdownCentreOptions = useMemo<SelectOption[]>(() => {
+    const options = new Map<string, SelectOption>();
+    dueRows.forEach(row => {
+      const value = row.cls.centre?.id || row.cls.centre?.name || 'unknown';
+      const label = row.cls.centre?.shortName || row.cls.centre?.name || 'Chưa xác định cơ sở';
+      if (!options.has(value)) options.set(value, { value, label });
+    });
+    return [...options.values()].sort((left, right) => left.label.localeCompare(right.label, 'vi'));
+  }, [dueRows]);
+  const breakdownCourseLineOptions = useMemo<SelectOption[]>(() => {
+    const options = new Map<string, SelectOption>();
+    dueRows.forEach(row => {
+      const value = getCourseCategory(row.cls);
+      if (!options.has(value)) options.set(value, { value, label: value });
+    });
+    return [...options.values()].sort((left, right) => left.label.localeCompare(right.label, 'vi'));
+  }, [dueRows]);
+  const filteredBreakdownSourceRows = useMemo(() => dueRows.filter(row => {
+    const centreValue = row.cls.centre?.id || row.cls.centre?.name || 'unknown';
+    const courseLineValue = getCourseCategory(row.cls);
+    if (breakdownCentreFilter.length > 0 && !breakdownCentreFilter.includes(centreValue)) return false;
+    if (breakdownCourseLineFilter.length > 0 && !breakdownCourseLineFilter.includes(courseLineValue)) return false;
+    return true;
+  }), [breakdownCentreFilter, breakdownCourseLineFilter, dueRows]);
   const aggregate = dueRows.reduce((total, row) => ({
     expected: total.expected + row.stats.totalStudents,
     submitted: total.submitted + row.stats.submittedCount,
@@ -171,7 +199,7 @@ export function FinalProductControlView({
 
   const breakdownRows = (() => {
     const groups = new Map<string, { key: string; label: string; secondary?: string; classes: number; expected: number; submitted: number; missing: number; pending: number; approved: number; rejected: number }>();
-    dueRows.forEach(row => {
+    filteredBreakdownSourceRows.forEach(row => {
       const centreKey = row.cls.centre?.id || row.cls.centre?.name || 'unknown';
       const centreLabel = row.cls.centre?.shortName || row.cls.centre?.name || 'Chưa xác định cơ sở';
       const courseLine = getCourseCategory(row.cls);
@@ -197,6 +225,7 @@ export function FinalProductControlView({
       return aRate - bRate || a.label.localeCompare(b.label, 'vi');
     });
   })();
+  const hasBreakdownFilter = breakdownCentreFilter.length > 0 || breakdownCourseLineFilter.length > 0;
 
   const exportRows: FinalProductExportRow[] = dueRows.flatMap(row => {
     const teachers = getTeachers(row.cls);
@@ -267,12 +296,50 @@ export function FinalProductControlView({
         <StatCard label="TỶ LỆ NỘP" value={aggregate.expected ? `${submissionRate.toFixed(1)}%` : '—'} desc={aggregate.expected ? `${aggregate.submitted}/${aggregate.expected} học viên` : 'Chưa có lớp đến hạn'} />
       </div>
 
-      {showBreakdown && breakdownRows.length > 0 && <section style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-primary)', borderRadius: 'var(--radius-card)', overflow: 'hidden' }}>
-        <div style={{ padding: 12, borderBottom: '1px solid var(--border-primary)', display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+      {showBreakdown && dueRows.length > 0 && <section style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-primary)', borderRadius: 'var(--radius-card)', overflow: 'hidden' }}>
+        <div style={{ padding: 12, borderBottom: '1px solid var(--border-primary)', display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
           <div><strong style={{ fontSize: 13 }}>Phân loại sản phẩm cuối khoá</strong><div style={{ color: 'var(--text-tertiary)', fontSize: 11, marginTop: 3 }}>Chỉ tính lớp đã tới buổi cuối · tỷ lệ nộp thấp trước</div></div>
-          <div style={{ display: 'flex', gap: 6 }}>{([['centre', 'Theo cơ sở'], ['courseLine', 'Theo khối'], ['centreCourseLine', 'Cơ sở × khối']] as [BreakdownDimension, string][]).map(([value, label]) => <button key={value} type="button" onClick={() => setBreakdownDimension(value)} style={{ padding: '6px 9px', borderRadius: 999, border: breakdownDimension === value ? '1px solid var(--brand-indigo)' : '1px solid var(--border-primary)', background: breakdownDimension === value ? 'rgba(99,102,241,.09)' : 'transparent', color: breakdownDimension === value ? 'var(--brand-indigo)' : 'var(--text-secondary)', cursor: 'pointer', fontSize: 11 }}>{label}</button>)}</div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end', justifyContent: 'flex-end' }}>
+            <div className={styles.dateControls}>
+              <span className={styles.dateLabel}>Cơ sở</span>
+              <MultiSelect
+                menuPosition="fixed"
+                options={breakdownCentreOptions}
+                selected={breakdownCentreFilter}
+                onChange={setBreakdownCentreFilter}
+                placeholder="Tất cả cơ sở"
+                searchable
+                maxDisplay={1}
+              />
+            </div>
+            <div className={styles.dateControls}>
+              <span className={styles.dateLabel}>Khối học</span>
+              <MultiSelect
+                menuPosition="fixed"
+                options={breakdownCourseLineOptions}
+                selected={breakdownCourseLineFilter}
+                onChange={setBreakdownCourseLineFilter}
+                placeholder="Tất cả khối"
+                searchable
+                maxDisplay={1}
+              />
+            </div>
+            {hasBreakdownFilter && (
+              <button
+                type="button"
+                onClick={() => {
+                  setBreakdownCentreFilter([]);
+                  setBreakdownCourseLineFilter([]);
+                }}
+                style={{ height: 30, padding: '6px 9px', borderRadius: 8, border: '1px solid var(--border-primary)', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: 11 }}
+              >
+                Xoá lọc
+              </button>
+            )}
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>{([['centre', 'Theo cơ sở'], ['courseLine', 'Theo khối'], ['centreCourseLine', 'Cơ sở × khối']] as [BreakdownDimension, string][]).map(([value, label]) => <button key={value} type="button" onClick={() => setBreakdownDimension(value)} style={{ padding: '6px 9px', borderRadius: 999, border: breakdownDimension === value ? '1px solid var(--brand-indigo)' : '1px solid var(--border-primary)', background: breakdownDimension === value ? 'rgba(99,102,241,.09)' : 'transparent', color: breakdownDimension === value ? 'var(--brand-indigo)' : 'var(--text-secondary)', cursor: 'pointer', fontSize: 11 }}>{label}</button>)}</div>
+          </div>
         </div>
-        <div style={{ overflowX: 'auto' }}><table style={{ width: '100%', minWidth: 800, borderCollapse: 'collapse', fontSize: 12 }}><thead><tr style={{ background: 'var(--bg-elevated)', textAlign: 'left' }}>{['Nhóm', 'Lớp đến hạn', 'Cần nộp', 'Chưa nộp', 'Chờ duyệt', 'Từ chối', 'Đã duyệt', 'Tỷ lệ nộp', 'Tỷ lệ duyệt'].map(label => <th key={label} style={{ padding: '9px 12px', borderBottom: '1px solid var(--border-primary)', whiteSpace: 'nowrap' }}>{label}</th>)}</tr></thead><tbody>{breakdownRows.map(row => <tr key={row.key}>
+        <div style={{ overflowX: 'auto' }}><table style={{ width: '100%', minWidth: 800, borderCollapse: 'collapse', fontSize: 12 }}><thead><tr style={{ background: 'var(--bg-elevated)', textAlign: 'left' }}>{['Nhóm', 'Lớp đến hạn', 'Cần nộp', 'Chưa nộp', 'Chờ duyệt', 'Từ chối', 'Đã duyệt', 'Tỷ lệ nộp', 'Tỷ lệ duyệt'].map(label => <th key={label} style={{ padding: '9px 12px', borderBottom: '1px solid var(--border-primary)', whiteSpace: 'nowrap' }}>{label}</th>)}</tr></thead><tbody>{breakdownRows.length === 0 ? <tr><td colSpan={9} style={{ padding: 18, textAlign: 'center', borderBottom: '1px solid var(--border-primary)', color: 'var(--text-tertiary)' }}>Không có nhóm phù hợp với bộ lọc.</td></tr> : breakdownRows.map(row => <tr key={row.key}>
           <td style={{ padding: 12, borderBottom: '1px solid var(--border-primary)', fontWeight: 700 }}>{row.label}{row.secondary && <div style={{ color: 'var(--text-tertiary)', fontSize: 11 }}>{row.secondary}</div>}</td>
           {[row.classes, row.expected, row.missing, row.pending, row.rejected, row.approved].map((value, index) => <td key={index} style={{ padding: 12, borderBottom: '1px solid var(--border-primary)' }}>{value}</td>)}
           <td style={{ padding: 12, borderBottom: '1px solid var(--border-primary)', fontWeight: 700 }}>{row.expected ? `${(row.submitted / row.expected * 100).toFixed(1)}%` : '—'}</td>
