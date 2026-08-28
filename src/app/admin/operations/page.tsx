@@ -3145,7 +3145,7 @@ export default function TeacherSchedulePage() {
       return;
     }
     if (endDateFrom && endDateTo && endDateFrom > endDateTo) {
-      addToast('Ngày kết thúc bắt đầu phải trước ngày kết thúc', 'error');
+      addToast('Ngày bắt đầu phải trước ngày kết thúc', 'error');
       return;
     }
     if (abortRef.current) abortRef.current.abort();
