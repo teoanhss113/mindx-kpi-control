@@ -3141,11 +3141,11 @@ export default function TeacherSchedulePage() {
       return;
     }
     if ((endDateFrom && !endDateTo) || (!endDateFrom && endDateTo)) {
-      addToast('Vui lòng chọn đủ khoảng End date', 'error');
+      addToast('Vui lòng chọn đủ khoảng Ngày kết thúc', 'error');
       return;
     }
     if (endDateFrom && endDateTo && endDateFrom > endDateTo) {
-      addToast('End date bắt đầu phải trước ngày kết thúc', 'error');
+      addToast('Ngày kết thúc bắt đầu phải trước ngày kết thúc', 'error');
       return;
     }
     if (abortRef.current) abortRef.current.abort();
@@ -4531,7 +4531,7 @@ export default function TeacherSchedulePage() {
           dateRangeLabel="Có buổi học"
           dateRangeExtraSlot={
             <DateRangeInput
-              label="End date"
+              label="Ngày kết thúc"
               dateFrom={endDateFrom}
               dateTo={endDateTo}
               onDateFromChange={setEndDateFrom}

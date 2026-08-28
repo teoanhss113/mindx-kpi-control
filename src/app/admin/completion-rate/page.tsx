@@ -557,7 +557,7 @@ export default function DashboardPage() {
             onCentresChange={setSelectedCentres} centresLoading={centresLoading}
             dateFrom={fromDate} dateTo={toDate}
             onDateFromChange={setFromDate} onDateToChange={setToDate}
-            dateRangeLabel="End date"
+            dateRangeLabel="Ngày kết thúc"
             onFetch={handleFetch} loading={loading} progress={progress}
             hasData={classes.length > 0} onClearCache={handleClearCache}
             onCancel={handleCancelFetch}
