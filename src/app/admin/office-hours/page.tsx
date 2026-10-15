@@ -28,6 +28,8 @@ import { useTeacherFilterOptions } from '@/hooks/useTeacherFilterOptions';
 import { useCSVExportPreferences } from '@/hooks/useCSVExportPreferences';
 import { conversionColor, conversionScore, KPI_COLORS, CONVERSION_LEGEND } from '@/lib/kpiScoring';
 import { exportToCSV, CSVColumn, CSVFormatters } from '@/lib/csvExport';
+import { analyzeRepeatedTrialStudents, getRepeatedTrialOfficeHourSummary, matchesTrialStudentSearch } from '@/lib/repeatedTrialStudents';
+import { RepeatedTrialHistory } from '@/components/RepeatedTrialHistory';
 import { ProtectedPage } from '@/components/ProtectedPage';
 import styles from '../../dashboard.module.css';
 
@@ -190,6 +192,7 @@ function OfficeHoursPageInner() {
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
   const [selectedGrades, setSelectedGrades] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [showRepeatedTrialsOnly, setShowRepeatedTrialsOnly] = useState(false);
   const deferredTableSelectedCentres = useDeferredValue(tableSelectedCentres);
   const deferredSelectedStatuses = useDeferredValue(selectedStatuses);
   const deferredSelectedEvaluationStatuses = useDeferredValue(selectedEvaluationStatuses);
@@ -754,8 +757,8 @@ function OfficeHoursPageInner() {
 
   // Check if any table filter is active
   const hasTableFilter = useMemo(() => {
-    return tableSelectedCentres.length > 0 || selectedStatuses.length > 0 || selectedEvaluationStatuses.length > 0 || selectedTypes.length > 0 || selectedGrades.length > 0 || searchQuery.trim().length > 0;
-  }, [tableSelectedCentres, selectedStatuses, selectedEvaluationStatuses, selectedTypes, selectedGrades, searchQuery]);
+    return tableSelectedCentres.length > 0 || selectedStatuses.length > 0 || selectedEvaluationStatuses.length > 0 || selectedTypes.length > 0 || selectedGrades.length > 0 || searchQuery.trim().length > 0 || showRepeatedTrialsOnly;
+  }, [tableSelectedCentres, selectedStatuses, selectedEvaluationStatuses, selectedTypes, selectedGrades, searchQuery, showRepeatedTrialsOnly]);
 
   // Clear all table filters
   const clearTableFilters = () => {
@@ -765,7 +768,13 @@ function OfficeHoursPageInner() {
     setSelectedTypes([]);
     setSelectedGrades([]);
     setSearchQuery('');
+    setShowRepeatedTrialsOnly(false);
   };
+
+  const repeatedTrialAnalysis = useMemo(
+    () => analyzeRepeatedTrialStudents(officeHours),
+    [officeHours]
+  );
 
   // Filter and sort office hours
   const filteredOfficeHours = useMemo(() => {
@@ -803,15 +812,22 @@ function OfficeHoursPageInner() {
 
     // Search filter
     if (deferredSearchQuery.trim()) {
-      const query = deferredSearchQuery.toLowerCase();
+      const query = deferredSearchQuery.trim().toLowerCase();
       filtered = filtered.filter(oh =>
         oh.teacher?.fullName?.toLowerCase().includes(query) ||
         oh.courses?.some(c => c.name?.toLowerCase().includes(query) || c.shortName?.toLowerCase().includes(query)) ||
         oh.centre?.name?.toLowerCase().includes(query) ||
         oh.centre?.shortName?.toLowerCase().includes(query) ||
-        oh.appointments?.some(apt => apt.status?.toLowerCase().includes(query)) ||
+        oh.appointments?.some(apt =>
+          apt.status?.toLowerCase().includes(query) ||
+          matchesTrialStudentSearch(apt.candidate, query)
+        ) ||
         oh.note?.toLowerCase().includes(query)
       );
+    }
+
+    if (showRepeatedTrialsOnly) {
+      filtered = filtered.filter(oh => repeatedTrialAnalysis.officeHourIds.has(oh.id));
     }
 
     // Sort
@@ -864,7 +880,7 @@ function OfficeHoursPageInner() {
     });
 
     return filtered;
-  }, [officeHours, deferredTableSelectedCentres, deferredSelectedStatuses, deferredSelectedEvaluationStatuses, deferredSelectedTypes, deferredSelectedGrades, deferredSearchQuery, sortBy, sortOrder, statusOptions, evaluationStatusOptions, typeOptions, courseLineOptions]);
+  }, [officeHours, deferredTableSelectedCentres, deferredSelectedStatuses, deferredSelectedEvaluationStatuses, deferredSelectedTypes, deferredSelectedGrades, deferredSearchQuery, showRepeatedTrialsOnly, repeatedTrialAnalysis, sortBy, sortOrder, statusOptions, evaluationStatusOptions, typeOptions, courseLineOptions]);
 
   // Group by teacher for 'by-teacher' view
   const groupedByTeacher = useMemo(() => {
@@ -1478,7 +1494,7 @@ function OfficeHoursPageInner() {
                           <TableToolbar
                             search={searchQuery}
                             onSearchChange={setSearchQuery}
-                            searchPlaceholder="Tìm kiếm..."
+                            searchPlaceholder="Tìm học viên, SĐT, email, giáo viên..."
                             quickFilterSlots={
                               hasPreferences && (
                                 <QuickFilterChips
@@ -1537,6 +1553,32 @@ function OfficeHoursPageInner() {
                                     placeholder="Tất cả loại"
                                   />
                                 )}
+                                {(repeatedTrialAnalysis.repeatedAppointmentCount > 0 || showRepeatedTrialsOnly) && (
+                                  <button
+                                    type="button"
+                                    aria-pressed={showRepeatedTrialsOnly}
+                                    onClick={() => setShowRepeatedTrialsOnly(value => !value)}
+                                    title="Chỉ hiện ca có lịch hẹn nghi trùng thông tin học viên với ca khác đã tải"
+                                    style={{
+                                      height: 34,
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: 'var(--space-2)',
+                                      padding: '0 10px',
+                                      borderRadius: 'var(--radius-comfortable)',
+                                      border: `1px solid ${showRepeatedTrialsOnly ? 'var(--status-warning)' : 'var(--border-secondary)'}`,
+                                      background: showRepeatedTrialsOnly ? 'rgba(245, 158, 11, 0.1)' : 'var(--bg-surface)',
+                                      color: showRepeatedTrialsOnly ? 'var(--status-warning)' : 'var(--text-secondary)',
+                                      fontSize: 12,
+                                      fontWeight: 590,
+                                      cursor: 'pointer',
+                                      whiteSpace: 'nowrap',
+                                    }}
+                                  >
+                                    <Icon.Repeat size={13} />
+                                    Ca nghi trùng ({repeatedTrialAnalysis.officeHourIds.size})
+                                  </button>
+                                )}
                               </>
                             }
                             hasFilter={hasTableFilter}
@@ -1545,6 +1587,11 @@ function OfficeHoursPageInner() {
                       ) : null
                     }
                   >
+                    {!loading && filteredOfficeHours.length === 0 && (
+                      <div role="status" style={{ padding: 24, color: 'var(--text-secondary)', textAlign: 'center' }}>
+                        Không có ca phù hợp với bộ lọc hiện tại. Hãy xoá hoặc thay đổi bộ lọc.
+                      </div>
+                    )}
                         <div className={styles.tableScrollWrapper}>
                 {/* Conditional rendering based on viewMode */}
                 {viewMode === 'all' ? (
@@ -1742,6 +1789,19 @@ function OfficeHoursPageInner() {
                   const confirmedCount = oh.appointments?.filter(apt => 
                     apt.status && !['WAITING', 'PENDING'].includes(apt.status.toUpperCase())
                   ).length || 0;
+                  const repeatedSummary = getRepeatedTrialOfficeHourSummary(repeatedTrialAnalysis, oh.id);
+                  const repeatedCourseLead = repeatedSummary.hasSameCourse
+                    ? 'Cùng môn'
+                    : repeatedSummary.hasDifferentCourse
+                      ? 'Khác môn'
+                      : repeatedSummary.hasUnknownCourse
+                        ? 'Chưa rõ môn'
+                        : 'Nghi trùng';
+                  const repeatedCourseDetails = [
+                    repeatedSummary.hasSameCourse ? 'cùng môn' : '',
+                    repeatedSummary.hasDifferentCourse ? 'khác môn' : '',
+                    repeatedSummary.hasUnknownCourse ? 'chưa rõ môn' : '',
+                  ].filter(Boolean);
                   
                   return (
                     <div
@@ -1778,7 +1838,22 @@ function OfficeHoursPageInner() {
 
                       <div><CentreBadge name={oh.centre?.shortName || oh.centre?.name} /></div>
 
-                      <div className={styles.sizeCol}>{totalAppointments}</div>
+                      <div className={styles.sizeCol} style={{ flexDirection: 'column', alignItems: 'flex-start' }}>
+                        <span>{totalAppointments}</span>
+                        {repeatedSummary.appointmentCount > 0 && (
+                          <Badge
+                            variant="warning"
+                            size="sm"
+                            shape="rounded"
+                            title={`${repeatedSummary.appointmentCount} lịch hẹn nghi trùng: ${repeatedSummary.reasonLabels.join(', ')}${repeatedCourseDetails.length ? ` · ${repeatedCourseDetails.join(', ')}` : ''}`}
+                            style={{ marginTop: 4, display: 'inline-flex', alignItems: 'center', gap: 3 }}
+                          >
+                            <Icon.Repeat size={10} />
+                            {repeatedCourseLead} · {repeatedSummary.appointmentCount} trùng
+                            {repeatedSummary.reasonLabels.length > 0 && `: ${repeatedSummary.reasonLabels.join('/')}`}
+                          </Badge>
+                        )}
+                      </div>
 
                       <div className={styles.sizeCol}>
                         <RawStatusBadge status={oh.status} />
@@ -2659,6 +2734,11 @@ function OfficeHoursPageInner() {
                               <div style={{ fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>
                                 {apt.candidate.fullName}
                               </div>
+                              <RepeatedTrialHistory
+                                analysis={repeatedTrialAnalysis}
+                                officeHourId={selectedEntry.id}
+                                appointmentId={apt.id}
+                              />
                               {apt.title && (
                                 <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
                                   {apt.title}
